@@ -4,6 +4,7 @@ export default defineConfig({
   title: "LongJie's Knowledge Base",
   description: 'Backend / Recommend System / AI',
   lang: 'zh-CN',
+  base: '/backend-notes/',
 
   lastUpdated: true,
 
