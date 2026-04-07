@@ -29,11 +29,16 @@ export default defineConfig({
         text: 'Database',
         items: [
           { text: 'MySQL', link: '/database/mysql' },
-          { text: 'MySQL Study Notes', link: '/database/mysql-notes' },
-          { text: '  L1: Table Design', link: '/database/mysql-notes/lecture-1' },
-          { text: '  L2: Index', link: '/database/mysql-notes/lecture-2' },
-          { text: '  L3: Transaction', link: '/database/mysql-notes/lecture-3' },
-          { text: '  L4: Isolation', link: '/database/mysql-notes/lecture-4' },
+          {
+            text: 'MySQL Study Notes',
+            collapsed: true,
+            items: [
+              { text: 'L1: Table Design', link: '/database/mysql-notes/lecture-1' },
+              { text: 'L2: Index', link: '/database/mysql-notes/lecture-2' },
+              { text: 'L3: Transaction', link: '/database/mysql-notes/lecture-3' },
+              { text: 'L4: Isolation', link: '/database/mysql-notes/lecture-4' }
+            ]
+          },
           { text: 'Redis', link: '/database/redis' }
         ]
       },
