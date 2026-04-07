@@ -23,3 +23,7 @@ features:
   - title: AI Application
     details: LLM, RAG, Agent, Prompt Engineering
 ---
+
+## Test Update
+
+- 2026-04-07: Test auto-deploy workflow
