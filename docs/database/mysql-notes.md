@@ -11,3 +11,4 @@
 2. [第 2 讲：索引底层原理与索引设计](/database/mysql-notes/lecture-2)
 3. [第 3 讲：事务、ACID、redo log、undo log、binlog](/database/mysql-notes/lecture-3)
 4. [第 4 讲：事务隔离级别、脏读、不可重复读、幻读](/database/mysql-notes/lecture-4)
+5. [第 5 讲：MVCC、Read View、快照读、当前读](/database/mysql-notes/lecture-5)
