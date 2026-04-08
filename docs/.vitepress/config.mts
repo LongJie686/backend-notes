@@ -53,7 +53,15 @@ export default defineConfig({
       {
         text: 'AI App',
         items: [
-          { text: 'LLM', link: '/ai-app/llm' }
+          { text: 'LLM', link: '/ai-app/llm' },
+          {
+            text: 'Agent Architecture Analysis',
+            collapsed: true,
+            items: [
+              { text: 'Learn Claude Code', link: '/ai-app/agent-analysis/learn-claude-code' },
+              { text: 'NanoClaw', link: '/ai-app/agent-analysis/nanoclaw' }
+            ]
+          }
         ]
       }
     ],

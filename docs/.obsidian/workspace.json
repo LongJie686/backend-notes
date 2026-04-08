@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "database/mysql-notes.md",
+                "file": "ai-app/llm.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "mysql-notes"
+              "title": "llm"
             }
           }
         ]
@@ -186,6 +186,12 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "ai-app/agent-analysis/index.md",
+    "ai-app/agent-analysis/nanoclaw.md",
+    "ai-app/agent-analysis/learn-claude-code.md",
+    "database/mysql-notes.md",
+    "ai-app/agent-analysis",
+    "database/mysql-notes/lecture-6.md",
     "database/mysql.md"
   ]
 }
