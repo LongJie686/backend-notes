@@ -37,7 +37,8 @@ export default defineConfig({
               { text: 'L2: Index', link: '/database/mysql-notes/lecture-2' },
               { text: 'L3: Transaction', link: '/database/mysql-notes/lecture-3' },
               { text: 'L4: Isolation', link: '/database/mysql-notes/lecture-4' },
-              { text: 'L5: MVCC', link: '/database/mysql-notes/lecture-5' }
+              { text: 'L5: MVCC', link: '/database/mysql-notes/lecture-5' },
+              { text: 'L6: Lock', link: '/database/mysql-notes/lecture-6' }
             ]
           },
           { text: 'Redis', link: '/database/redis' }
