@@ -93,6 +93,13 @@ export default defineConfig({
             ]
           },
           {
+            text: 'Skills 技能系统',
+            collapsed: true,
+            items: [
+              { text: '概述', link: '/ai-app/skills/' }
+            ]
+          },
+          {
             text: '多智能体设计实战',
             collapsed: true,
             items: [
@@ -169,7 +176,9 @@ export default defineConfig({
         items: [
           { text: 'Hadoop', link: '/big-data/hadoop' },
           { text: 'Kafka', link: '/big-data/kafka' },
-          { text: 'Flume', link: '/big-data/flume' }
+          { text: 'Flume', link: '/big-data/flume' },
+          { text: 'Spark', link: '/big-data/spark' },
+          { text: 'MapReduce', link: '/big-data/mapreduce' }
         ]
       }
     ],

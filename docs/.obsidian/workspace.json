@@ -186,6 +186,9 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "data-analysis",
+    "ai-app/skills/index.md",
+    "ai-app/skills",
     "big-data/mapreduce.md",
     "big-data/spark.md",
     "database/pgvector.md",
@@ -217,10 +220,7 @@
     "ai-app/multi-agent/pitfalls.md",
     "ai-app/multi-agent/lecture-9.md",
     "ai-app/llm-dev/exercises.md",
-    "ai-app/llm-dev/interview.md",
-    "ai-app/llm-dev/pitfalls.md",
     "ai-app/llm-dev",
-    "ai-app/multi-agent",
-    "architecture"
+    "ai-app/multi-agent"
   ]
 }
