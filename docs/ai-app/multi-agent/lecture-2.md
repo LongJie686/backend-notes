@@ -1,21 +1,18 @@
-# 第二讲：角色分工与任务编排
+# 第 2 讲：角色分工与任务编排
 
-> 阶段目标：掌握 Multi-Agent 的核心设计模式，能设计完整的 Agent 协作工作流。
+## 核心结论（5 条必记）
 
-## 学习目标
-
-- 掌握 Agent 角色设计的原则与方法
-- 理解任务分解的三种编排模式
-- 学会使用 LangGraph 构建状态机编排
-- 掌握 Agent 间状态传递与终止条件设计
+1. **角色设计四原则** -- 职责单一、边界清晰、可测试、可替换，缺一不可
+2. **三种编排模式灵活组合** -- 顺序（有依赖）、并行（无依赖）、条件分支（按质量判断），根据任务特征选用
+3. **状态设计要控制大小、保持不可变** -- 每次流转产生新状态，包含足够上下文，避免 Token 浪费
+4. **终止条件必须包含最大迭代次数和超时保护** -- 防止 Agent 间无限循环
+5. **LangGraph 的状态机模型是当前最灵活的生产级编排方案** -- 支持循环、条件分支、持久化
 
 ---
 
-## 核心内容
+## 一、Agent 角色设计
 
-### 1. Agent 角色设计
-
-#### 角色设计原则
+### 角色设计原则
 
 好的角色设计应该满足以下条件：
 - **职责单一**：每个 Agent 只负责一类任务
@@ -23,7 +20,7 @@
 - **可测试性**：每个 Agent 可以独立测试
 - **可替换性**：替换某个 Agent 不影响其他部分
 
-#### 常见角色类型
+### 常见角色类型
 
 | 角色 | 职责 | 典型 Prompt 前缀 | 适用模型 |
 |------|------|-----------------|---------|
@@ -34,7 +31,7 @@
 | Planner | 任务规划与分解 | "你是一个项目管理者..." | 强推理模型 |
 | Validator | 输出验证与格式检查 | "你是一个质量检查员..." | 轻量模型 |
 
-#### 角色定义模板
+### 角色定义模板
 
 ```python
 agent_config = {
@@ -52,16 +49,16 @@ agent_config = {
 
 ---
 
-### 2. 输入输出接口定义
+## 二、输入输出接口定义
 
-#### 接口设计原则
+### 接口设计原则
 
 - 使用结构化数据格式（JSON Schema）
 - 明确必填字段和可选字段
 - 定义字段的类型、范围和默认值
 - 包含版本号以支持接口演进
 
-#### 接口定义示例
+### 接口定义示例
 
 ```python
 from pydantic import BaseModel, Field
@@ -82,9 +79,9 @@ class ResearcherOutput(BaseModel):
 
 ---
 
-### 3. 任务分解与编排
+## 三、任务分解与编排
 
-#### 顺序执行（Sequential）
+### 顺序执行（Sequential）
 
 Agent 按顺序依次执行，前一个的输出是后一个的输入。
 
@@ -109,7 +106,7 @@ workflow.add_edge("writer", "reviewer")
 workflow.add_edge("reviewer", END)
 ```
 
-#### 并行执行（Parallel）
+### 并行执行（Parallel）
 
 多个 Agent 同时执行，结果汇聚后继续。
 
@@ -131,7 +128,7 @@ workflow.set_entry_point("researcher_a")  # 两个节点同时启动
 # 使用 fan-out/fan-in 模式
 ```
 
-#### 条件分支（Conditional）
+### 条件分支（Conditional）
 
 根据中间结果决定下一步执行哪个 Agent。
 
@@ -157,15 +154,15 @@ workflow.add_conditional_edges("reviewer", should_continue)
 
 ---
 
-### 4. Agent 间状态传递
+## 四、Agent 间状态传递
 
-#### 状态设计原则
+### 状态设计原则
 
 - 状态应该是不可变的（Immutable），每次流转产生新状态
 - 包含足够上下文信息，避免 Agent 丢失关键信息
 - 控制状态大小，避免 Token 浪费
 
-#### 状态定义示例
+### 状态定义示例
 
 ```python
 from typing import TypedDict, Annotated, List
@@ -188,7 +185,7 @@ class AgentState(TypedDict):
     error_messages: Annotated[List[str], operator.add]
 ```
 
-#### 状态传递方式
+### 状态传递方式
 
 | 方式 | 优点 | 缺点 | 适用场景 |
 |------|------|------|---------|
@@ -198,9 +195,9 @@ class AgentState(TypedDict):
 
 ---
 
-### 5. 终止条件设计
+## 五、终止条件设计
 
-#### 常见终止条件
+### 常见终止条件
 
 ```python
 class TerminationConfig:
@@ -220,7 +217,7 @@ class TerminationConfig:
     max_no_improvement: int = 3
 ```
 
-#### 终止条件检查
+### 终止条件检查
 
 ```python
 def check_termination(state: AgentState) -> bool:
@@ -241,9 +238,9 @@ def check_termination(state: AgentState) -> bool:
 
 ---
 
-### 6. LangGraph 状态机编排实战
+## 六、LangGraph 状态机编排实战
 
-#### 完整的研报生成系统
+### 完整的研报生成系统
 
 ```python
 from langgraph.graph import StateGraph, END
@@ -261,22 +258,18 @@ class ReportState(TypedDict):
 
 # 2. 定义 Agent 节点
 def researcher_node(state):
-    # 搜索相关资料
     research_data = research(state["topic"])
     return {"research_data": research_data}
 
 def planner_node(state):
-    # 生成报告大纲
     outline = generate_outline(state["research_data"])
     return {"outline": outline}
 
 def writer_node(state):
-    # 根据大纲和研究数据撰写报告
     draft = write_report(state["outline"], state["research_data"])
     return {"draft": draft}
 
 def reviewer_node(state):
-    # 审核报告质量
     comments, score = review(state["draft"])
     return {"review_comments": comments, "quality_score": score}
 
@@ -285,7 +278,7 @@ def route_after_review(state):
     if state["quality_score"] >= 0.8:
         return "finalize"
     elif state["iteration"] >= 3:
-        return "finalize"  # 超过最大迭代次数，强制结束
+        return "finalize"
     else:
         return "revise"
 
@@ -315,50 +308,9 @@ result = app.invoke({"topic": "2024年AI行业发展趋势", "iteration": 0})
 
 ---
 
-## 实战项目
+## 练习题（待完成）
 
-### 项目：研报自动生成系统 v1
-
-**目标**：使用 LangGraph 实现一个包含 Researcher -> Writer -> Reviewer 的研报生成系统。
-
-**功能要求**：
-1. 输入主题后自动搜索相关资料
-2. 根据资料生成报告大纲
-3. 按大纲撰写完整报告
-4. 自动审核并反馈修改建议
-5. 质量不达标时自动重写（最多3次）
-
-**交付物**：
-- 完整的可运行代码
-- 包含状态持久化（支持断点续跑）
-- 包含日志记录（每步的输入输出）
-
----
-
-## 练习题
-
-### 概念题
-
-1. 说明角色设计中"职责单一"和"可替换性"的重要性。
-2. 对比顺序执行和并行执行的适用场景。
-3. 为什么状态设计应该尽量保持不可变？
-
-### 实践题
-
-1. 设计一个"市场调研系统"的角色分工方案，至少包含4个Agent。
-2. 使用 LangGraph 实现一个包含条件分支的工作流：当审核不通过时，区分"内容问题"和"格式问题"，分别路由到不同的修复 Agent。
-3. 为上述工作流设计完整的状态结构，包含所有必要字段和控制信息。
-
----
-
-## 小结
-
-本讲学习了 Multi-Agent 的核心编排能力。关键要点：
-
-- 角色设计要满足单一职责、边界清晰、可测试、可替换四个原则
-- 三种编排模式（顺序/并行/条件分支）根据任务特征灵活组合
-- 状态设计要控制大小、保持不可变、包含足够上下文
-- 终止条件必须包含最大迭代次数和超时保护
-- LangGraph 的状态机模型是当前最灵活的生产级编排方案
-
-下一讲将进入 RAG 知识管理实战，让 Agent 拥有"外部知识"能力。
+- [ ] 练习1：设计一个"市场调研系统"的角色分工方案，至少包含 4 个 Agent
+- [ ] 练习2：使用 LangGraph 实现一个包含条件分支的工作流，区分"内容问题"和"格式问题"分别路由到不同的修复 Agent
+- [ ] 练习3：为上述工作流设计完整的状态结构，包含所有必要字段和控制信息
+- [ ] 练习4：说明角色设计中"职责单一"和"可替换性"的重要性

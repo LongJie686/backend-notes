@@ -1,28 +1,25 @@
-# 第四讲：工具调用与 CrewAI 实战
+# 第 4 讲：工具调用与 CrewAI 实战
 
-> 阶段目标：掌握 Function Calling 机制，能用 CrewAI 搭建工具驱动的 Multi-Agent 系统。
+## 核心结论（6 条必记）
 
-## 学习目标
-
-- 理解 Function Calling 的原理与流程
-- 掌握工具 Schema 设计的最佳实践
-- 学会工具链组合、异常处理与重试机制
-- 能使用 CrewAI 构建 Task/Agent/Tool 三要素系统
-- 掌握将 API 封装为 Agent 工具的方法
+1. **Function Calling 是 Agent 与外部世界交互的核心机制** -- LLM 本身不执行工具，只生成调用指令，执行由开发者控制
+2. **工具 Schema 设计直接影响 LLM 的工具选择准确性** -- description 要清晰，参数类型明确，有限选项用 enum
+3. **工具链编排要考虑串行、并行和条件三种模式** -- 前者输出作后者输入、同时调用独立工具、按任务类型选择工具
+4. **异常处理必须包含重试、降级和超时三个维度** -- 参数错误不重试（应反馈 LLM），网络错误指数退避重试
+5. **CrewAI 适合快速搭建角色驱动的 Multi-Agent 系统** -- Task/Agent/Tool 三要素，sequential/hierarchical 两种流程
+6. **API 封装要注意超时、异常处理和敏感信息保护** -- 工具名用动词+名词，description 简洁明确
 
 ---
 
-## 核心内容
+## 一、Function Calling 原理
 
-### 1. Function Calling 原理
-
-#### 工作流程
+### 工作流程
 
 ```
 用户请求 -> LLM 判断是否需要调用工具 -> 生成工具调用指令（JSON）-> 执行工具 -> 返回结果 -> LLM 继续推理
 ```
 
-#### 完整调用示例
+### 完整调用示例
 
 ```python
 import openai
@@ -37,15 +34,8 @@ tools = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "搜索关键词"
-                    },
-                    "num_results": {
-                        "type": "integer",
-                        "description": "返回结果数量",
-                        "default": 5
-                    }
+                    "query": {"type": "string", "description": "搜索关键词"},
+                    "num_results": {"type": "integer", "description": "返回结果数量", "default": 5}
                 },
                 "required": ["query"]
             }
@@ -66,7 +56,6 @@ if response.choices[0].message.tool_calls:
     function_name = tool_call.function.name
     function_args = json.loads(tool_call.function.arguments)
 
-    # 执行实际工具函数
     tool_result = execute_tool(function_name, function_args)
 
     # 4. 将工具结果返回给 LLM
@@ -84,16 +73,16 @@ final_answer = response.choices[0].message.content
 
 ---
 
-### 2. 工具 Schema 设计
+## 二、工具 Schema 设计
 
-#### 设计原则
+### 设计原则
 
 - **描述清晰**：description 要让 LLM 准确理解工具的用途
 - **参数完整**：包含类型、描述、默认值、枚举值
 - **必填区分**：required 字段只放真正必须的参数
 - **枚举约束**：对有限选项使用 enum 约束，减少幻觉
 
-#### 好的 Schema 示例
+### 好的 Schema 示例
 
 ```python
 {
@@ -113,17 +102,8 @@ final_answer = response.choices[0].message.content
                     "type": "object",
                     "description": "过滤条件，key为字段名，value为过滤值"
                 },
-                "order_by": {
-                    "type": "string",
-                    "description": "排序字段",
-                    "default": "id"
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "返回条数上限",
-                    "default": 20,
-                    "maximum": 100
-                }
+                "order_by": {"type": "string", "description": "排序字段", "default": "id"},
+                "limit": {"type": "integer", "description": "返回条数上限", "default": 20, "maximum": 100}
             },
             "required": ["table"]
         }
@@ -131,7 +111,7 @@ final_answer = response.choices[0].message.content
 }
 ```
 
-#### 常见问题
+### 常见问题
 
 | 问题 | 原因 | 解决方案 |
 |------|------|---------|
@@ -142,9 +122,9 @@ final_answer = response.choices[0].message.content
 
 ---
 
-### 3. 工具链组合与编排
+## 三、工具链组合与编排
 
-#### 串行工具链
+### 串行工具链
 
 前一个工具的输出作为后一个工具的输入。
 
@@ -158,20 +138,19 @@ tool_chain = [
 ]
 ```
 
-#### 并行工具调用
+### 并行工具调用
 
 同时调用多个独立工具，汇聚结果。
 
 ```python
-# 同时查询多个数据源
 parallel_tools = [
     {"name": "query_knowledge_base", "input": {"query": "{question}"}},
     {"name": "search_web", "input": {"query": "{question}"}},
-    {"name": "query_database", "input": {"table": "faq", "conditions": {"keyword": "{question}"}}
+    {"name": "query_database", "input": {"table": "faq", "conditions": {"keyword": "{question}}"}}
 ]
 ```
 
-#### 条件工具选择
+### 条件工具选择
 
 根据任务类型选择不同工具。
 
@@ -188,9 +167,9 @@ def select_tool(task_type: str) -> str:
 
 ---
 
-### 4. 异常处理与重试
+## 四、异常处理与重试
 
-#### 异常类型
+### 异常类型
 
 | 异常类型 | 原因 | 处理方式 |
 |---------|------|---------|
@@ -199,24 +178,23 @@ def select_tool(task_type: str) -> str:
 | 结果异常 | 工具返回非预期结果 | 结果校验 + 重试 |
 | 超时 | 工具执行时间过长 | 超时中断 + 简化请求 |
 
-#### 重试策略
+### 重试策略
 
 ```python
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 @retry(
-    stop=stop_after_attempt(3),           # 最多重试3次
-    wait=wait_exponential(multiplier=1, max=10),  # 指数退避
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, max=10),
     retry=lambda e: isinstance(e, (TimeoutError, ConnectionError))
 )
 async def call_tool_with_retry(tool_name: str, params: dict):
     try:
         result = await execute_tool(tool_name, params)
-        validate_result(result)  # 校验结果
+        validate_result(result)
         return result
     except ValidationError as e:
-        # 参数错误不重试，记录日志
         log_error(f"Tool parameter error: {e}")
         raise
     except Exception as e:
@@ -224,14 +202,13 @@ async def call_tool_with_retry(tool_name: str, params: dict):
         raise
 ```
 
-#### 降级策略
+### 降级策略
 
 ```python
 async def call_tool_with_fallback(tool_name: str, params: dict):
     try:
         return await call_tool_with_retry(tool_name, params)
     except Exception:
-        # 降级到备选工具
         fallback_map = {
             "search_web": "search_knowledge_base",
             "query_primary_db": "query_cache_db"
@@ -244,45 +221,41 @@ async def call_tool_with_fallback(tool_name: str, params: dict):
 
 ---
 
-### 5. CrewAI 的 Task/Agent/Tool 设计
+## 五、CrewAI 的 Task/Agent/Tool 设计
 
-#### CrewAI 核心概念
+### CrewAI 核心概念
 
 ```
 Crew (团队)
-  ├── Agent (角色)
-  │     ├── role: 角色描述
-  │     ├── goal: 目标
-  │     ├── backstory: 背景故事
-  │     └── tools: 可用工具列表
-  ├── Task (任务)
-  │     ├── description: 任务描述
-  │     ├── agent: 执行者
-  │     ├── expected_output: 预期输出
-  │     └── output_file: 输出文件
-  └── Process (流程)
-        └── sequential / hierarchical
+  |-- Agent (角色)
+  |     |-- role: 角色描述
+  |     |-- goal: 目标
+  |     |-- backstory: 背景故事
+  |     |-- tools: 可用工具列表
+  |-- Task (任务)
+  |     |-- description: 任务描述
+  |     |-- agent: 执行者
+  |     |-- expected_output: 预期输出
+  |     |-- output_file: 输出文件
+  |-- Process (流程)
+        |-- sequential / hierarchical
 ```
 
-#### 实战示例：市场调研 Agent
+### 实战示例：市场调研 Agent
 
 ```python
 from crewai import Agent, Task, Crew, Process
 from crewai_tools import SerperDevTool, ScrapeWebsiteTool
 
-# 定义工具
 search_tool = SerperDevTool()
 scrape_tool = ScrapeWebsiteTool()
 
-# 定义 Agent
 researcher = Agent(
     role="市场研究员",
     goal="收集并整理指定行业的市场数据和趋势",
     backstory="你是一名拥有15年经验的市场研究员，擅长数据分析和趋势预测",
     tools=[search_tool, scrape_tool],
-    verbose=True,
-    max_iter=5,
-    llm="qwen-plus"
+    verbose=True, max_iter=5, llm="qwen-plus"
 )
 
 analyst = Agent(
@@ -290,21 +263,16 @@ analyst = Agent(
     goal="对市场数据进行深度分析，生成可视化洞察",
     backstory="你是一名资深数据分析师，擅长从数据中发现商业价值",
     tools=[search_tool],
-    verbose=True,
-    max_iter=3,
-    llm="qwen-plus"
+    verbose=True, max_iter=3, llm="qwen-plus"
 )
 
 writer = Agent(
     role="报告撰写员",
     goal="将分析结果整理成专业的市场调研报告",
     backstory="你是一名技术写作专家，擅长将复杂信息转化为清晰的报告",
-    verbose=True,
-    max_iter=3,
-    llm="qwen-plus"
+    verbose=True, max_iter=3, llm="qwen-plus"
 )
 
-# 定义任务
 research_task = Task(
     description="调研{topic}行业的市场规模、主要玩家、发展趋势",
     agent=researcher,
@@ -323,7 +291,6 @@ report_task = Task(
     expected_output="格式规范的PDF报告，包含图表和建议"
 )
 
-# 组建团队
 crew = Crew(
     agents=[researcher, analyst, writer],
     tasks=[research_task, analysis_task, report_task],
@@ -331,15 +298,14 @@ crew = Crew(
     verbose=True
 )
 
-# 执行
 result = crew.kickoff(inputs={"topic": "中国AI大模型"})
 ```
 
 ---
 
-### 6. API 封装成工具
+## 六、API 封装成工具
 
-#### 封装模板
+### 封装模板
 
 ```python
 from crewai.tools import BaseTool
@@ -367,7 +333,7 @@ class WeatherTool(BaseTool):
             return f"查询失败：{str(e)}"
 ```
 
-#### 封装要点
+### 封装要点
 
 - 工具名称使用动词+名词格式（如 search_web, query_database）
 - description 简洁明确，说明功能和限制
@@ -377,9 +343,7 @@ class WeatherTool(BaseTool):
 
 ---
 
-## 实战项目
-
-### 项目：市场调研 Agent 系统
+## 七、实战项目：市场调研 Agent 系统
 
 **目标**：使用 CrewAI 实现一个自动化的市场调研系统。
 
@@ -393,31 +357,9 @@ class WeatherTool(BaseTool):
 
 ---
 
-## 练习题
+## 练习题（待完成）
 
-### 概念题
-
-1. 解释 Function Calling 的完整流程（从用户请求到最终回答）。
-2. 工具 Schema 设计中，为什么 description 字段如此重要？
-3. CrewAI 中 sequential 和 hierarchical 两种流程模式有什么区别？
-
-### 实践题
-
-1. 设计一个"数据分析工具"的 Schema，支持 SQL 查询、数据聚合和图表生成。
-2. 使用 CrewAI 搭建一个"技术调研 Agent"，包含技术搜索、代码验证和报告生成三个角色。
-3. 为上述系统实现工具调用的异常处理，包含重试和降级机制。
-
----
-
-## 小结
-
-本讲学习了工具调用与 CrewAI 实战。关键要点：
-
-- Function Calling 是 Agent 与外部世界交互的核心机制
-- 工具 Schema 设计直接影响 LLM 的工具选择准确性
-- 工具链编排要考虑串行、并行和条件三种模式
-- 异常处理必须包含重试、降级和超时三个维度
-- CrewAI 适合快速搭建角色驱动的 Multi-Agent 系统
-- API 封装要注意超时、异常处理和敏感信息保护
-
-下一讲将学习 Prompt 精调与模型优化，提升 Agent 的输出质量。
+- [ ] 练习1：设计一个"数据分析工具"的 Schema，支持 SQL 查询、数据聚合和图表生成
+- [ ] 练习2：使用 CrewAI 搭建一个"技术调研 Agent"，包含技术搜索、代码验证和报告生成三个角色
+- [ ] 练习3：为上述系统实现工具调用的异常处理，包含重试和降级机制
+- [ ] 练习4：对比 CrewAI 的 sequential 和 hierarchical 两种流程模式的效果差异

@@ -1,25 +1,19 @@
-# 第五讲：Prompt 精调与模型优化
+# 第 5 讲：Prompt 精调与模型优化
 
-> 阶段目标：提升 Agent 的输出质量和稳定性，掌握从 Prompt 工程到模型精调的完整优化路径。
+## 核心结论（6 条必记）
 
-## 学习目标
-
-- 掌握 System Prompt 设计的最佳实践
-- 学会构造有效的 Few-shot 示例
-- 理解 Chain of Thought 的引导技巧
-- 能控制 Agent 的输出格式
-- 建立 Prompt 版本管理体系
-- 了解 SFT 数据集构造方法
-- 掌握国产模型替代 GPT 的策略
-- 学会进行 A/B 测试验证优化效果
+1. **System Prompt 是 Agent 行为的基础约束** -- 必须包含角色定义、行为规则、输出格式、示例和边界处理五部分
+2. **Few-shot 示例要精而全** -- 3-5 个覆盖正常、边界、异常三种情况，过多反而分散注意力
+3. **CoT 能显著提升推理质量，但要控制 Token 消耗** -- 显式 CoT 直接要求推理，隐式 CoT 通过示例引导
+4. **输出格式控制有多种手段** -- Prompt 指定 Schema < response_format 参数 < Pydantic 校验 + 自动重试
+5. **Prompt 需要版本管理，每次变更记录效果指标** -- 像代码一样管理 Prompt，支持回滚和对比
+6. **国产模型替代的关键是建立模型抽象层** -- 按任务复杂度分级路由，灰度切换，降级回退
 
 ---
 
-## 核心内容
+## 一、System Prompt 设计
 
-### 1. System Prompt 设计
-
-#### 设计原则
+### 设计原则
 
 - **角色定义**：明确 Agent 的身份和职责
 - **行为约束**：规定 Agent 能做什么、不能做什么
@@ -27,7 +21,7 @@
 - **示例引导**：提供正确行为的示例
 - **异常处理**：说明遇到不确定情况时的处理方式
 
-#### 模板结构
+### 模板结构
 
 ```
 # 角色定义
@@ -56,7 +50,7 @@
 - 如果检测到潜在风险，添加 warning 字段
 ```
 
-#### 反面案例
+### 反面案例
 
 ```markdown
 # 不好的 Prompt
@@ -67,16 +61,16 @@
 
 ---
 
-### 2. Few-shot 示例构造
+## 二、Few-shot 示例构造
 
-#### 示例选择原则
+### 示例选择原则
 
 - **代表性**：覆盖主要输入类型的典型场景
 - **多样性**：包含正常、边界、异常三种情况
 - **简洁性**：示例不宜过长，每个示例聚焦一个要点
 - **数量控制**：3-5 个示例通常效果最佳
 
-#### 构造方法
+### 构造方法
 
 ```python
 few_shot_examples = [
@@ -109,7 +103,7 @@ few_shot_examples = [
 ]
 ```
 
-#### 动态 Few-shot
+### 动态 Few-shot
 
 根据输入内容动态选择最相关的示例：
 
@@ -127,9 +121,9 @@ def select_few_shot_examples(query: str, examples: list, top_k: int = 3):
 
 ---
 
-### 3. Chain of Thought 引导
+## 三、Chain of Thought 引导
 
-#### 显式 CoT
+### 显式 CoT
 
 直接要求 LLM 展示推理过程：
 
@@ -147,7 +141,7 @@ prompt = """
 """
 ```
 
-#### 隐式 CoT
+### 隐式 CoT
 
 通过示例展示推理过程，不显式要求：
 
@@ -163,7 +157,7 @@ examples = """
 """
 ```
 
-#### 自洽性检查 (Self-Consistency)
+### 自洽性检查 (Self-Consistency)
 
 多次生成推理链，取出现次数最多的结论：
 
@@ -175,7 +169,6 @@ def self_consistency_check(question: str, n_samples: int = 5):
         conclusion = extract_conclusion(reasoning)
         results.append(conclusion)
 
-    # 取出现次数最多的结论
     from collections import Counter
     most_common = Counter(results).most_common(1)[0]
     return most_common[0], most_common[1] / n_samples
@@ -183,9 +176,9 @@ def self_consistency_check(question: str, n_samples: int = 5):
 
 ---
 
-### 4. 输出格式控制
+## 四、输出格式控制
 
-#### JSON 输出
+### JSON 输出
 
 ```python
 # 方式一：Prompt 中指定 JSON Schema
@@ -201,7 +194,7 @@ prompt = """
 仅输出 JSON，不要包含其他内容。
 """
 
-# 方式二：使用 response_format 参数（支持的结构化输出）
+# 方式二：使用 response_format 参数
 response = client.chat.completions.create(
     model="qwen-plus",
     messages=messages,
@@ -229,9 +222,9 @@ def get_structured_output(prompt: str, max_retries: int = 3):
 
 ---
 
-### 5. Prompt 版本管理
+## 五、Prompt 版本管理
 
-#### 版本管理方案
+### 版本管理方案
 
 ```python
 # prompt_registry.py
@@ -258,7 +251,7 @@ def get_prompt(name: str, version: str = "latest"):
     return PROMPTS[key]
 ```
 
-#### Prompt 变更日志
+### Prompt 变更日志
 
 | 版本 | 日期 | 变更内容 | 效果变化 |
 |------|------|---------|---------|
@@ -268,16 +261,16 @@ def get_prompt(name: str, version: str = "latest"):
 
 ---
 
-### 6. SFT 数据集构造
+## 六、SFT 数据集构造
 
-#### 何时需要 SFT
+### 何时需要 SFT
 
 - Prompt 工程已达瓶颈，优化空间有限
 - 需要特定领域的专业输出风格
 - 需要稳定输出特定格式
 - 需要显著降低推理成本（小模型+精调 > 大模型+Prompt）
 
-#### 数据集构造流程
+### 数据集构造流程
 
 ```
 1. 收集种子数据（100-500条高质量输入输出对）
@@ -287,7 +280,7 @@ def get_prompt(name: str, version: str = "latest"):
 5. 训练集/验证集划分（8:2）
 ```
 
-#### 数据格式
+### 数据格式
 
 ```json
 {
@@ -299,9 +292,9 @@ def get_prompt(name: str, version: str = "latest"):
 
 ---
 
-### 7. 国产模型替代 GPT
+## 七、国产模型替代 GPT
 
-#### 替代策略
+### 替代策略
 
 ```
 1. 模型抽象层：封装统一的模型调用接口
@@ -310,7 +303,7 @@ def get_prompt(name: str, version: str = "latest"):
 4. 回退机制：国产模型不可用时回退到备用模型
 ```
 
-#### 模型抽象层实现
+### 模型抽象层实现
 
 ```python
 class ModelProvider:
@@ -331,19 +324,19 @@ class ModelProvider:
 
     def _route(self, tier: str) -> str:
         routing = {
-            "premium": "openai",      # 高质量场景用 GPT
-            "standard": "qwen",       # 通用场景用通义
-            "economy": "deepseek",    # 经济场景用 DeepSeek
-            "code": "deepseek"        # 代码场景用 DeepSeek
+            "premium": "openai",
+            "standard": "qwen",
+            "economy": "deepseek",
+            "code": "deepseek"
         }
         return routing.get(tier, self.default_provider)
 ```
 
 ---
 
-### 8. A/B 测试
+## 八、A/B 测试
 
-#### 测试设计
+### 测试设计
 
 ```python
 import random
@@ -365,7 +358,6 @@ def ab_test_prompt(prompt_a: str, prompt_b: str, test_cases: list, sample_ratio:
             "score": score
         })
 
-    # 统计分析
     avg_a = sum(r["score"] for r in results["a"]) / len(results["a"])
     avg_b = sum(r["score"] for r in results["b"]) / len(results["b"])
 
@@ -377,7 +369,7 @@ def ab_test_prompt(prompt_a: str, prompt_b: str, test_cases: list, sample_ratio:
     }
 ```
 
-#### 评估指标
+### 评估指标
 
 | 指标 | 说明 | 计算方式 |
 |------|------|---------|
@@ -389,9 +381,7 @@ def ab_test_prompt(prompt_a: str, prompt_b: str, test_cases: list, sample_ratio:
 
 ---
 
-## 实战项目
-
-### 项目：文案 Agent Prompt 优化
+## 九、实战项目：文案 Agent Prompt 优化
 
 **目标**：通过系统化的 Prompt 优化，将文案 Agent 的输出质量从 70 分提升到 85 分。
 
@@ -405,31 +395,9 @@ def ab_test_prompt(prompt_a: str, prompt_b: str, test_cases: list, sample_ratio:
 
 ---
 
-## 练习题
+## 练习题（待完成）
 
-### 概念题
-
-1. System Prompt 设计中，为什么需要"异常处理"部分？
-2. Few-shot 示例数量过多会有什么问题？
-3. 什么情况下应该考虑 SFT 而不是继续优化 Prompt？
-
-### 实践题
-
-1. 为"代码审查 Agent"设计一个完整的 System Prompt。
-2. 构造 5 个 Few-shot 示例，覆盖正常、边界和异常场景。
-3. 设计一个 A/B 测试方案，对比两个 Prompt 版本的效果。
-
----
-
-## 小结
-
-本讲学习了 Prompt 精调与模型优化的完整路径。关键要点：
-
-- System Prompt 是 Agent 行为的基础约束，需要包含角色、规则、格式和异常处理
-- Few-shot 示例要精而全，3-5 个覆盖主要场景
-- CoT 能显著提升推理质量，但要控制 Token 消耗
-- 输出格式控制有多种手段，生产环境推荐 Pydantic 校验
-- Prompt 需要版本管理，每次变更记录效果指标
-- 国产模型替代的关键是建立模型抽象层
-
-下一讲将学习可观测性与调试，让 Agent 系统变得"可追踪"。
+- [ ] 练习1：为"代码审查 Agent"设计一个完整的 System Prompt
+- [ ] 练习2：构造 5 个 Few-shot 示例，覆盖正常、边界和异常场景
+- [ ] 练习3：设计一个 A/B 测试方案，对比两个 Prompt 版本的效果
+- [ ] 练习4：实现模型抽象层，支持按任务复杂度路由到不同模型
