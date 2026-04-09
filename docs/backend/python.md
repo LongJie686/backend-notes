@@ -992,3 +992,885 @@ pre-commit run --all-files  # 手动运行
 - 新项目、API 服务 → **FastAPI**
 - 内容管理、后台系统 → **Django**
 - 小型脚本、简单服务 → **Flask**
+
+---
+
+## 十五、高频面试题
+
+### 1. 浅拷贝 vs 深拷贝
+
+**核心区别：** 浅拷贝复制第一层引用，深拷贝递归复制所有层级。
+
+```python
+import copy
+
+original = {"name": "张三", "scores": [90, 85, 92], "info": {"age": 25}}
+```
+
+```python
+# === 赋值（不是拷贝） ===
+ref = original
+ref["name"] = "李四"
+print(original["name"])  # "李四" —— 原对象也被改了
+```
+
+```python
+# === 浅拷贝（copy.copy / dict() / list() / [:]） ===
+original = {"name": "张三", "scores": [90, 85, 92], "info": {"age": 25}}
+
+shallow = original.copy()
+shallow["name"] = "李四"            # 第一层：不影响原对象
+shallow["scores"].append(88)        # 第二层：影响原对象！
+shallow["info"]["age"] = 30         # 第二层：影响原对象！
+
+print(original["name"])             # "张三"（第一层独立）
+print(original["scores"])           # [90, 85, 92, 88]（嵌套对象共享引用）
+print(original["info"]["age"])      # 30（嵌套对象共享引用）
+```
+
+```python
+# === 深拷贝（copy.deepcopy） ===
+original = {"name": "张三", "scores": [90, 85, 92], "info": {"age": 25}}
+
+deep = copy.deepcopy(original)
+deep["scores"].append(88)
+deep["info"]["age"] = 30
+
+print(original["scores"])           # [90, 85, 92]（完全独立）
+print(original["info"]["age"])      # 25（完全独立）
+```
+
+**对比表：**
+
+| 操作 | 第一层 | 嵌套层 | 适用场景 |
+|------|--------|--------|---------|
+| `=` 赋值 | 共享引用 | 共享引用 | 不需要副本 |
+| `copy()` 浅拷贝 | 独立副本 | 共享引用 | 嵌套结构只读、单层结构 |
+| `deepcopy()` 深拷贝 | 独立副本 | 独立副本 | 需要完全独立的副本 |
+
+**性能：** `deepcopy` 比 `copy` 慢得多（需要递归遍历），能用浅拷贝就不要用深拷贝。
+
+**常见浅拷贝方式：**
+
+```python
+# 列表
+new_list = old_list[:]
+new_list = list(old_list)
+new_list = old_list.copy()
+
+# 字典
+new_dict = old_dict.copy()
+new_dict = dict(old_dict)
+
+# 集合
+new_set = old_set.copy()
+new_set = set(old_set)
+```
+
+---
+
+### 2. 可变对象与不可变对象
+
+**不可变（immutable）：** int, float, str, tuple, frozenset, bytes -- 修改时创建新对象
+**可变（mutable）：** list, dict, set -- 修改时原地修改
+
+```python
+# 字符串（不可变）：每次拼接都创建新对象
+s = "hello"
+print(id(s))          # 14023456
+s += " world"
+print(id(s))          # 14056789 —— 不同对象！
+
+# 列表（可变）：原地修改
+lst = [1, 2, 3]
+print(id(lst))        # 14023456
+lst.append(4)
+print(id(lst))        # 14023456 —— 同一个对象！
+```
+
+**面试高频陷阱 -- 函数默认参数：**
+
+```python
+# 错误：默认参数在函数定义时创建，所有调用共享同一个对象
+def append_item(item, cache=[]):
+    cache.append(item)
+    return cache
+
+print(append_item(1))   # [1]
+print(append_item(2))   # [1, 2]  —— 坑！上一次的结果还在
+print(append_item(3))   # [1, 2, 3]
+
+# 正确：用 None 作为默认值
+def append_item(item, cache=None):
+    if cache is None:
+        cache = []
+    cache.append(item)
+    return cache
+```
+
+**面试高频陷阱 -- 元组里的可变对象：**
+
+```python
+t = ([1, 2], [3, 4])
+t[0].append(3)       # 可以修改！元组存的是引用，引用没变
+print(t)             # ([1, 2, 3], [3, 4])
+
+t[0] = [10, 20]      # TypeError: 'tuple' object does not support item assignment
+                      # 不能替换引用本身
+```
+
+---
+
+### 3. == 与 is 的区别
+
+```python
+# == 比较值（__eq__），is 比较内存地址（id）
+a = [1, 2, 3]
+b = [1, 2, 3]
+
+print(a == b)    # True  —— 值相等
+print(a is b)    # False —— 不同对象（不同内存地址）
+
+# 小整数池 [-5, 256]：同一值指向同一对象
+x = 256
+y = 256
+print(x is y)    # True
+
+x = 257
+y = 257
+print(x is y)    # False（超出小整数池范围）
+
+# 字符串驻留：编译期确定的短字符串会驻留
+s1 = "hello"
+s2 = "hello"
+print(s1 is s2)  # True
+
+s1 = "hello!" + "world"
+s2 = "hello!world"
+print(s1 is s2)  # 可能 True（编译期合并）
+
+s1 = "hello!"
+s2 = "hello!"
+print(s1 is s2)  # 可能 False（含特殊字符可能不驻留）
+```
+
+**面试回答要点：**
+- `==` 调用 `__eq__` 方法，比较值
+- `is` 比较 `id()` 返回的内存地址
+- 判断单例用 `is`（如 `if x is None`），比较值用 `==`
+- 小整数池和字符串驻留是 CPython 的优化，不应依赖
+
+---
+
+### 4. 装饰器深入
+
+#### 4.1 装饰器的本质
+
+装饰器是**语法糖**，`@decorator` 等价于 `func = decorator(func)`。
+
+```python
+@timer
+def process():
+    pass
+
+# 等价于
+process = timer(process)
+```
+
+#### 4.2 functools.wraps 为什么必须加
+
+```python
+# 不加 wraps：被装饰函数的元信息丢失
+def bad_decorator(func):
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+    return wrapper
+
+@bad_decorator
+def my_function():
+    """这是文档字符串"""
+    pass
+
+print(my_function.__name__)    # "wrapper" —— 丢了！
+print(my_function.__doc__)     # None —— 丢了！
+
+# 加 wraps：保留元信息
+import functools
+
+def good_decorator(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+    return wrapper
+
+@good_decorator
+def my_function():
+    """这是文档字符串"""
+    pass
+
+print(my_function.__name__)    # "my_function"
+print(my_function.__doc__)     # "这是文档字符串"
+```
+
+#### 4.3 类装饰器
+
+```python
+class Singleton:
+    """单例装饰器"""
+    def __init__(self, cls):
+        self._cls = cls
+        self._instance = None
+
+    def __call__(self, *args, **kwargs):
+        if self._instance is None:
+            self._instance = self._cls(*args, **kwargs)
+        return self._instance
+
+@Singleton
+class Database:
+    def __init__(self, url):
+        self.url = url
+
+db1 = Database("postgresql://host1")
+db2 = Database("postgresql://host2")  # 忽略，返回 db1
+print(db1 is db2)  # True
+print(db1.url)     # "postgresql://host1"
+```
+
+#### 4.4 常见装饰器使用场景
+
+| 装饰器 | 场景 |
+|--------|------|
+| `@lru_cache` | 缓存计算结果（递归、数据库查询） |
+| `@property` | 把方法当属性用（计算属性、延迟加载） |
+| `@staticmethod` | 不需要 self 的工具方法 |
+| `@classmethod` | 工厂方法、替代构造函数 |
+| `@retry` | 接口调用重试 |
+| `@timer` | 性能计时 |
+| `@require_auth` | 权限校验 |
+| `@validate` | 参数校验 |
+
+---
+
+### 5. 线程、进程、协程的选用
+
+#### 5.1 三者对比
+
+| 维度 | 多线程 | 多进程 | 协程 |
+|------|--------|--------|------|
+| 并行方式 | 并发（受 GIL 限制） | 真正并行 | 并发（单线程） |
+| 切换开销 | 中（OS 调度） | 大（进程创建+内存复制） | 极小（用户态切换） |
+| 内存 | 共享地址空间 | 各自独立 | 共享（单线程） |
+| GIL 影响 | 受限 | 不受（各进程独立 GIL） | 不受 |
+| 数据安全 | 需要锁（Lock） | 天然隔离（IPC 通信） | 天然安全（无并发写） |
+| 适用场景 | IO 密集型（适中并发） | CPU 密集型 | IO 密集型（极高并发） |
+
+#### 5.2 什么时候用多线程
+
+```python
+# 场景：中等并发的 IO 操作（文件读写、数据库查询、HTTP 请求）
+# 并发量：几十到几百
+import threading
+import requests
+
+def download(url: str) -> bytes:
+    return requests.get(url).content
+
+urls = ["https://example.com/1", "https://example.com/2", ...]
+
+threads = []
+for url in urls:
+    t = threading.Thread(target=download, args=(url,))
+    t.start()
+    threads.append(t)
+
+for t in threads:
+    t.join()
+```
+
+**特点：** 代码简单，但受 GIL 限制不能真正并行 CPU 任务。线程间共享数据需要加锁。
+
+#### 5.3 什么时候用多进程
+
+```python
+# 场景：CPU 密集型计算（数据处理、图像处理、科学计算）
+# 充分利用多核 CPU
+from concurrent.futures import ProcessPoolExecutor
+
+def process_image(image_path: str) -> dict:
+    """CPU 密集：图像处理"""
+    from PIL import Image
+    img = Image.open(image_path)
+    img = img.resize((224, 224))
+    # ... 复杂计算
+    return {"path": image_path, "result": "..."}
+
+image_paths = ["img1.jpg", "img2.jpg", ...]
+
+with ProcessPoolExecutor(max_workers=4) as executor:
+    results = list(executor.map(process_image, image_paths))
+```
+
+**特点：** 真正的多核并行。但进程创建开销大，进程间通信需要序列化（pickle），不能共享内存对象。
+
+#### 5.4 什么时候用协程
+
+```python
+# 场景：极高并发 IO 操作（API 网关、爬虫、WebSocket 服务）
+# 并发量：数千到数万
+import asyncio
+import aiohttp
+
+async def fetch(session, url):
+    async with session.get(url) as resp:
+        return await resp.text()
+
+async def main():
+    urls = [f"https://api.example.com/data/{i}" for i in range(1000)]
+    async with aiohttp.ClientSession() as session:
+        tasks = [fetch(session, url) for url in urls]
+        # Semaphore 控制并发数，避免压垮对方服务器
+        sem = asyncio.Semaphore(50)
+        async def fetch_with_sem(url):
+            async with sem:
+                return await fetch(session, url)
+        results = await asyncio.gather(*[fetch_with_sem(u) for u in urls])
+
+asyncio.run(main())
+```
+
+**特点：** 单线程、极低开销、万级并发。但所有代码必须是 async/await 链，不能混用阻塞调用。
+
+#### 5.5 混合方案：进程池 + 协程
+
+```python
+# 场景：既有 CPU 密集计算，又有高并发 IO
+import asyncio
+from concurrent.futures import ProcessPoolExecutor
+
+async def handle_request(data):
+    loop = asyncio.get_event_loop()
+    # CPU 密集任务丢到进程池
+    with ProcessPoolExecutor() as pool:
+        result = await loop.run_in_executor(pool, cpu_heavy_task, data)
+    # IO 操作用协程
+    await save_to_db(result)
+    return result
+```
+
+#### 5.6 决策树
+
+```
+任务类型？
+├── CPU 密集型（计算、图像处理、加密）
+│   └── 多进程（multiprocessing / ProcessPoolExecutor）
+├── IO 密集型
+│   ├── 并发量 < 100
+│   │   └── 多线程（threading / ThreadPoolExecutor）
+│   └── 并发量 >= 1000
+│       └── 协程（asyncio）
+└── 混合型（CPU + IO）
+    └── 进程池 + 协程（ProcessPoolExecutor + asyncio）
+```
+
+---
+
+### 6. Python 性能优化
+
+#### 6.1 字符串拼接
+
+```python
+import time
+
+items = [str(i) for i in range(100000)]
+
+# 慢：+ 拼接（每次创建新字符串对象）
+start = time.time()
+result = ""
+for item in items:
+    result += item
+print(f"+ 拼接: {time.time() - start:.3f}s")     # ~0.03s
+
+# 快：join（一次性分配内存）
+start = time.time()
+result = "".join(items)
+print(f"join: {time.time() - start:.3f}s")        # ~0.003s（快 10 倍）
+```
+
+#### 6.2 列表推导式 vs for 循环
+
+```python
+import time
+
+# 慢：append 循环
+start = time.time()
+result = []
+for i in range(1000000):
+    result.append(i * 2)
+print(f"for + append: {time.time() - start:.3f}s")  # ~0.08s
+
+# 快：列表推导式（底层 C 实现，少了一次函数调用）
+start = time.time()
+result = [i * 2 for i in range(1000000)]
+print(f"列表推导式: {time.time() - start:.3f}s")    # ~0.05s
+
+# 更快：生成器表达式（不占内存，适合大数据量）
+total = sum(i * 2 for i in range(1000000))
+```
+
+#### 6.3 字典查找 vs 列表查找
+
+```python
+# O(1) vs O(n)
+data_dict = {i: f"value_{i}" for i in range(100000)}
+data_list = [f"value_{i}" for i in range(100000)]
+
+# 字典查找：O(1)，哈希表
+if 99999 in data_dict:     # 极快
+    pass
+
+# 列表查找：O(n)，逐个遍历
+if "value_99999" in data_list:  # 慢
+    pass
+```
+
+#### 6.4 避免全局变量查找
+
+```python
+import math
+
+# 慢：每次循环都查找全局 math.sqrt
+def compute_slow(numbers):
+    result = []
+    for n in numbers:
+        result.append(math.sqrt(n))
+    return result
+
+# 快：局部变量缓存（局部变量查找比全局快）
+def compute_fast(numbers):
+    sqrt = math.sqrt       # 缓存到局部变量
+    result = []
+    for n in numbers:
+        result.append(sqrt(n))
+    return result
+```
+
+#### 6.5 使用内置函数和标准库
+
+```python
+# 慢：手动循环
+total = 0
+for n in numbers:
+    total += n
+
+# 快：内置 sum（C 实现）
+total = sum(numbers)
+
+# 慢：手动排序
+# 快：内置 sorted / list.sort（Timsort，O(n log n)）
+sorted_list = sorted(numbers)
+
+# 慢：手动实现
+# 快：itertools（C 实现的迭代器工具）
+from itertools import chain, groupby, islice
+```
+
+#### 6.6 懒加载与生成器
+
+```python
+# 内存爆炸：一次性加载所有数据
+all_data = [process(line) for line in read_huge_file()]  # 几 GB 内存
+
+# 内存友好：生成器逐条处理
+def process_lines(filepath):
+    with open(filepath) as f:
+        for line in f:
+            yield process(line)
+
+for item in process_lines("huge.csv"):
+    save_to_db(item)  # 内存占用恒定
+```
+
+#### 6.7 缓存计算结果
+
+```python
+from functools import lru_cache
+
+# 斐波那契：无缓存 O(2^n)，有缓存 O(n)
+@lru_cache(maxsize=None)
+def fibonacci(n):
+    if n < 2:
+        return n
+    return fibonacci(n - 1) + fibonacci(n - 2)
+
+# API 响应缓存
+@lru_cache(maxsize=128)
+def get_user_config(user_id: int) -> dict:
+    """5 分钟内重复查询直接返回缓存"""
+    return db.query("SELECT config FROM users WHERE id = %s", user_id)
+```
+
+#### 6.8 性能优化检查清单
+
+| 优化手段 | 效果 | 适用场景 |
+|----------|------|---------|
+| `str.join` 替代 `+` | 快 5-10 倍 | 大量字符串拼接 |
+| 列表推导式替代 `for+append` | 快 20-30% | 列表构建 |
+| 字典/集合查找替代列表查找 | O(1) vs O(n) | 频繁查找 |
+| 局部变量替代全局变量 | 快 20-30% | 循环内频繁调用 |
+| 生成器替代列表 | 省内存 | 大数据量处理 |
+| `lru_cache` | 避免重复计算 | 纯函数、DB 查询 |
+| 多进程 | 利用多核 | CPU 密集型 |
+| 协程 | 万级并发 | IO 密集型 |
+| C 扩展 / Cython | 10-100 倍 | 性能瓶颈热点 |
+
+---
+
+### 7. GIL 常见追问
+
+**Q：Python 3.13 的 no-GIL 是怎么回事？**
+
+Python 3.13 引入实验性的 free-threaded 模式（PEP 703），可以关闭 GIL。通过 `--disable-gil` 编译或设置环境变量 `PYTHON_GIL=0` 启用。目前是实验阶段，很多第三方库还未适配。
+
+**Q：GIL 什么时候释放？**
+
+- IO 操作（网络请求、文件读写）时自动释放
+- `time.sleep()` 时释放
+- C 扩展代码中可手动释放（如 NumPy 的计算）
+- 每执行一定数量字节码后检查是否需要切换线程（check interval）
+
+**Q：多线程在 Python 中完全没用吗？**
+
+不是。IO 密集型场景（HTTP 请求、数据库查询、文件操作）多线程依然有效，因为 IO 等待时 GIL 会释放，其他线程可以执行。只有 CPU 密集型的多线程才受 GIL 限制。
+
+---
+
+### 8. Python 内存管理
+
+#### 8.1 引用计数（主要机制）
+
+```python
+import sys
+
+a = [1, 2, 3]
+print(sys.getrefcount(a))  # 2（a 本身 + getrefcount 参数）
+
+b = a          # 引用计数 +1
+print(sys.getrefcount(a))  # 3
+
+del b          # 引用计数 -1
+print(sys.getrefcount(a))  # 2
+```
+
+#### 8.2 循环引用与垃圾回收
+
+```python
+# 引用计数无法处理循环引用
+class Node:
+    def __init__(self):
+        self.ref = None
+
+a = Node()
+b = Node()
+a.ref = b    # a → b
+b.ref = a    # b → a（循环引用）
+
+del a, b     # 引用计数不为 0，但对象已不可达
+# Python 的分代垃圾回收器会检测并回收循环引用
+```
+
+**分代回收：**
+- 第 0 代：新创建的对象（频繁扫描）
+- 第 1 代：存活过一次 GC 的对象
+- 第 2 代：存活过两次 GC 的对象（很少扫描）
+
+```python
+import gc
+
+gc.get_threshold()    # (700, 10, 10)：第 0 代阈值 700，第 1/2 代各 10 次
+gc.collect()          # 手动触发垃圾回收
+gc.disable()          # 禁用自动 GC（性能敏感场景）
+```
+
+#### 8.3 内存泄漏常见原因
+
+```python
+# 1. 全局列表/字典持续增长
+_cache = {}
+def process(key, value):
+    _cache[key] = value  # 只增不删 → 内存泄漏
+
+# 正确：使用 LRU 缓存或定期清理
+from functools import lru_cache
+
+# 2. 闭包持有大对象引用
+def create_handler():
+    big_data = load_huge_data()  # 100MB
+    def handler():
+        return len(big_data)     # 闭包持有 big_data 引用
+    return handler               # handler 存活 → big_data 不释放
+
+# 3. __del__ 导致循环引用无法回收
+class Bad:
+    def __del__(self):
+        pass  # 有 __del__ 的循环引用对象在 Python < 3.4 无法被 GC 回收
+
+# 4. 模块级缓存
+import module
+module.cache[key] = value  # 模块级缓存不会被回收
+```
+
+---
+
+### 9. 常用魔术方法
+
+```python
+class Vector:
+    """向量类 -- 演示常用魔术方法"""
+
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    # 对象表示
+    def __repr__(self):
+        return f"Vector({self.x}, {self.y})"
+
+    def __str__(self):
+        return f"({self.x}, {self.y})"
+
+    # 比较操作
+    def __eq__(self, other):
+        return self.x == other.x and self.y == other.y
+
+    def __lt__(self, other):
+        return self.length() < other.length()
+
+    # 算术运算
+    def __add__(self, other):
+        return Vector(self.x + other.x, self.y + other.y)
+
+    def __sub__(self, other):
+        return Vector(self.x - other.x, self.y - other.y)
+
+    def __mul__(self, scalar):
+        return Vector(self.x * scalar, self.y * scalar)
+
+    # 长度和布尔
+    def __len__(self):
+        return int(self.length())
+
+    def __bool__(self):
+        return self.x != 0 or self.y != 0
+
+    # 可调用
+    def __call__(self, scale=1):
+        return Vector(self.x * scale, self.y * scale)
+
+    # 下标访问
+    def __getitem__(self, index):
+        if index == 0: return self.x
+        if index == 1: return self.y
+        raise IndexError
+
+    # 迭代
+    def __iter__(self):
+        yield self.x
+        yield self.y
+
+    def length(self):
+        return (self.x ** 2 + self.y ** 2) ** 0.5
+
+
+v1 = Vector(3, 4)
+v2 = Vector(1, 2)
+
+print(v1 + v2)          # Vector(4, 6)  __add__
+print(v1 * 2)           # Vector(6, 8)  __mul__
+print(v1 == Vector(3,4))# True          __eq__
+print(v1[0])            # 3             __getitem__
+print(list(v1))         # [3, 4]        __iter__
+print(bool(v1))         # True          __bool__
+```
+
+**分类速查：**
+
+| 类别 | 魔术方法 | 触发方式 |
+|------|---------|---------|
+| 构造/销毁 | `__init__`, `__del__`, `__new__` | 创建/销毁对象 |
+| 字符串表示 | `__str__`, `__repr__` | `str()`, `print()`, `repr()` |
+| 比较 | `__eq__`, `__lt__`, `__gt__`, `__le__` | `==`, `<`, `>`, `<=` |
+| 算术 | `__add__`, `__sub__`, `__mul__` | `+`, `-`, `*` |
+| 容器 | `__len__`, `__getitem__`, `__setitem__`, `__contains__` | `len()`, `[]`, `in` |
+| 迭代 | `__iter__`, `__next__` | `for x in obj` |
+| 可调用 | `__call__` | `obj()` |
+| 上下文管理 | `__enter__`, `__exit__` | `with obj:` |
+| 属性访问 | `__getattr__`, `__setattr__`, `__getattribute__` | `obj.attr` |
+
+---
+
+### 10. Python 中的设计模式
+
+#### 10.1 单例模式
+
+```python
+# 方法 1：模块级变量（最简单，推荐）
+# config.py
+class _Config:
+    debug = False
+    db_url = ""
+
+config = _Config()  # 模块只加载一次，天然单例
+
+# 方法 2：元类
+class SingletonMeta(type):
+    _instance = None
+    def __call__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__call__(*args, **kwargs)
+        return cls._instance
+
+class Database(metaclass=SingletonMeta):
+    def __init__(self, url):
+        self.url = url
+```
+
+#### 10.2 工厂模式
+
+```python
+from abc import ABC, abstractmethod
+from enum import Enum
+
+class NotificationType(Enum):
+    EMAIL = "email"
+    SMS = "sms"
+    PUSH = "push"
+
+class Notification(ABC):
+    @abstractmethod
+    def send(self, message: str) -> bool:
+        pass
+
+class EmailNotification(Notification):
+    def send(self, message: str) -> bool:
+        print(f"发送邮件: {message}")
+        return True
+
+class SmsNotification(Notification):
+    def send(self, message: str) -> bool:
+        print(f"发送短信: {message}")
+        return True
+
+class NotificationFactory:
+    _registry = {
+        NotificationType.EMAIL: EmailNotification,
+        NotificationType.SMS: SmsNotification,
+    }
+
+    @classmethod
+    def create(cls, type: NotificationType) -> Notification:
+        handler = cls._registry.get(type)
+        if not handler:
+            raise ValueError(f"不支持的通知类型: {type}")
+        return handler()
+
+# 使用
+notify = NotificationFactory.create(NotificationType.EMAIL)
+notify.send("欢迎注册")
+```
+
+#### 10.3 策略模式
+
+```python
+from typing import Protocol
+
+class PricingStrategy(Protocol):
+    def calculate(self, price: float) -> float: ...
+
+class RegularPricing:
+    def calculate(self, price: float) -> float:
+        return price
+
+class VIPPricing:
+    def calculate(self, price: float) -> float:
+        return price * 0.8
+
+class DiscountPricing:
+    def __init__(self, discount: float):
+        self.discount = discount
+
+    def calculate(self, price: float) -> float:
+        return price * self.discount
+
+class Order:
+    def __init__(self, price: float, strategy: PricingStrategy):
+        self.price = price
+        self.strategy = strategy
+
+    def final_price(self) -> float:
+        return self.strategy.calculate(self.price)
+
+# 运行时切换策略
+order = Order(100, RegularPricing())
+print(order.final_price())    # 100
+
+order.strategy = VIPPricing()
+print(order.final_price())    # 80
+```
+
+---
+
+### 11. Python 3.10+ 新特性面试要点
+
+#### 11.1 match-case（结构化模式匹配）
+
+```python
+# Python 3.10+
+def handle_command(command):
+    match command.split():
+        case ["quit"]:
+            return "退出"
+        case ["go", direction]:
+            return f"前往 {direction}"
+        case ["attack", target, *rest]:
+            return f"攻击 {target}，参数: {rest}"
+        case _:
+            return "未知命令"
+```
+
+#### 11.2 类型联合语法
+
+```python
+# Python 3.10+ 用 X | Y 替代 Union[X, Y]
+def process(value: str | int) -> str:
+    ...
+
+# Optional[X] → X | None
+def find(id: int) -> dict | None:
+    ...
+```
+
+#### 11.3 ExceptionGroup
+
+```python
+# Python 3.11+：批量处理异常
+exceptions = []
+for task in tasks:
+    try:
+        task.run()
+    except Exception as e:
+        exceptions.append(e)
+
+if exceptions:
+    raise ExceptionGroup("任务执行失败", exceptions)
+```
+
+#### 11.4 更好的错误提示
+
+```python
+# Python 3.11+ 错误提示更精确
+# 旧：SyntaxError: invalid syntax
+# 新：SyntaxError: '(' was never closed
+
+# 异常链回溯更清晰，标注准确行号
+```
