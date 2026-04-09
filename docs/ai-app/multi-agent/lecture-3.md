@@ -1,22 +1,18 @@
-# 第三讲：RAG 知识管理实战
+# 第 3 讲：RAG 知识管理实战
 
-> 阶段目标：掌握 RAG 全流程，能独立搭建企业级知识库问答系统。
+## 核心结论（5 条必记）
 
-## 学习目标
-
-- 掌握文档加载与解析的常用方法
-- 理解不同文本切片策略的优劣
-- 能选择合适的 Embedding 模型和向量数据库
-- 掌握多种检索策略及其组合使用
-- 学会处理长文本和知识库更新
+1. **文档解析要保留元数据** -- 便于后续过滤和溯源，每个文档片段都应携带来源、页码、日期等信息
+2. **递归字符切片是大多数场景的最佳选择** -- chunk_size=500 是通用起点，overlap 设为 10% 防止语义断裂
+3. **中文场景优先使用 bge/M3E 系列模型** -- bge-large-zh-v1.5 本地部署，gte-Qwen2 性价比高
+4. **混合检索 + Rerank 是当前精度最高的检索方案** -- 向量检索捕获语义，BM25 捕获关键词，Rerank 精排
+5. **知识库需要建立增量更新和版本管理机制** -- 文档指纹法识别变更，按版本管理集合，支持灰度切换
 
 ---
 
-## 核心内容
+## 一、文档加载与解析
 
-### 1. 文档加载与解析
-
-#### 支持的文档格式
+### 支持的文档格式
 
 | 格式 | 加载工具 | 注意事项 |
 |------|---------|---------|
@@ -27,7 +23,7 @@
 | CSV/Excel | pandas / LangChain DataFrameLoader | 结构化数据处理 |
 | PPT | python-pptx / Unstructured | 提取文本和备注 |
 
-#### 文档加载最佳实践
+### 文档加载最佳实践
 
 ```python
 from langchain_community.document_loaders import (
@@ -50,7 +46,7 @@ loader = DirectoryLoader(
 documents = loader.load()
 ```
 
-#### 元数据管理
+### 元数据管理
 
 每个文档片段都应携带元数据，便于后续过滤和溯源：
 
@@ -68,9 +64,9 @@ metadata = {
 
 ---
 
-### 2. 文本切片策略
+## 二、文本切片策略
 
-#### 切片策略对比
+### 切片策略对比
 
 | 策略 | 原理 | 优点 | 缺点 | 适用场景 |
 |------|------|------|------|---------|
@@ -79,14 +75,14 @@ metadata = {
 | 语义切片 | 基于语义相似度切割 | 语义完整 | 计算成本高 | 高精度场景 |
 | 文档结构 | 按标题/章节切割 | 保留文档结构 | 依赖文档格式 | 结构化文档 |
 
-#### 推荐配置
+### 推荐配置
 
 ```python
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,          # 每个切片的目标大小
-    chunk_overlap=50,        # 相邻切片的重叠部分
+    chunk_size=500,
+    chunk_overlap=50,
     separators=["\n\n", "\n", "。", "！", "？", ".", " ", ""],
     length_function=len,
     keep_separator=True
@@ -95,7 +91,7 @@ splitter = RecursiveCharacterTextSplitter(
 chunks = splitter.split_documents(documents)
 ```
 
-#### 切片大小的选择
+### 切片大小的选择
 
 - **200-300 字符**：问答场景，需要精准匹配
 - **500-800 字符**：通用场景，平衡精度和上下文
@@ -103,9 +99,9 @@ chunks = splitter.split_documents(documents)
 
 ---
 
-### 3. Embedding 模型选择
+## 三、Embedding 模型选择
 
-#### 模型对比
+### 模型对比
 
 | 模型 | 维度 | 中文支持 | 性能 | 部署方式 |
 |------|------|---------|------|---------|
@@ -116,7 +112,7 @@ chunks = splitter.split_documents(documents)
 | bce-embedding-base | 768 | 优秀 | 中 | 本地 |
 | gte-Qwen2 | 1536 | 优秀 | 高 | 本地/API |
 
-#### 选择建议
+### 选择建议
 
 - **内部系统、数据敏感**：本地部署 bge-large-zh-v1.5
 - **追求效果、预算充足**：OpenAI text-embedding-3-large
@@ -125,7 +121,6 @@ chunks = splitter.split_documents(documents)
 ```python
 from langchain_community.embeddings import HuggingFaceEmbeddings
 
-# 本地部署中文 Embedding 模型
 embeddings = HuggingFaceEmbeddings(
     model_name="BAAI/bge-large-zh-v1.5",
     model_kwargs={"device": "cuda"},
@@ -135,9 +130,9 @@ embeddings = HuggingFaceEmbeddings(
 
 ---
 
-### 4. 向量数据库搭建
+## 四、向量数据库搭建
 
-#### 向量数据库选型
+### 向量数据库选型
 
 | 数据库 | 特点 | 适用场景 | 部署难度 |
 |--------|------|---------|---------|
@@ -147,16 +142,14 @@ embeddings = HuggingFaceEmbeddings(
 | Milvus | 分布式、高可用 | 大规模生产 | 高 |
 | Weaviate | 混合检索、GraphQL | 多模态场景 | 中 |
 
-#### 使用 Qdrant 搭建向量库
+### 使用 Qdrant 搭建向量库
 
 ```python
 from langchain_community.vectorstores import Qdrant
 from qdrant_client import QdrantClient
 
-# 连接 Qdrant
 client = QdrantClient(url="http://localhost:6333")
 
-# 创建向量存储
 vectorstore = Qdrant.from_documents(
     documents=chunks,
     embedding=embeddings,
@@ -168,9 +161,9 @@ vectorstore = Qdrant.from_documents(
 
 ---
 
-### 5. 检索策略
+## 五、检索策略
 
-#### 基础检索：Top-K
+### 基础检索：Top-K
 
 返回与查询最相似的 K 个文档片段。
 
@@ -178,11 +171,11 @@ vectorstore = Qdrant.from_documents(
 results = vectorstore.similarity_search(
     query="什么是RAG？",
     k=5,
-    filter={"department": "技术部"}  # 支持元数据过滤
+    filter={"department": "技术部"}
 )
 ```
 
-#### 多样性检索：MMR (Maximal Marginal Relevance)
+### 多样性检索：MMR (Maximal Marginal Relevance)
 
 在相关性和多样性之间取平衡，减少重复内容。
 
@@ -190,12 +183,12 @@ results = vectorstore.similarity_search(
 results = vectorstore.max_marginal_relevance_search(
     query="什么是RAG？",
     k=5,
-    fetch_k=20,       # 先召回20个候选
+    fetch_k=20,
     lambda_mult=0.7   # 0=最大多样性，1=最大相关性
 )
 ```
 
-#### 混合检索：向量 + 关键词
+### 混合检索：向量 + 关键词
 
 结合语义检索和关键词匹配，提升召回率。
 
@@ -203,20 +196,16 @@ results = vectorstore.max_marginal_relevance_search(
 from langchain.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
 
-# 语义检索
 vector_retriever = vectorstore.as_retriever(search_kwargs={"k": 10})
-
-# 关键词检索
 bm25_retriever = BM25Retriever.from_documents(chunks, k=10)
 
-# 混合检索
 ensemble_retriever = EnsembleRetriever(
     retrievers=[vector_retriever, bm25_retriever],
-    weights=[0.7, 0.3]  # 语义检索权重更高
+    weights=[0.7, 0.3]
 )
 ```
 
-#### Rerank 重排序
+### Rerank 重排序
 
 使用 Cross-Encoder 对初筛结果进行精排。
 
@@ -224,7 +213,6 @@ ensemble_retriever = EnsembleRetriever(
 from langchain.retrievers import ContextualCompressionRetriever
 from langchain_cohere import CohereRerank
 
-# 使用 Rerank 模型精排
 compressor = CohereRerank(top_n=5)
 compression_retriever = ContextualCompressionRetriever(
     base_compressor=compressor,
@@ -232,7 +220,7 @@ compression_retriever = ContextualCompressionRetriever(
 )
 ```
 
-#### 检索策略选择
+### 检索策略选择
 
 ```
 简单场景 -> Top-K (k=5)
@@ -243,9 +231,9 @@ compression_retriever = ContextualCompressionRetriever(
 
 ---
 
-### 6. 长文本处理
+## 六、长文本处理
 
-#### Map-Reduce 策略
+### Map-Reduce 策略
 
 将长文本分成多个片段，分别处理后合并。
 
@@ -253,20 +241,7 @@ compression_retriever = ContextualCompressionRetriever(
 文档 -> 切片 -> 每个切片独立生成摘要 -> 合并所有摘要 -> 最终摘要
 ```
 
-```python
-from langchain.chains.summarize import load_summarize_chain
-
-chain = load_summarize_chain(
-    llm=llm,
-    chain_type="map_reduce",
-    map_prompt=map_prompt,
-    combine_prompt=combine_prompt,
-    return_intermediate_steps=True
-)
-result = chain.invoke({"input_documents": long_documents})
-```
-
-#### Refine 策略
+### Refine 策略
 
 逐步精炼，每一步基于已有结果和新片段进行优化。
 
@@ -274,7 +249,7 @@ result = chain.invoke({"input_documents": long_documents})
 片段1 -> 摘要1 -> (摘要1 + 片段2) -> 摘要2 -> ... -> 最终摘要
 ```
 
-#### 策略选择
+### 策略选择
 
 | 策略 | 优点 | 缺点 | 适用场景 |
 |------|------|------|---------|
@@ -284,12 +259,11 @@ result = chain.invoke({"input_documents": long_documents})
 
 ---
 
-### 7. 知识库更新管理
+## 七、知识库更新管理
 
-#### 增量更新策略
+### 增量更新策略
 
 ```python
-# 文档指纹法：计算文档 hash，只处理新增/变更的文档
 import hashlib
 
 def get_doc_hash(content: str) -> str:
@@ -299,27 +273,22 @@ def update_knowledge_base(new_docs, existing_hashes):
     for doc in new_docs:
         doc_hash = get_doc_hash(doc.page_content)
         if doc_hash not in existing_hashes:
-            # 新文档：切片 -> Embedding -> 入库
             chunks = splitter.split_documents([doc])
             vectorstore.add_documents(chunks)
             existing_hashes.add(doc_hash)
 ```
 
-#### 版本管理
+### 版本管理
 
 ```python
-# 按版本管理知识库
 collection_version = "v2_20240301"
 collection_name = f"knowledge_base_{collection_version}"
-
 # 灰度切换：新旧版本并行，逐步切流
 ```
 
 ---
 
-## 实战项目
-
-### 项目：企业知识库问答系统
+## 八、实战项目：企业知识库问答系统
 
 **目标**：搭建一个支持多文档格式的知识库问答系统。
 
@@ -339,30 +308,9 @@ collection_name = f"knowledge_base_{collection_version}"
 
 ---
 
-## 练习题
+## 练习题（待完成）
 
-### 概念题
-
-1. 解释 Top-K、MMR、Rerank 三种检索策略的原理和适用场景。
-2. 为什么需要在切片时设置 overlap？overlap 大小如何选择？
-3. 混合检索中，向量检索和 BM25 检索的权重如何确定？
-
-### 实践题
-
-1. 使用 LangChain 搭建一个完整的 RAG 管道，从文档加载到检索回答。
-2. 对比 chunk_size=200 和 chunk_size=800 的检索效果差异。
-3. 实现增量更新功能，能自动识别新增和变更的文档。
-
----
-
-## 小结
-
-本讲学习了 RAG 知识管理的完整流程。关键要点：
-
-- 文档解析要注意保留元数据，便于后续过滤和溯源
-- 递归字符切片是大多数场景的最佳选择，chunk_size=500 是通用起点
-- 中文场景优先使用 bge/M3E 系列模型
-- 混合检索 + Rerank 是当前精度最高的检索方案
-- 知识库需要建立增量更新和版本管理机制
-
-下一讲将学习工具调用与 CrewAI 实战，让 Agent 拥有"执行力"。
+- [ ] 练习1：使用 LangChain 搭建一个完整的 RAG 管道，从文档加载到检索回答
+- [ ] 练习2：对比 chunk_size=200 和 chunk_size=800 的检索效果差异
+- [ ] 练习3：实现增量更新功能，能自动识别新增和变更的文档
+- [ ] 练习4：对比 Top-K、MMR、混合检索三种策略在同一测试集上的准确率
