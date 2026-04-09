@@ -186,6 +186,7 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "database/mysql-notes/lecture-6.md.tmp.27708.1775718821387",
     "high-concurrency/lecture-1.md",
     "high-concurrency/index.md",
     "high-concurrency",
@@ -212,7 +213,6 @@
     "ai-app/multi-agent/lecture-1.md",
     "ai-app/llm-dev/lecture-2.md",
     "ai-app/llm-dev/lecture-1.md",
-    "ai-app/llm-dev/index.md",
     "ai-app/llm-dev",
     "ai-app/multi-agent",
     "architecture",

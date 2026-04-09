@@ -1,60 +1,60 @@
-# Collaborative Filtering
+# 协同过滤
 
-## Core Idea
+## 核心思想
 
-> Users who agreed in the past will agree in the future.
+> 过去有相似偏好的用户，未来也会有相似的偏好。
 
-## User-based CF
+## 基于用户的协同过滤
 
-1. Find similar users (cosine similarity / Pearson correlation)
-2. Predict rating = weighted average of similar users' ratings
-3. Recommend top-N items
+1. 找到相似用户（余弦相似度 / 皮尔逊相关系数）
+2. 预测评分 = 相似用户评分的加权平均
+3. 推荐评分最高的 Top-N 物品
 
 ```
 sim(u, v) = cos(r_u, r_v) = (r_u . r_v) / (|r_u| * |r_v|)
 ```
 
-## Item-based CF
+## 基于物品的协同过滤
 
-1. Find similar items based on user behavior
-2. User's historical preference + item similarity -> predict
+1. 根据用户行为找到相似物品
+2. 用户历史偏好 + 物品相似度 -> 预测评分
 
-Amazon uses this approach.
+亚马逊采用的就是这种方法。
 
-## Matrix Factorization
+## 矩阵分解
 
-Decompose user-item matrix R into:
+将用户-物品评分矩阵 R 分解为：
 
 ```
 R ≈ P * Q^T
 ```
 
-- P: user latent factor matrix (m x k)
-- Q: item latent factor matrix (n x k)
-- k: latent dimension
+- P: 用户隐因子矩阵（m x k）
+- Q: 物品隐因子矩阵（n x k）
+- k: 隐特征维度
 
-### SGD Training
+### SGD 训练
 
 ```python
 for epoch in range(epochs):
     for u, i, r in ratings:
-        pred = P[u] @ Q[i]
-        error = r - pred
-        P[u] += lr * (error * Q[i] - reg * P[u])
-        Q[i] += lr * (error * P[u] - reg * Q[i])
+        pred = P[u] @ Q[i]       # 预测评分
+        error = r - pred          # 计算误差
+        P[u] += lr * (error * Q[i] - reg * P[u])  # 更新用户向量
+        Q[i] += lr * (error * P[u] - reg * Q[i])  # 更新物品向量
 ```
 
-## Evaluation Metrics
+## 评估指标
 
-| Metric | Description |
-|--------|-------------|
-| RMSE | Root Mean Square Error |
-| Precision@K | Relevance ratio in top-K |
-| Recall@K | Coverage of relevant items |
-| NDCG@K | Position-weighted relevance |
-| Hit Rate | At least one hit in top-K |
+| 指标 | 说明 |
+|------|------|
+| RMSE | 均方根误差，衡量预测评分的准确性 |
+| Precision@K | Top-K 推荐中相关物品的比例 |
+| Recall@K | Top-K 推荐覆盖的相关物品比例 |
+| NDCG@K | 考虑位置权重的相关性指标 |
+| Hit Rate | Top-K 中至少命中一个的比例 |
 
-## Cold Start Solutions
+## 冷启动方案
 
-- New User: Popularity-based / content-based bootstrap
-- New Item: Content features / ask for initial ratings
+- 新用户：基于热门推荐 / 基于内容的冷启动
+- 新物品：利用内容特征 / 引导用户初始评分

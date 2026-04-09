@@ -1,14 +1,14 @@
-# Python
+# Python 后端开发
 
-## Core Concepts
+## 核心概念
 
-### GIL (Global Interpreter Lock)
+### GIL 全局解释器锁
 
 - CPython 的全局解释器锁，同一时刻只有一个线程执行 Python 字节码
 - CPU 密集型任务：用 `multiprocessing` 绕过 GIL
 - IO 密集型任务：用 `asyncio` 或多线程
 
-### Type Hints
+### 类型提示
 
 ```python
 from typing import Optional, List
@@ -21,7 +21,7 @@ def search_users(
     ...
 ```
 
-### Asyncio
+### 异步编程
 
 ```python
 import asyncio
@@ -33,9 +33,9 @@ async def fetch(url: str) -> str:
             return await resp.text()
 ```
 
-## Common Patterns
+## 常用模式
 
-### Context Manager
+### 上下文管理器
 
 ```python
 from contextlib import contextmanager
@@ -48,7 +48,7 @@ def timer(name: str):
     print(f"{name}: {time.time() - start:.2f}s")
 ```
 
-### Dataclass
+### 数据类
 
 ```python
 from dataclasses import dataclass, field
