@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "mcp__filesystem__directory_tree",
-      "Bash(find \"E:/Project/Aprint/code/yw_crm-master/yw_crm-master/yw_crm/rbac\" -name \"*.py\" -exec wc -l {} \\\\;)"
+      "mcp__filesystem__create_directory",
+      "mcp__filesystem__write_file",
+      "Bash(curl -s \"https://api.github.com/users/LongJie686/repos?sort=updated&per_page=30&type=all\")",
+      "Bash(python -c ':*)"
     ]
   }
 }
