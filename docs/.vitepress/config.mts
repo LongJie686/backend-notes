@@ -1,8 +1,8 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
-  title: "LongJie's Knowledge Base",
-  description: 'Backend / Recommend System / AI',
+  title: "LongJie 的知识库",
+  description: '后端 / 推荐系统 / AI',
   lang: 'zh-CN',
   base: '/backend-notes/',
 
@@ -10,52 +10,53 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
-      { text: 'Home', link: '/' },
-      { text: 'Backend', link: '/backend/python' },
-      { text: 'Database', link: '/database/mysql' },
-      { text: 'Recommend', link: '/recommend-system/collaborative-filtering' },
+      { text: '首页', link: '/' },
+      { text: '后端', link: '/backend/python' },
+      { text: '数据库', link: '/database/mysql' },
+      { text: '推荐系统', link: '/recommend-system/collaborative-filtering' },
       { text: 'AI', link: '/ai-app/llm' },
-      { text: 'Microservice', link: '/microservice/' },
-      { text: 'Architecture', link: '/architecture/' }
+      { text: '微服务', link: '/microservice/' },
+      { text: '架构设计', link: '/architecture/' },
+      { text: '高并发', link: '/high-concurrency/' }
     ],
 
     sidebar: [
       {
-        text: 'Backend',
+        text: '后端',
         items: [
           { text: 'Python', link: '/backend/python' },
-          { text: 'Network', link: '/backend/network' }
+          { text: '网络基础', link: '/backend/network' }
         ]
       },
       {
-        text: 'Database',
+        text: '数据库',
         items: [
           { text: 'MySQL', link: '/database/mysql' },
           {
-            text: 'MySQL Study Notes',
+            text: 'MySQL 学习笔记',
             collapsed: true,
             items: [
-              { text: 'L1: Table Design', link: '/database/mysql-notes/lecture-1' },
-              { text: 'L2: Index', link: '/database/mysql-notes/lecture-2' },
-              { text: 'L3: Transaction', link: '/database/mysql-notes/lecture-3' },
-              { text: 'L4: Isolation', link: '/database/mysql-notes/lecture-4' },
+              { text: 'L1: 表设计', link: '/database/mysql-notes/lecture-1' },
+              { text: 'L2: 索引', link: '/database/mysql-notes/lecture-2' },
+              { text: 'L3: 事务', link: '/database/mysql-notes/lecture-3' },
+              { text: 'L4: 隔离级别', link: '/database/mysql-notes/lecture-4' },
               { text: 'L5: MVCC', link: '/database/mysql-notes/lecture-5' },
-              { text: 'L6: Lock', link: '/database/mysql-notes/lecture-6' }
+              { text: 'L6: 锁机制', link: '/database/mysql-notes/lecture-6' }
             ]
           },
           { text: 'Redis', link: '/database/redis' }
         ]
       },
       {
-        text: 'Recommend System',
+        text: '推荐系统',
         items: [
-          { text: 'Collaborative Filtering', link: '/recommend-system/collaborative-filtering' }
+          { text: '协同过滤', link: '/recommend-system/collaborative-filtering' }
         ]
       },
       {
-        text: 'AI App',
+        text: 'AI 应用',
         items: [
-          { text: 'LLM', link: '/ai-app/llm' },
+          { text: 'LLM 概述', link: '/ai-app/llm' },
           {
             text: 'Agent 架构分析',
             collapsed: true,
@@ -133,8 +134,8 @@ export default defineConfig({
     ],
 
     footer: {
-      message: 'Built with VitePress',
-      copyright: 'MIT License'
+      message: '基于 VitePress 构建',
+      copyright: 'MIT 许可证'
     }
   }
 })
