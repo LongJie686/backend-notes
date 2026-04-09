@@ -1,14 +1,14 @@
-# Network
+# 网络基础
 
 ## TCP/IP
 
-### Three-way Handshake
+### 三次握手
 
 1. Client -> SYN -> Server
 2. Server -> SYN+ACK -> Client
 3. Client -> ACK -> Server
 
-### Four-way Wave
+### 四次挥手
 
 1. Client -> FIN -> Server
 2. Server -> ACK -> Client
@@ -17,30 +17,30 @@
 
 ## HTTP
 
-### HTTP/1.1 vs HTTP/2 vs HTTP/3
+### HTTP 版本对比
 
-| Feature | HTTP/1.1 | HTTP/2 | HTTP/3 |
-|---------|----------|--------|--------|
-| Multiplexing | No | Yes | Yes |
-| Header Compression | No | HPACK | QPACK |
-| Transport | TCP | TCP | QUIC(UDP) |
-| Head-of-line Blocking | TCP level | TCP level | None |
+| 特性 | HTTP/1.1 | HTTP/2 | HTTP/3 |
+|------|----------|--------|--------|
+| 多路复用 | 否 | 是 | 是 |
+| 头部压缩 | 否 | HPACK | QPACK |
+| 传输层 | TCP | TCP | QUIC(UDP) |
+| 队头阻塞 | TCP 层 | TCP 层 | 无 |
 
-### Status Codes
+### 状态码
 
-- 200: OK
-- 301: Moved Permanently
-- 304: Not Modified
-- 400: Bad Request
-- 401: Unauthorized
-- 403: Forbidden
-- 404: Not Found
-- 500: Internal Server Error
-- 502: Bad Gateway
-- 503: Service Unavailable
+- 200: 请求成功
+- 301: 永久重定向
+- 304: 未修改（缓存命中）
+- 400: 请求参数错误
+- 401: 未认证
+- 403: 无权限访问
+- 404: 资源不存在
+- 500: 服务器内部错误
+- 502: 网关错误
+- 503: 服务不可用
 
 ## HTTPS
 
-- TLS handshake: asymmetric encryption for key exchange
-- Data transfer: symmetric encryption (AES)
-- Certificate chain verification
+- TLS 握手：使用非对称加密交换密钥
+- 数据传输：使用对称加密（AES）
+- 证书链验证确保身份可信

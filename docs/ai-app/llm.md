@@ -1,46 +1,46 @@
-# LLM (Large Language Model)
+# 大语言模型（LLM）
 
-## Architecture Overview
+## 架构概览
 
-- Transformer: Self-Attention + Feed-Forward
-- Decoder-only: GPT series
-- Encoder-Decoder: T5, BART
+- Transformer: Self-Attention + 前馈网络
+- Decoder-only: GPT 系列
+- Encoder-Decoder: T5、BART
 
-## Key Concepts
+## 核心概念
 
-### Tokenization
+### 分词
 
-- BPE (Byte Pair Encoding): GPT uses this
-- SentencePiece: Language-agnostic
-- Roughly: 1 token ~ 4 chars (English) or ~ 1.5 chars (Chinese)
+- BPE（Byte Pair Encoding）: GPT 使用此方法
+- SentencePiece: 与语言无关的分词器
+- 粗略估算: 1 token 约 4 个英文字符 或 约 1.5 个中文字符
 
-### Context Window
+### 上下文窗口
 
-| Model | Context Length |
-|-------|---------------|
+| 模型 | 上下文长度 |
+|------|-----------|
 | GPT-4o | 128K |
 | Claude 3.5 Sonnet | 200K |
 | Gemini 1.5 Pro | 1M |
 
-### Temperature
+### 温度参数
 
-- 0: Deterministic output
-- 0.7: Balanced creativity
-- 1.0+: More random / creative
+- 0: 确定性输出
+- 0.7: 创造性与准确性的平衡
+- 1.0+: 更随机 / 更有创造力
 
-## Prompt Engineering
+## Prompt 工程
 
-### Core Patterns
+### 核心模式
 
-1. **Zero-shot**: Direct instruction
-2. **Few-shot**: Provide examples
-3. **Chain-of-Thought**: Step-by-step reasoning
-4. **ReAct**: Reason + Act loop
+1. **Zero-shot**: 直接给出指令
+2. **Few-shot**: 提供示例
+3. **Chain-of-Thought**: 逐步推理
+4. **ReAct**: 推理 + 行动循环
 
-### Example: Few-shot Classification
+### 示例：Few-shot 分类
 
 ```
-Classify the sentiment:
+分类情感倾向：
 
 Text: "This product is amazing!" -> Positive
 Text: "Terrible experience" -> Negative
@@ -48,51 +48,51 @@ Text: "It's okay, nothing special" -> Neutral
 Text: "{user_input}" ->
 ```
 
-## RAG (Retrieval-Augmented Generation)
+## RAG 检索增强生成
 
 ```
-User Query
-    -> Embedding
-    -> Vector DB Search
-    -> Context + Query
-    -> LLM
-    -> Response
+用户提问
+    -> 向量化（Embedding）
+    -> 向量数据库检索
+    -> 上下文 + 问题
+    -> LLM 生成
+    -> 响应
 ```
 
-### Key Components
+### 核心组件
 
-1. Document chunking strategy
-2. Embedding model selection
-3. Vector database (Milvus / Pinecone / Chroma)
-4. Reranking
-5. Prompt template design
+1. 文档分块策略
+2. Embedding 模型选择
+3. 向量数据库（Milvus / Pinecone / Chroma）
+4. 重排序（Reranking）
+5. Prompt 模板设计
 
-## Agent
+## Agent 智能体
 
-### Core Loop
+### 核心循环
 
 ```
 while not done:
-    1. Observe: Read environment/tool output
-    2. Think: LLM reasoning
-    3. Act: Call tool / respond
+    1. 观察: 读取环境/工具输出
+    2. 思考: LLM 推理
+    3. 行动: 调用工具 / 返回响应
 ```
 
-### Tool Use
+### 工具调用
 
 ```python
 tools = [
-    {"name": "search", "description": "Search the web"},
-    {"name": "calculator", "description": "Do math"},
+    {"name": "search", "description": "搜索网页"},
+    {"name": "calculator", "description": "数学计算"},
 ]
 
-# LLM decides which tool to call with what arguments
+# LLM 根据上下文决定调用哪个工具及参数
 ```
 
-## Fine-tuning vs RAG vs Prompt
+## 微调 vs RAG vs Prompt
 
-| Approach | Cost | Latency | Knowledge Update |
-|----------|------|---------|-----------------|
-| Prompt Engineering | Low | Fast | Real-time |
-| RAG | Medium | Medium | Real-time (update DB) |
-| Fine-tuning | High | Fast | Retrain needed |
+| 方式 | 成本 | 延迟 | 知识更新 |
+|------|------|------|----------|
+| Prompt 工程 | 低 | 快 | 实时 |
+| RAG | 中 | 中 | 实时（更新数据库） |
+| 微调 | 高 | 快 | 需要重新训练 |
