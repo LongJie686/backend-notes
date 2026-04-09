@@ -29,7 +29,8 @@ export default defineConfig({
           { text: 'Django', link: '/backend/django' },
           { text: 'Flask', link: '/backend/flask' },
           { text: 'WebSocket', link: '/backend/websocket' },
-          { text: '网络基础', link: '/backend/network' }
+          { text: '网络基础', link: '/backend/network' },
+          { text: 'RBAC 权限系统', link: '/backend/rbac' }
         ]
       },
       {
