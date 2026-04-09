@@ -50,6 +50,8 @@ export default defineConfig({
             ]
           },
           { text: 'Redis', link: '/database/redis' },
+          { text: 'PostgreSQL', link: '/database/postgres' },
+          { text: 'SQLite', link: '/database/sqlite' },
           { text: 'pgvector', link: '/database/pgvector' }
         ]
       },
@@ -179,6 +181,17 @@ export default defineConfig({
           { text: 'Flume', link: '/big-data/flume' },
           { text: 'Spark', link: '/big-data/spark' },
           { text: 'MapReduce', link: '/big-data/mapreduce' }
+        ]
+      },
+      {
+        text: '数据分析',
+        collapsed: true,
+        items: [
+          { text: '学习路线', link: '/data-analysis/' },
+          { text: '数据获取', link: '/data-analysis/data-acquisition' },
+          { text: '数据预处理', link: '/data-analysis/preprocessing' },
+          { text: '数据可视化', link: '/data-analysis/visualization' },
+          { text: '图像处理', link: '/data-analysis/image-processing' }
         ]
       }
     ],

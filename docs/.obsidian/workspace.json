@@ -186,6 +186,13 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "database/sqlite.md",
+    "database/postgres.md",
+    "data-analysis/image-processing.md",
+    "data-analysis/visualization.md",
+    "data-analysis/preprocessing.md",
+    "data-analysis/data-acquisition.md",
+    "data-analysis/index.md",
     "data-analysis",
     "ai-app/skills/index.md",
     "ai-app/skills",
@@ -213,14 +220,7 @@
     "database/mysql-notes/lecture-7.md",
     "database/mysql-notes/lecture-6.md.tmp.27708.1775718821387",
     "high-concurrency/lecture-1.md",
-    "high-concurrency/index.md",
     "high-concurrency",
-    "architecture/lecture-1.md",
-    "ai-app/multi-agent/interview.md",
-    "ai-app/multi-agent/pitfalls.md",
-    "ai-app/multi-agent/lecture-9.md",
-    "ai-app/llm-dev/exercises.md",
-    "ai-app/llm-dev",
-    "ai-app/multi-agent"
+    "ai-app/llm-dev"
   ]
 }
