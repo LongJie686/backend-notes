@@ -112,8 +112,17 @@ export default defineConfig({
       },
       {
         text: 'Architecture',
+        collapsed: true,
         items: [
-          { text: 'Learning Roadmap', link: '/architecture/' }
+          { text: 'Learning Roadmap', link: '/architecture/' },
+          { text: 'L1: What Is Architecture', link: '/architecture/lecture-1' }
+        ]
+      },
+      {
+        text: 'High Concurrency',
+        collapsed: true,
+        items: [
+          { text: 'Learning Roadmap', link: '/high-concurrency/' }
         ]
       }
     ],
