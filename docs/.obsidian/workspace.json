@@ -186,6 +186,7 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "backend/jwt.md",
     "engineering/osgb-3dtiles.md",
     "engineering/snmp-iperf.md",
     "backend/rbac.md",
@@ -213,7 +214,6 @@
     "backend/django.md",
     "backend/fastapi.md",
     "ai-app/voice-interaction/index.md",
-    "ai-app/mcp/index.md",
     "big-data",
     "engineering",
     "ai-app/voice-interaction",

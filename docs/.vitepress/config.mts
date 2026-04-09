@@ -30,7 +30,8 @@ export default defineConfig({
           { text: 'Flask', link: '/backend/flask' },
           { text: 'WebSocket', link: '/backend/websocket' },
           { text: '网络基础', link: '/backend/network' },
-          { text: 'RBAC 权限系统', link: '/backend/rbac' }
+          { text: 'RBAC 权限系统', link: '/backend/rbac' },
+          { text: 'JWT 权限管理', link: '/backend/jwt' }
         ]
       },
       {
