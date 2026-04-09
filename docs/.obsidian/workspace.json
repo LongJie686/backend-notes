@@ -186,6 +186,7 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "high-concurrency/lecture-1.md",
     "high-concurrency/index.md",
     "high-concurrency",
     "architecture/lecture-1.md",
@@ -212,7 +213,6 @@
     "ai-app/llm-dev/lecture-2.md",
     "ai-app/llm-dev/lecture-1.md",
     "ai-app/llm-dev/index.md",
-    "ai-app/multi-agent/index.md",
     "ai-app/llm-dev",
     "ai-app/multi-agent",
     "architecture",
