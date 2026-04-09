@@ -6,7 +6,9 @@
       "mcp__filesystem__write_file",
       "Bash(curl -s \"https://api.github.com/users/LongJie686/repos?sort=updated&per_page=30&type=all\")",
       "Bash(python -c ':*)",
-      "Bash(curl -s \"https://api.github.com/users/LongJie686/repos?sort=updated&per_page=100\")"
+      "Bash(curl -s \"https://api.github.com/users/LongJie686/repos?sort=updated&per_page=100\")",
+      "mcp__github__create_repository",
+      "Bash(gh auth:*)"
     ]
   }
 }
