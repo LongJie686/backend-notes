@@ -1,43 +1,39 @@
 # 大模型应用一站式开发
 
-从原理到工程化，系统掌握大模型应用开发全链路。本学习路线覆盖 Transformer 基础、Prompt 工程、RAG 系统、Agent 编排、模型微调、部署运维等核心模块，帮助你建立完整的 LLM 应用开发知识体系。
-
-适合有 Python 基础的后端/全栈开发者，按照路线学习可在 3-4 个月内具备独立设计和交付大模型应用的能力。
+> 系统掌握大模型应用全链路开发能力，从原理到实战，从 Demo 到生产。
 
 ## 能力图谱
 
-- **基础原理** -- 理解 Transformer 架构、Token 机制、生成参数，掌握主流模型 API 调用
-- **Prompt 工程** -- 掌握结构化提示词设计、高级推理模式、输出控制与安全防御
-- **RAG 系统** -- 从文档处理到向量检索，构建高质量的知识增强生成系统
-- **Agent 编排** -- 理解 Function Calling、ReAct 范式，掌握多 Agent 协作架构
-- **对话系统** -- 多轮对话管理、情感分析，完成情感机器人实战项目
-- **模型微调** -- LoRA/QLoRA 实践、数据集准备、量化部署，让模型适配你的业务
-- **工程部署** -- Docker 容器化、推理服务、监控告警、CI/CD，从原型到生产
-- **安全进阶** -- Prompt 注入防御、内容审核、数据隐私、多模态扩展与 AI 原生设计
+| 模块 | 核心能力 |
+|------|----------|
+| 基础原理 | Transformer、Tokenizer、生成参数、Embedding |
+| Prompt Engineering | 结构化设计、CoT、Few-shot、注入防御 |
+| RAG 系统 | 文档切分、Embedding、向量数据库、混合检索、重排序 |
+| Agent 编排 | Function Calling、ReAct、多Agent协作、记忆系统 |
+| 多轮对话 | 上下文管理、状态机、情感分析、敏感过滤 |
+| 模型微调 | LoRA/QLoRA、SFT、RLHF、量化部署 |
+| 工程化部署 | Docker、推理服务、监控告警、成本控制 |
+| 安全合规 | 注入防御、内容审核、数据隐私、评估体系 |
 
 ## 学习计划
 
-| 阶段 | 内容 | 时长 |
+| 阶段 | 内容 | 周数 |
 |------|------|------|
-| 第一阶段 | 大模型基础原理与 API 调用 | 第 1-2 周 |
-| 第二阶段 | Prompt Engineering 深度实践 | 第 3-4 周 |
-| 第三阶段 | RAG 系统设计与实现 | 第 5-7 周 |
-| 第四阶段 | Agent 编排与工具调用 | 第 8-9 周 |
-| 第五阶段 | 多轮对话与情感机器人项目 | 第 10-11 周 |
-| 第六阶段 | 模型微调与优化 | 第 12 周 |
-| 第七阶段 | 工程化部署与运维 | 第 13-14 周 |
-| 第八阶段 | 安全合规与架构进阶 | 持续学习 |
+| [L1: 大模型基础原理](/ai-app/llm-dev/lecture-1) | Transformer、API调用、Token计算 | 1-2周 |
+| [L2: Prompt Engineering](/ai-app/llm-dev/lecture-2) | 结构化Prompt、CoT、注入防御 | 3-4周 |
+| [L3: RAG系统设计](/ai-app/llm-dev/lecture-3) | 切分、Embedding、向量库、混合检索 | 5-7周 |
+| [L4: Agent编排](/ai-app/llm-dev/lecture-4) | Function Calling、ReAct、多Agent | 8-9周 |
+| [L5: 多轮对话实战](/ai-app/llm-dev/lecture-5) | 状态管理、情感机器人项目 | 10-11周 |
+| [L6: 模型微调](/ai-app/llm-dev/lecture-6) | LoRA、SFT、量化 | 12周 |
+| [L7: 工程化部署](/ai-app/llm-dev/lecture-7) | Docker、监控、CI/CD | 13-14周 |
+| [L8: 安全与进阶](/ai-app/llm-dev/lecture-8) | 安全合规、多模态、评估体系 | 持续 |
 
-## 各讲链接
+## 专题总结
 
-- [第一讲：大模型基础原理与 API 调用](./lecture-1.md)
-- [第二讲：Prompt Engineering 深度实践](./lecture-2.md)
-- [第三讲：RAG 系统设计与实现](./lecture-3.md)
-- [第四讲：Agent 编排与工具调用](./lecture-4.md)
-- [第五讲：多轮对话与情感机器人项目](./lecture-5.md)
-- [第六讲：模型微调与优化](./lecture-6.md)
-- [第七讲：工程化部署与运维](./lecture-7.md)
-- [第八讲：安全合规与架构进阶](./lecture-8.md)
-- [常见坑点总结](./pitfalls.md)
-- [面试高频问题](./interview.md)
-- [练习题与思考题](./exercises.md)
+- [常见坑点总结](/ai-app/llm-dev/pitfalls) -- 10个最常见的实战坑点
+- [面试高频问题](/ai-app/llm-dev/interview) -- 按类别整理的面试题
+- [练习题与思考](/ai-app/llm-dev/exercises) -- 动手练习与深度思考题
+
+## 学习建议
+
+每个知识点都要写代码验证，每学完一个模块就输出总结。推荐用"系统课程 + 项目实战"结合的方式推进，主线按知识体系学习，每学完一个专题立刻放到项目里实战。
