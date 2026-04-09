@@ -57,72 +57,73 @@ export default defineConfig({
         items: [
           { text: 'LLM', link: '/ai-app/llm' },
           {
-            text: 'Agent Architecture Analysis',
+            text: 'Agent 架构分析',
             collapsed: true,
             items: [
-              { text: 'Learn Claude Code', link: '/ai-app/agent-analysis/learn-claude-code' },
-              { text: 'NanoClaw', link: '/ai-app/agent-analysis/nanoclaw' }
+              { text: 'Claude Code 学习笔记', link: '/ai-app/agent-analysis/learn-claude-code' },
+              { text: 'NanoClaw 项目解析', link: '/ai-app/agent-analysis/nanoclaw' }
             ]
           },
           {
-            text: 'Multi-Agent Design',
+            text: '多智能体设计实战',
             collapsed: true,
             items: [
-              { text: 'Learning Roadmap', link: '/ai-app/multi-agent/' },
-              { text: 'L1: Multi-Agent Basics', link: '/ai-app/multi-agent/lecture-1' },
-              { text: 'L2: Role Design & Orchestration', link: '/ai-app/multi-agent/lecture-2' },
-              { text: 'L3: RAG Knowledge Management', link: '/ai-app/multi-agent/lecture-3' },
-              { text: 'L4: Tool Calling & CrewAI', link: '/ai-app/multi-agent/lecture-4' },
-              { text: 'L5: Prompt Tuning & Model Opt', link: '/ai-app/multi-agent/lecture-5' },
-              { text: 'L6: Observability & Debugging', link: '/ai-app/multi-agent/lecture-6' },
-              { text: 'L7: Safety & Governance', link: '/ai-app/multi-agent/lecture-7' },
-              { text: 'L8: Production Deployment', link: '/ai-app/multi-agent/lecture-8' },
-              { text: 'L9: Data Flywheel & Iteration', link: '/ai-app/multi-agent/lecture-9' },
-              { text: 'Pitfalls', link: '/ai-app/multi-agent/pitfalls' },
-              { text: 'Interview Q&A', link: '/ai-app/multi-agent/interview' }
+              { text: '学习路线', link: '/ai-app/multi-agent/' },
+              { text: 'L1: 多智能体基础认知', link: '/ai-app/multi-agent/lecture-1' },
+              { text: 'L2: 角色设计与任务编排', link: '/ai-app/multi-agent/lecture-2' },
+              { text: 'L3: RAG 知识管理实战', link: '/ai-app/multi-agent/lecture-3' },
+              { text: 'L4: 工具调用与 CrewAI 实战', link: '/ai-app/multi-agent/lecture-4' },
+              { text: 'L5: Prompt 精调与模型优化', link: '/ai-app/multi-agent/lecture-5' },
+              { text: 'L6: 可观测性与调试', link: '/ai-app/multi-agent/lecture-6' },
+              { text: 'L7: 安全护栏与治理', link: '/ai-app/multi-agent/lecture-7' },
+              { text: 'L8: 生产环境部署', link: '/ai-app/multi-agent/lecture-8' },
+              { text: 'L9: 数据飞轮与迭代', link: '/ai-app/multi-agent/lecture-9' },
+              { text: '常见坑点', link: '/ai-app/multi-agent/pitfalls' },
+              { text: '面试高频问题', link: '/ai-app/multi-agent/interview' }
             ]
           },
           {
-            text: 'LLM Development',
+            text: '大模型应用开发',
             collapsed: true,
             items: [
-              { text: 'Learning Roadmap', link: '/ai-app/llm-dev/' },
-              { text: 'L1: LLM Basics & API', link: '/ai-app/llm-dev/lecture-1' },
-              { text: 'L2: Prompt Engineering', link: '/ai-app/llm-dev/lecture-2' },
-              { text: 'L3: RAG System', link: '/ai-app/llm-dev/lecture-3' },
-              { text: 'L4: Agent & Tools', link: '/ai-app/llm-dev/lecture-4' },
-              { text: 'L5: Chat & Emotion Bot', link: '/ai-app/llm-dev/lecture-5' },
-              { text: 'L6: Fine-tuning', link: '/ai-app/llm-dev/lecture-6' },
-              { text: 'L7: Deployment & Ops', link: '/ai-app/llm-dev/lecture-7' },
-              { text: 'L8: Security & Advanced', link: '/ai-app/llm-dev/lecture-8' },
-              { text: 'Pitfalls', link: '/ai-app/llm-dev/pitfalls' },
-              { text: 'Interview Q&A', link: '/ai-app/llm-dev/interview' },
-              { text: 'Exercises', link: '/ai-app/llm-dev/exercises' }
+              { text: '学习路线', link: '/ai-app/llm-dev/' },
+              { text: 'L1: 大模型基础与 API', link: '/ai-app/llm-dev/lecture-1' },
+              { text: 'L2: Prompt 工程', link: '/ai-app/llm-dev/lecture-2' },
+              { text: 'L3: RAG 系统设计', link: '/ai-app/llm-dev/lecture-3' },
+              { text: 'L4: Agent 与工具调用', link: '/ai-app/llm-dev/lecture-4' },
+              { text: 'L5: 多轮对话实战', link: '/ai-app/llm-dev/lecture-5' },
+              { text: 'L6: 模型微调', link: '/ai-app/llm-dev/lecture-6' },
+              { text: 'L7: 部署与运维', link: '/ai-app/llm-dev/lecture-7' },
+              { text: 'L8: 安全与进阶', link: '/ai-app/llm-dev/lecture-8' },
+              { text: '常见坑点', link: '/ai-app/llm-dev/pitfalls' },
+              { text: '面试高频问题', link: '/ai-app/llm-dev/interview' },
+              { text: '练习题', link: '/ai-app/llm-dev/exercises' }
             ]
           }
         ]
       },
       {
-        text: 'Microservice',
+        text: '微服务',
         collapsed: true,
         items: [
-          { text: 'Learning Roadmap', link: '/microservice/' },
-          { text: 'L1: Architecture Overview', link: '/microservice/lecture-1' }
+          { text: '学习路线', link: '/microservice/' },
+          { text: 'L1: 微服务架构认知', link: '/microservice/lecture-1' }
         ]
       },
       {
-        text: 'Architecture',
+        text: '架构设计',
         collapsed: true,
         items: [
-          { text: 'Learning Roadmap', link: '/architecture/' },
-          { text: 'L1: What Is Architecture', link: '/architecture/lecture-1' }
+          { text: '学习路线', link: '/architecture/' },
+          { text: 'L1: 架构定义与复杂度', link: '/architecture/lecture-1' }
         ]
       },
       {
-        text: 'High Concurrency',
+        text: '高并发系统设计',
         collapsed: true,
         items: [
-          { text: 'Learning Roadmap', link: '/high-concurrency/' }
+          { text: '学习路线', link: '/high-concurrency/' },
+          { text: 'L1: 基础认知与架构演进', link: '/high-concurrency/lecture-1' }
         ]
       }
     ],
