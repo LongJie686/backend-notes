@@ -63,6 +63,13 @@ export default defineConfig({
               { text: 'Learn Claude Code', link: '/ai-app/agent-analysis/learn-claude-code' },
               { text: 'NanoClaw', link: '/ai-app/agent-analysis/nanoclaw' }
             ]
+          },
+          {
+            text: 'Multi-Agent Design',
+            collapsed: true,
+            items: [
+              { text: 'Learning Roadmap', link: '/ai-app/multi-agent/' }
+            ]
           }
         ]
       },
