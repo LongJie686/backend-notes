@@ -25,6 +25,10 @@ export default defineConfig({
         text: '后端',
         items: [
           { text: 'Python', link: '/backend/python' },
+          { text: 'FastAPI', link: '/backend/fastapi' },
+          { text: 'Django', link: '/backend/django' },
+          { text: 'Flask', link: '/backend/flask' },
+          { text: 'WebSocket', link: '/backend/websocket' },
           { text: '网络基础', link: '/backend/network' }
         ]
       },
@@ -41,10 +45,12 @@ export default defineConfig({
               { text: 'L3: 事务', link: '/database/mysql-notes/lecture-3' },
               { text: 'L4: 隔离级别', link: '/database/mysql-notes/lecture-4' },
               { text: 'L5: MVCC', link: '/database/mysql-notes/lecture-5' },
-              { text: 'L6: 锁机制', link: '/database/mysql-notes/lecture-6' }
+              { text: 'L6: 锁机制', link: '/database/mysql-notes/lecture-6' },
+              { text: 'L7: 慢查询优化', link: '/database/mysql-notes/lecture-7' }
             ]
           },
-          { text: 'Redis', link: '/database/redis' }
+          { text: 'Redis', link: '/database/redis' },
+          { text: 'pgvector', link: '/database/pgvector' }
         ]
       },
       {
@@ -63,6 +69,27 @@ export default defineConfig({
             items: [
               { text: 'Claude Code 学习笔记', link: '/ai-app/agent-analysis/learn-claude-code' },
               { text: 'NanoClaw 项目解析', link: '/ai-app/agent-analysis/nanoclaw' }
+            ]
+          },
+          {
+            text: 'Text-to-SQL',
+            collapsed: true,
+            items: [
+              { text: '概述', link: '/ai-app/text-to-sql/' }
+            ]
+          },
+          {
+            text: 'MCP 协议',
+            collapsed: true,
+            items: [
+              { text: '概述', link: '/ai-app/mcp/' }
+            ]
+          },
+          {
+            text: '语音交互',
+            collapsed: true,
+            items: [
+              { text: 'STT/TTS 概述', link: '/ai-app/voice-interaction/' }
             ]
           },
           {
@@ -125,6 +152,24 @@ export default defineConfig({
         items: [
           { text: '学习路线', link: '/high-concurrency/' },
           { text: 'L1: 基础认知与架构演进', link: '/high-concurrency/lecture-1' }
+        ]
+      },
+      {
+        text: '工程化',
+        collapsed: true,
+        items: [
+          { text: 'Docker', link: '/engineering/docker' },
+          { text: 'Git', link: '/engineering/git' },
+          { text: '监控告警', link: '/engineering/monitoring' }
+        ]
+      },
+      {
+        text: '大数据',
+        collapsed: true,
+        items: [
+          { text: 'Hadoop', link: '/big-data/hadoop' },
+          { text: 'Kafka', link: '/big-data/kafka' },
+          { text: 'Flume', link: '/big-data/flume' }
         ]
       }
     ],

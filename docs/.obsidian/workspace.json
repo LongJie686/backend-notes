@@ -186,6 +186,12 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "big-data",
+    "engineering",
+    "ai-app/voice-interaction",
+    "ai-app/mcp",
+    "ai-app/text-to-sql",
+    "database/mysql-notes/lecture-7.md",
     "database/mysql-notes/lecture-6.md.tmp.27708.1775718821387",
     "high-concurrency/lecture-1.md",
     "high-concurrency/index.md",
@@ -212,11 +218,9 @@
     "ai-app/llm-dev/lecture-3.md",
     "ai-app/multi-agent/lecture-1.md",
     "ai-app/llm-dev/lecture-2.md",
-    "ai-app/llm-dev/lecture-1.md",
     "ai-app/llm-dev",
     "ai-app/multi-agent",
     "architecture",
-    "microservice",
-    "ai-app/agent-analysis"
+    "microservice"
   ]
 }
