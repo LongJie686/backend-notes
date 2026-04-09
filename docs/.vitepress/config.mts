@@ -14,7 +14,8 @@ export default defineConfig({
       { text: 'Backend', link: '/backend/python' },
       { text: 'Database', link: '/database/mysql' },
       { text: 'Recommend', link: '/recommend-system/collaborative-filtering' },
-      { text: 'AI', link: '/ai-app/llm' }
+      { text: 'AI', link: '/ai-app/llm' },
+      { text: 'Microservice', link: '/microservice/' }
     ],
 
     sidebar: [
@@ -62,6 +63,12 @@ export default defineConfig({
               { text: 'NanoClaw', link: '/ai-app/agent-analysis/nanoclaw' }
             ]
           }
+        ]
+      },
+      {
+        text: 'Microservice',
+        items: [
+          { text: 'Learning Roadmap', link: '/microservice/' }
         ]
       }
     ],
