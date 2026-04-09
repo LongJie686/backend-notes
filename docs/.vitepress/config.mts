@@ -13,7 +13,6 @@ export default defineConfig({
       { text: '首页', link: '/' },
       { text: '后端', link: '/backend/python' },
       { text: '数据库', link: '/database/mysql' },
-      { text: '推荐系统', link: '/recommend-system/collaborative-filtering' },
       { text: 'AI', link: '/ai-app/llm' },
       { text: '微服务', link: '/microservice/' },
       { text: '架构设计', link: '/architecture/' },
@@ -56,13 +55,6 @@ export default defineConfig({
           { text: 'PostgreSQL', link: '/database/postgres' },
           { text: 'SQLite', link: '/database/sqlite' },
           { text: 'pgvector', link: '/database/pgvector' }
-        ]
-      },
-      {
-        text: '推荐系统',
-        collapsed: true,
-        items: [
-          { text: '协同过滤', link: '/recommend-system/collaborative-filtering' }
         ]
       },
       {
@@ -175,7 +167,8 @@ export default defineConfig({
           { text: 'Docker', link: '/engineering/docker' },
           { text: 'Git', link: '/engineering/git' },
           { text: '监控告警', link: '/engineering/monitoring' },
-          { text: 'SNMP 与 iperf3', link: '/engineering/snmp-iperf' }
+          { text: 'SNMP 与 iperf3', link: '/engineering/snmp-iperf' },
+          { text: 'OSGB 到 3D Tiles', link: '/engineering/osgb-3dtiles' }
         ]
       },
       {
