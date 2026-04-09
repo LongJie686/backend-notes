@@ -68,8 +68,10 @@ export default defineConfig({
       },
       {
         text: 'Microservice',
+        collapsed: true,
         items: [
-          { text: 'Learning Roadmap', link: '/microservice/' }
+          { text: 'Learning Roadmap', link: '/microservice/' },
+          { text: 'L1: Architecture Overview', link: '/microservice/lecture-1' }
         ]
       },
       {
