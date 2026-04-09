@@ -186,6 +186,10 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "ai-app/multi-agent",
+    "architecture/index.md",
+    "architecture",
+    "microservice/index.md",
     "microservice",
     "ai-app/agent-analysis/index.md",
     "ai-app/agent-analysis/nanoclaw.md",

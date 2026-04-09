@@ -15,7 +15,8 @@ export default defineConfig({
       { text: 'Database', link: '/database/mysql' },
       { text: 'Recommend', link: '/recommend-system/collaborative-filtering' },
       { text: 'AI', link: '/ai-app/llm' },
-      { text: 'Microservice', link: '/microservice/' }
+      { text: 'Microservice', link: '/microservice/' },
+      { text: 'Architecture', link: '/architecture/' }
     ],
 
     sidebar: [
@@ -69,6 +70,12 @@ export default defineConfig({
         text: 'Microservice',
         items: [
           { text: 'Learning Roadmap', link: '/microservice/' }
+        ]
+      },
+      {
+        text: 'Architecture',
+        items: [
+          { text: 'Learning Roadmap', link: '/architecture/' }
         ]
       }
     ],
