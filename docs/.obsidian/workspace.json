@@ -186,6 +186,7 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "engineering/osgb-3dtiles.md",
     "engineering/snmp-iperf.md",
     "backend/rbac.md",
     "database/sqlite.md",
@@ -213,7 +214,6 @@
     "backend/fastapi.md",
     "ai-app/voice-interaction/index.md",
     "ai-app/mcp/index.md",
-    "ai-app/text-to-sql/index.md",
     "big-data",
     "engineering",
     "ai-app/voice-interaction",
