@@ -23,6 +23,7 @@ export default defineConfig({
     sidebar: [
       {
         text: '后端',
+        collapsed: true,
         items: [
           { text: 'Python', link: '/backend/python' },
           { text: 'FastAPI', link: '/backend/fastapi' },
@@ -35,6 +36,7 @@ export default defineConfig({
       },
       {
         text: '数据库',
+        collapsed: true,
         items: [
           { text: 'MySQL', link: '/database/mysql' },
           {
@@ -58,12 +60,14 @@ export default defineConfig({
       },
       {
         text: '推荐系统',
+        collapsed: true,
         items: [
           { text: '协同过滤', link: '/recommend-system/collaborative-filtering' }
         ]
       },
       {
         text: 'AI 应用',
+        collapsed: true,
         items: [
           { text: 'LLM 概述', link: '/ai-app/llm' },
           {
@@ -170,7 +174,8 @@ export default defineConfig({
         items: [
           { text: 'Docker', link: '/engineering/docker' },
           { text: 'Git', link: '/engineering/git' },
-          { text: '监控告警', link: '/engineering/monitoring' }
+          { text: '监控告警', link: '/engineering/monitoring' },
+          { text: 'SNMP 与 iperf3', link: '/engineering/snmp-iperf' }
         ]
       },
       {

@@ -186,6 +186,7 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "engineering/snmp-iperf.md",
     "backend/rbac.md",
     "database/sqlite.md",
     "database/postgres.md",
@@ -218,7 +219,6 @@
     "ai-app/voice-interaction",
     "ai-app/mcp",
     "ai-app/text-to-sql",
-    "database/mysql-notes/lecture-7.md",
     "database/mysql-notes/lecture-6.md.tmp.27708.1775718821387",
     "high-concurrency",
     "ai-app/llm-dev"
