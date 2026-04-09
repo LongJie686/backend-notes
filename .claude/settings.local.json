@@ -3,7 +3,8 @@
     "allow": [
       "mcp__filesystem__directory_tree",
       "mcp__filesystem__create_directory",
-      "mcp__filesystem__write_file"
+      "mcp__filesystem__write_file",
+      "Bash(grep -E \"\\\\.\\(py|html|sql|txt|md|yml|yaml|json|xml|properties|conf\\)$\")"
     ]
   }
 }
