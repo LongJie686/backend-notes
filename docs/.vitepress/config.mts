@@ -143,7 +143,8 @@ export default defineConfig({
         collapsed: true,
         items: [
           { text: '学习路线', link: '/microservice/' },
-          { text: 'L1: 微服务架构认知', link: '/microservice/lecture-1' }
+          { text: 'L1: 微服务架构认知', link: '/microservice/lecture-1' },
+          { text: 'L2: 服务通信与 gRPC 实战', link: '/microservice/lecture-2' }
         ]
       },
       {

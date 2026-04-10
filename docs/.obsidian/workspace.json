@@ -186,6 +186,7 @@
   },
   "active": "6cf2868e7b37dec0",
   "lastOpenFiles": [
+    "microservice/lecture-2.md",
     "architecture/lecture-2.md",
     "high-concurrency/lecture-2.md",
     "database/mysql-notes/lecture-8.md",
@@ -213,7 +214,6 @@
     "engineering/git.md",
     "engineering/docker.md",
     "backend/websocket.md",
-    "backend/flask.md",
     "big-data",
     "engineering",
     "ai-app/voice-interaction",
