@@ -151,7 +151,8 @@ export default defineConfig({
         collapsed: true,
         items: [
           { text: '学习路线', link: '/architecture/' },
-          { text: 'L1: 架构定义与复杂度', link: '/architecture/lecture-1' }
+          { text: 'L1: 架构定义与复杂度', link: '/architecture/lecture-1' },
+          { text: 'L2: 架构设计三原则与四步法', link: '/architecture/lecture-2' }
         ]
       },
       {
@@ -159,7 +160,8 @@ export default defineConfig({
         collapsed: true,
         items: [
           { text: '学习路线', link: '/high-concurrency/' },
-          { text: 'L1: 基础认知与架构演进', link: '/high-concurrency/lecture-1' }
+          { text: 'L1: 基础认知与架构演进', link: '/high-concurrency/lecture-1' },
+          { text: 'L2: 缓存设计与防护方案', link: '/high-concurrency/lecture-2' }
         ]
       },
       {
