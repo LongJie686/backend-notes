@@ -184,8 +184,9 @@
       "bases:新建数据库": false
     }
   },
-  "active": "d5b2f03d05ed0037",
+  "active": "6cf2868e7b37dec0",
   "lastOpenFiles": [
+    "database/mysql-notes/lecture-8.md",
     "backend/jwt.md",
     "engineering/osgb-3dtiles.md",
     "engineering/snmp-iperf.md",
@@ -213,7 +214,6 @@
     "backend/flask.md",
     "backend/django.md",
     "backend/fastapi.md",
-    "ai-app/voice-interaction/index.md",
     "big-data",
     "engineering",
     "ai-app/voice-interaction",

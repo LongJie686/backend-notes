@@ -49,7 +49,8 @@ export default defineConfig({
               { text: 'L4: 隔离级别', link: '/database/mysql-notes/lecture-4' },
               { text: 'L5: MVCC', link: '/database/mysql-notes/lecture-5' },
               { text: 'L6: 锁机制', link: '/database/mysql-notes/lecture-6' },
-              { text: 'L7: 慢查询优化', link: '/database/mysql-notes/lecture-7' }
+              { text: 'L7: 慢查询优化', link: '/database/mysql-notes/lecture-7' },
+              { text: 'L8: 主从复制与读写分离', link: '/database/mysql-notes/lecture-8' }
             ]
           },
           { text: 'Redis', link: '/database/redis' },
