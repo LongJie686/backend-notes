@@ -9,7 +9,8 @@
       "Bash(curl -s \"https://api.github.com/users/LongJie686/repos?sort=updated&per_page=100\")",
       "mcp__github__create_repository",
       "Bash(gh auth:*)",
-      "Bash(gh repo:*)"
+      "Bash(gh repo:*)",
+      "Bash(python:*)"
     ]
   }
 }
