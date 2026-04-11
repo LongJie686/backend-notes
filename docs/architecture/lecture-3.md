@@ -1,1347 +1,1542 @@
-# 第 3 讲：高性能架构模式（上）——单机高性能
+# 第 3 讲（Python 版）：高性能架构模式（上）——单机高性能
 
 ---
 
-这一讲是高性能架构的**底层基础**。
+很好，既然你的主语言是 Python，我会把所有代码示例、框架选型、实战场景都切换到 Python 生态。
 
-很多人学架构，上来就学分库分表、缓存、消息队列，但却不知道：
-
-- 为什么 Nginx 能单机支撑 10 万并发？
-- 为什么 Redis 单线程却比多线程还快？
-- 为什么 Netty 比传统 BIO 性能高几十倍？
-
-这些问题的答案，都藏在这一讲要讲的内容里：
-
-> **I/O 模型和并发处理模型。**
-
-理解了这些，你才能真正理解高性能系统的设计原理，而不只是会背"用 Redis 缓存、用 Nginx 负载均衡"。
+同时会重点讲清楚：
+- Python 的 GIL 对高性能有什么影响
+- Python 生态里怎么做高性能
+- asyncio 和 Reactor 模型的关系
+- 为什么理解底层 I/O 模型对 Python 开发者同样重要
 
 ---
 
-## 一、为什么单机性能是架构的基础？
+## 一、Python 开发者为什么要懂 I/O 模型？
 
-先想一个问题：
+你可能会想：
 
-> 一个系统的性能瓶颈，到底在哪里？
+> "我用 Python，不写 C/C++，为什么要懂 epoll、Reactor 这些底层的东西？"
 
-很多人的第一反应是："数据库"、"网络"、"CPU"。
+原因有三个：
 
-但实际上，**大多数后端系统的性能瓶颈，不是计算，而是 I/O**。
+### 原因 1：你用的框架底层就是这些
 
----
+| Python 框架 | 底层模型 |
+|------------|---------|
+| Django（WSGI + Gunicorn） | 多进程/多线程 + 阻塞 I/O |
+| Flask（WSGI + Gunicorn） | 多进程/多线程 + 阻塞 I/O |
+| FastAPI（ASGI + Uvicorn） | asyncio + 事件循环（Reactor） |
+| Tornado | asyncio + 事件循环（Reactor） |
+| aiohttp | asyncio + 事件循环（Reactor） |
+| Celery | 多进程 + 消息队列 |
 
-### I/O 为什么是瓶颈？
-
-来看一组数据对比：
-
-| 操作 | 时间 | 类比（放大 10 亿倍） |
-|------|------|---------------------|
-| CPU 执行一条指令 | 0.3 ns | 1 秒 |
-| L1 缓存访问 | 1 ns | 3 秒 |
-| L2 缓存访问 | 4 ns | 12 秒 |
-| 内存访问 | 100 ns | 5 分钟 |
-| SSD 读取 | 100 μs | 3.5 天 |
-| 机械硬盘读取 | 10 ms | 1 年 |
-| 网络请求（同机房） | 0.5 ms | 18 天 |
-| 网络请求（跨城市） | 30 ms | 3 年 |
-
-**关键结论：**
-
-> **CPU 和内存的速度差距，与 CPU 和 I/O 的速度差距，根本不在一个量级。**
-
-这意味着：
-- 程序在等 I/O 的时候，CPU 是闲着的
-- 如果不能高效利用 I/O 等待期间的 CPU，性能就会极差
-- 高性能系统的核心，是**如何高效处理 I/O**
+你不理解底层模型，就不知道：
+- 为什么 Django 扛不住高并发
+- 为什么 FastAPI 比 Flask 性能高
+- 为什么 Gunicorn 要配置 worker 数量
+- 为什么异步框架能用更少的资源扛更多请求
 
 ---
 
-### 后端服务的典型 I/O
+### 原因 2：面试必考
 
-一个典型的后端请求处理流程：
+大厂面试 Python 后端，必问：
+- Python GIL 是什么？对性能有什么影响？
+- 多进程 vs 多线程 vs 协程，什么时候用哪个？
+- asyncio 的底层原理是什么？
+- 为什么 FastAPI 性能比 Django 高？
+- 如何设计高性能 Python 后端服务？
 
-```
-接收客户端请求（网络 I/O）
-    ↓
-读取数据库（磁盘 I/O + 网络 I/O）
-    ↓
-读取缓存（网络 I/O）
-    ↓
-处理业务逻辑（CPU 计算）
-    ↓
-写入数据库（磁盘 I/O + 网络 I/O）
-    ↓
-返回响应（网络 I/O）
-```
-
-**大部分时间都在等 I/O，真正计算的时间很短。**
-
-所以，高性能系统的核心问题是：
-
-> **在等 I/O 的时间里，如何让 CPU 去处理其他请求？**
+这些问题的本质，都是 I/O 模型和并发模型。
 
 ---
 
-## 二、I/O 模型：理解高性能的底层原理
+### 原因 3：架构设计需要
 
-I/O 模型是理解高性能的关键。
+当你做架构设计时，需要回答：
+- 这个服务用同步还是异步？
+- 用多进程还是协程？
+- 部署几个 worker？
+- 预计能扛多少 QPS？
 
-### 1. 什么是 I/O 模型？
-
-I/O 模型描述的是：
-
-> **当程序发起一个 I/O 操作（比如读取网络数据），操作系统和程序是如何协作完成的。**
-
-核心问题：
-- 程序发起 I/O 后，要不要一直等待数据？
-- 数据准备好了，怎么通知程序？
+不懂底层，这些问题你只能凭感觉猜。
 
 ---
 
-### 2. 五种 I/O 模型
+## 二、Python 的并发困境：GIL
 
-Unix/Linux 下有 5 种 I/O 模型：
+在讲 I/O 模型之前，必须先理解 Python 的 GIL，因为它直接决定了 Python 的并发策略。
 
-```
-1. 阻塞 I/O（Blocking I/O）
-2. 非阻塞 I/O（Non-blocking I/O）
-3. I/O 多路复用（I/O Multiplexing）
-4. 信号驱动 I/O（Signal-driven I/O）
-5. 异步 I/O（Asynchronous I/O）
-```
+### 1. 什么是 GIL？
 
-我们重点讲前三种，这是后端最重要的基础。
-
----
-
-### 3. 阻塞 I/O（BIO）
-
-#### 原理
-
-```
-程序发起 read() 请求
-    ↓
-内核检查数据是否准备好
-    ↓
-数据没准备好 → 程序阻塞等待（线程挂起）
-    ↓
-数据准备好 → 内核把数据拷贝到用户空间
-    ↓
-返回给程序
-```
-
-图示：
-
-```
-程序线程    │━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━▶
-            │                                   ↑
-read()      │                                   │
-────────────┼─────────────────────▶  数据就绪   │
-            │   阻塞等待...         数据拷贝     │
-            │                                   │
-内核        │  ◀──── 等待数据 ────▶◀── 拷贝 ───▶│
-```
-
-#### 特点
-
-- **简单**：编程模型最简单
-- **阻塞**：等 I/O 期间线程挂起，什么都不能做
-- **资源浪费**：线程等待期间占用资源但无法干活
-
-#### 代码示例
-
-```java
-// 传统 BIO 服务器
-ServerSocket serverSocket = new ServerSocket(8080);
-
-while (true) {
-    // 阻塞：等待客户端连接
-    Socket socket = serverSocket.accept();
-    
-    // 每来一个连接，开一个线程处理
-    new Thread(() -> {
-        try {
-            // 阻塞：等待数据
-            InputStream in = socket.getInputStream();
-            byte[] buffer = new byte[1024];
-            int len = in.read(buffer); // 这里会阻塞！
-            
-            // 处理数据
-            String response = handleRequest(new String(buffer, 0, len));
-            
-            // 返回响应
-            socket.getOutputStream().write(response.getBytes());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }).start();
-}
-```
-
-#### 问题
-
-如果有 1 万个并发连接：
-- 需要 1 万个线程
-- 每个线程默认 512KB~1MB 栈内存
-- 1 万线程 = 5GB~10GB 内存
-- 线程切换开销极大
-- 系统直接撑不住
-
-**结论：BIO 不适合高并发场景。**
-
----
-
-### 4. 非阻塞 I/O（NIO）
-
-#### 原理
-
-```
-程序发起 read() 请求
-    ↓
-内核检查数据是否准备好
-    ↓
-数据没准备好 → 立即返回 EWOULDBLOCK（不阻塞）
-    ↓
-程序不断轮询：数据准备好了吗？
-    ↓
-数据准备好 → 内核把数据拷贝到用户空间
-    ↓
-返回给程序
-```
-
-图示：
-
-```
-程序线程    │──▶轮询──▶轮询──▶轮询──▶轮询──▶读取数据▶
-            │
-read()      │
-────────────┼──▶(未就绪)──▶(未就绪)──▶(未就绪)──▶(就绪)──▶
-            │  立即返回    立即返回    立即返回      读取
-内核        │
-```
-
-#### 问题
-
-> **虽然线程不阻塞了，但要不断轮询，浪费 CPU。**
-
-比如：有 1 万个连接，每次轮询都要检查 1 万次，大部分都是"还没好"。
-
-**结论：纯 NIO 轮询效率低，通常不单独使用。**
-
----
-
-### 5. I/O 多路复用（I/O Multiplexing）★★★
-
-这是**最重要**的 I/O 模型，Nginx、Redis、Netty 都基于这个模型。
-
-#### 核心思想
-
-> **用一个线程监控多个 I/O，哪个准备好了就处理哪个。**
-
-不再是：
-
-```
-1 个连接 → 1 个线程等待
-```
-
-而是：
-
-```
-1 个线程 → 监控 N 个连接 → 哪个准备好处理哪个
-```
-
-#### 实现：select / poll / epoll
-
-**select（1983年）**
-
-```c
-// 把所有要监控的 fd 注册进去
-fd_set readfds;
-FD_SET(fd1, &readfds);
-FD_SET(fd2, &readfds);
-FD_SET(fd3, &readfds);
-
-// 等待任意一个 fd 准备好
-select(max_fd + 1, &readfds, NULL, NULL, NULL);
-
-// 遍历所有 fd，找出准备好的
-for (int i = 0; i <= max_fd; i++) {
-    if (FD_ISSET(i, &readfds)) {
-        // 处理这个 fd
-        read(i, buffer, sizeof(buffer));
-    }
-}
-```
-
-**select 的问题：**
-- 最多监控 1024 个 fd（FD_SETSIZE 限制）
-- 每次调用都要把 fd 集合从用户空间拷贝到内核空间
-- 返回后还要遍历所有 fd 才能找到准备好的
-
----
-
-**poll（1997年）**
-
-- 解决了 1024 的限制
-- 但还是要遍历所有 fd
-- 还是要用户/内核空间拷贝
-
----
-
-**epoll（2002年）★★★**
-
-epoll 是 Linux 下最高效的 I/O 多路复用实现，是现代高性能服务器的基础。
-
-```c
-// 创建 epoll 实例
-int epfd = epoll_create(1);
-
-// 注册感兴趣的事件
-struct epoll_event ev;
-ev.events = EPOLLIN;  // 监听读事件
-ev.data.fd = fd;
-epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev);
-
-// 等待事件发生
-struct epoll_event events[MAX_EVENTS];
-int nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
-
-// 只遍历有事件的 fd（不需要遍历所有）
-for (int i = 0; i < nfds; i++) {
-    // 直接处理准备好的 fd
-    read(events[i].data.fd, buffer, sizeof(buffer));
-}
-```
-
-**epoll 的优势：**
-
-| 对比维度 | select/poll | epoll |
-|---------|-------------|-------|
-| 最大连接数 | 1024（select）/ 无限（poll） | 无限 |
-| fd 拷贝 | 每次调用都拷贝 | 只注册一次 |
-| 事件检测 | 遍历所有 fd | 只返回有事件的 fd |
-| 时间复杂度 | O(n) | O(1) |
-| 适用场景 | 连接少、活跃 | 连接多、不活跃 |
-
----
-
-#### epoll 的两种工作模式
-
-**水平触发（LT，Level Triggered）**
-
-```
-只要 fd 上有数据，epoll_wait 就一直通知你
-直到你把数据读完为止
-```
-
-- 默认模式
-- 编程简单
-- 可能反复通知
-
-**边缘触发（ET，Edge Triggered）**
-
-```
-只在 fd 状态从"无数据"变为"有数据"时通知一次
-之后不再通知，直到下次状态变化
-```
-
-- 性能更高（通知次数少）
-- 必须一次性把数据读完
-- 编程复杂
-- Nginx 使用 ET 模式
-
----
-
-#### I/O 多路复用图示
-
-```
-                    ┌─────────────────────────────────┐
-连接 1 ─────────▶  │                                 │
-连接 2 ─────────▶  │      epoll                      │
-连接 3 ─────────▶  │                                 │
-  ...               │  监控所有连接                   │  ────▶ 有事件的连接
-连接 N ─────────▶  │                                 │
-                    └─────────────────────────────────┘
-                                  │
-                                  ▼
-                            一个线程处理
-```
-
-**核心优势：**
-- 一个线程监控 N 个连接
-- 只处理真正有事件的连接
-- 大量节省线程资源
-
----
-
-### 6. 异步 I/O（AIO）
-
-#### 原理
-
-```
-程序发起 aio_read() 请求
-    ↓
-立即返回（完全不阻塞）
-    ↓
-内核在后台等待数据、拷贝数据
-    ↓
-数据准备好 → 内核通知程序（回调/信号）
-```
-
-图示：
-
-```
-程序线程    │────────────────────────────────▶ 收到通知 ▶
-            │  发起请求后立即继续做其他事
-aio_read()  │
-────────────┼──▶ 立即返回
-            │
-内核        │  ◀──── 等待数据 ────▶◀── 拷贝 ───▶ 通知程序
-```
-
-**与 I/O 多路复用的区别：**
-
-| 维度 | I/O 多路复用 | 异步 I/O |
-|------|-------------|---------|
-| 数据拷贝 | 程序主动读取 | 内核自动拷贝 |
-| 通知时机 | 数据准备好时通知 | 数据拷贝完成时通知 |
-| 编程模型 | 相对简单 | 复杂 |
-| 在 Linux 上 | 非常成熟（epoll）| 支持不完善 |
-
-**Linux 上 AIO 支持有限，所以主流高性能服务器大多用 epoll（I/O 多路复用）。**
-
----
-
-### 7. 五种 I/O 模型对比总结
-
-| I/O 模型 | 等待数据 | 拷贝数据 | 特点 | 适用场景 |
-|---------|---------|---------|------|---------|
-| 阻塞 I/O | 阻塞 | 阻塞 | 简单但低效 | 低并发 |
-| 非阻塞 I/O | 不阻塞（轮询） | 阻塞 | CPU 浪费 | 通常不单独用 |
-| I/O 多路复用 | 阻塞（在 select/epoll 上）| 阻塞 | 高效，一监多 | **主流高性能** |
-| 信号驱动 I/O | 不阻塞 | 阻塞 | 少用 | 少数场景 |
-| 异步 I/O | 不阻塞 | 不阻塞 | 最理想但复杂 | Windows IOCP |
-
----
-
-## 三、并发处理模型
-
-I/O 模型解决的是"如何处理 I/O"，并发模型解决的是"如何处理多个连接"。
-
-这两个结合在一起，才是完整的高性能方案。
-
-主要有 4 种并发处理模型：
-1. PPC（Process Per Connection）
-2. TPC（Thread Per Connection）
-3. Reactor
-4. Proactor
-
----
-
-### 1. PPC（Process Per Connection）
-
-#### 原理
-
-> **每来一个连接，就 fork 一个进程处理。**
-
-```
-                        ┌─────────────────┐
-客户端 1 ──连接──▶      │  进程 1（专门处理连接1）│
-                        └─────────────────┘
-                        ┌─────────────────┐
-客户端 2 ──连接──▶      │  进程 2（专门处理连接2）│
-主进程                  └─────────────────┘
-                        ┌─────────────────┐
-客户端 3 ──连接──▶      │  进程 3（专门处理连接3）│
-                        └─────────────────┘
-```
-
-#### 流程
-
-```
-主进程监听端口
-  ↓
-客户端连接
-  ↓
-fork 子进程
-  ↓
-子进程处理这个连接（可以用阻塞 I/O）
-  ↓
-连接断开，子进程退出
-```
-
-#### 优点
-
-- 编程简单（子进程用阻塞 I/O 即可）
-- 进程间隔离，一个进程崩溃不影响其他
-- 安全性好（进程间内存隔离）
-
-#### 缺点
-
-- **进程创建开销大**
-  - fork 系统调用开销大
-  - 进程占用内存多
-  
-- **进程切换开销大**
-  - 进程切换比线程切换慢 10 倍+
-  - 1 万个连接 = 1 万个进程，系统直接崩溃
-  
-- **不适合高并发**
-  - 最大支持并发数：几百~几千
-
-#### 实际应用
-
-- **早期 Apache 服务器**（Prefork 模式）
-- **早期 CGI 程序**
-- 现在基本不用了
-
----
-
-#### PPC 的一个变体：预 fork
-
-为了减少 fork 开销，可以提前 fork 一批进程放在进程池里：
-
-```
-主进程
-  ↓
-提前 fork N 个子进程（进程池）
-  ↓
-有连接来时，从进程池取一个处理
-  ↓
-处理完放回进程池
-```
-
-**Apache Prefork 模式**就是这样做的。
-
----
-
-### 2. TPC（Thread Per Connection）
-
-#### 原理
-
-> **每来一个连接，就创建一个线程处理。**
-
-```
-                        ┌─────────────────┐
-客户端 1 ──连接──▶      │  线程 1         │
-                        └─────────────────┘
-                        ┌─────────────────┐
-客户端 2 ──连接──▶      │  线程 2         │  ← 在同一个进程里
-主线程                  └─────────────────┘
-                        ┌─────────────────┐
-客户端 3 ──连接──▶      │  线程 3         │
-                        └─────────────────┘
-```
-
-#### 流程
-
-```java
-ServerSocket serverSocket = new ServerSocket(8080);
-
-while (true) {
-    Socket socket = serverSocket.accept(); // 等待连接
-    
-    // 来一个连接，开一个线程
-    new Thread(() -> {
-        handleConnection(socket); // 阻塞处理
-    }).start();
-}
-```
-
-#### 优点
-
-- 比 PPC 轻量（线程比进程轻）
-- 编程简单（可用阻塞 I/O）
-- 同进程内线程通信方便
-
-#### 缺点
-
-- **线程也有上限**
-  - 默认每个线程 512KB~1MB 栈内存
-  - 1 万线程 = 5~10GB 内存
-  - 线程切换开销也很大
-  
-- **高并发时性能差**
-  - 大量线程，大量上下文切换
-  - 系统负载高，响应变慢
-
-#### 实际应用
-
-- **早期 Java 服务器**（如 Tomcat 的 BIO 模式）
-- **传统 Java Web 应用**
-- 现在大部分换成了线程池 + 异步
-
----
-
-#### TPC 的改进：线程池
-
-```java
-// 不是每次都创建线程，而是用线程池
-ExecutorService threadPool = Executors.newFixedThreadPool(200);
-
-ServerSocket serverSocket = new ServerSocket(8080);
-
-while (true) {
-    Socket socket = serverSocket.accept();
-    
-    // 从线程池取线程处理
-    threadPool.submit(() -> {
-        handleConnection(socket);
-    });
-}
-```
-
-**问题：**
-
-线程池大小成为瓶颈：
-- 线程池太小：请求积压
-- 线程池太大：内存耗尽、切换开销
-
-**根本问题还是：一个连接占一个线程，等 I/O 时线程被浪费。**
-
----
-
-### 3. Reactor 模型 ★★★
-
-Reactor 是现代高性能服务器最核心的设计模式。
-
-**Nginx、Redis、Netty、Node.js** 都基于 Reactor 模型。
-
-#### 核心思想
-
-> **事件驱动：有事件来了，才去处理；没事件，不等待。**
->
-> **I/O 多路复用 + 事件分发**
-
-类比：
-
-> **餐厅服务员模式：**
+> **GIL（Global Interpreter Lock，全局解释器锁）**
 > 
-> - TPC：一个服务员只服务一张桌子，桌子没人时就傻等着
-> - Reactor：一个服务员巡视所有桌子，哪桌有需求就去服务，没需求不等待
+> CPython 解释器中的一把全局锁，确保同一时刻只有一个线程执行 Python 字节码。
+
+```
+                  ┌─────────────────────────────────────┐
+                  │         CPython 解释器               │
+                  │                                     │
+                  │  ┌───────────────────────────────┐  │
+                  │  │          GIL（全局锁）          │  │
+                  │  └───────────────────────────────┘  │
+                  │         │                           │
+                  │    同一时刻只有一个线程能执行        │
+                  │                                     │
+线程 1 ──────▶   │  ██████░░░░░░██████░░░░░░           │
+线程 2 ──────▶   │  ░░░░░░██████░░░░░░██████           │
+线程 3 ──────▶   │  ░░░░░░░░░░░░░░░░░░░░░░░░           │（等待）
+                  │                                     │
+                  │  █ = 执行   ░ = 等待GIL             │
+                  └─────────────────────────────────────┘
+```
+
+### 2. GIL 的影响
+
+```python
+# CPU 密集型任务：多线程没用！
+import threading
+import time
+
+def cpu_heavy():
+    total = 0
+    for i in range(100_000_000):
+        total += i
+
+# 单线程
+start = time.time()
+cpu_heavy()
+print(f"单线程: {time.time() - start:.2f}s")  # 约 5 秒
+
+# 多线程（2个线程）
+start = time.time()
+t1 = threading.Thread(target=cpu_heavy)
+t2 = threading.Thread(target=cpu_heavy)
+t1.start()
+t2.start()
+t1.join()
+t2.join()
+print(f"多线程: {time.time() - start:.2f}s")  # 约 5~6 秒！甚至更慢！
+```
+
+**结果：多线程反而可能更慢！**
+
+因为 GIL 导致两个线程轮流执行，加上切换开销，比单线程还慢。
 
 ---
 
-#### Reactor 的核心组件
+### 3. GIL 不影响什么？
 
-| 组件 | 职责 |
-|------|------|
-| **Reactor（反应器）** | 监听事件，分发事件 |
-| **Handler（处理器）** | 处理具体的业务逻辑 |
-| **Acceptor（接受器）** | 专门处理新连接 |
+**GIL 在 I/O 等待时会释放！**
+
+```python
+# I/O 密集型任务：多线程有用！
+import threading
+import time
+import requests
+
+def fetch_url(url):
+    response = requests.get(url)
+    return response.status_code
+
+urls = ["https://httpbin.org/delay/1"] * 5
+
+# 单线程：串行请求
+start = time.time()
+for url in urls:
+    fetch_url(url)
+print(f"单线程: {time.time() - start:.2f}s")  # 约 5 秒
+
+# 多线程：并行请求
+start = time.time()
+threads = [threading.Thread(target=fetch_url, args=(url,)) for url in urls]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+print(f"多线程: {time.time() - start:.2f}s")  # 约 1 秒！
+```
+
+**因为在等 I/O（网络请求）时，GIL 被释放了，其他线程可以执行。**
 
 ---
 
-#### 变体 1：单 Reactor 单线程
+### 4. Python 并发策略总结
 
-```
-                    ┌─────────────────────────────────┐
-所有客户端 ──────▶  │     单个 Reactor 线程            │
-                    │  ┌──────────┐  ┌─────────────┐  │
-                    │  │ Selector │  │  Handler    │  │
-                    │  │(epoll)  │──▶│(业务处理)   │  │
-                    │  └──────────┘  └─────────────┘  │
-                    └─────────────────────────────────┘
-```
-
-**流程：**
-
-```
-1. Reactor 线程用 epoll 监听所有事件
-2. 有连接事件 → Acceptor 处理新连接
-3. 有读写事件 → Handler 处理业务
-4. 一切都在一个线程里
-```
-
-**优点：**
-- 模型简单
-- 没有线程切换开销
-- 没有并发问题
-
-**缺点：**
-- 单线程，无法利用多核 CPU
-- Handler 里如果有耗时操作，会阻塞所有请求
-- 适合 I/O 密集、业务简单的场景
-
-**代表：Redis（早期单线程版本）**
-
----
-
-#### 变体 2：单 Reactor 多线程
-
-```
-                    ┌─────────────────────────────────────────┐
-所有客户端 ──────▶  │          主线程（Reactor）               │
-                    │  ┌──────────┐                           │
-                    │  │ Selector │──▶ 分发事件               │
-                    │  │(epoll)  │                            │
-                    │  └──────────┘                           │
-                    └───────────────────────┬─────────────────┘
-                                            │
-                              ┌─────────────▼──────────────┐
-                              │       线程池               │
-                              │  ┌──────┐┌──────┐┌──────┐  │
-                              │  │线程1 ││线程2 ││线程3 │  │
-                              │  │业务  ││业务  ││业务  │  │
-                              │  └──────┘└──────┘└──────┘  │
-                              └────────────────────────────┘
-```
-
-**流程：**
-
-```
-1. Reactor 主线程用 epoll 监听所有事件
-2. 有连接事件 → Acceptor 处理新连接
-3. 有读写事件 → 分配给线程池处理业务
-4. 线程池处理完后，把结果交给 Reactor 发送
-```
-
-**优点：**
-- 能利用多核 CPU 处理业务
-- I/O 和业务分离
-
-**缺点：**
-- 单 Reactor 仍是单线程，高并发时 Reactor 本身可能成为瓶颈
-- 线程间数据共享需要同步处理
-
-**代表：早期 Netty 配置**
-
----
-
-#### 变体 3：多 Reactor 多线程 ★★★
-
-```
-                    ┌──────────────────────────────────────────────────┐
-                    │              主 Reactor（Main Reactor）           │
-所有客户端 ──────▶  │         专门处理新连接（Acceptor）               │
-                    └─────────────────────┬────────────────────────────┘
-                                          │ 建立连接后分发给 Sub Reactor
-                          ┌───────────────┼───────────────┐
-                          ▼               ▼               ▼
-                    ┌──────────┐    ┌──────────┐    ┌──────────┐
-                    │Sub React │    │Sub React │    │Sub React │
-                    │(线程1)  │    │(线程2)  │    │(线程3)  │
-                    │监控一组  │    │监控一组  │    │监控一组  │
-                    │连接+处理 │    │连接+处理 │    │连接+处理 │
-                    └──────────┘    └──────────┘    └──────────┘
-```
-
-**流程：**
-
-```
-1. Main Reactor 专门监听新连接
-2. 新连接建立后，分配给某个 Sub Reactor
-3. Sub Reactor 监听这个连接后续的读写事件
-4. 有读写事件时，Sub Reactor 处理（可选：丢给线程池）
-5. 多个 Sub Reactor 并行工作，充分利用多核
-```
-
-**优点：**
-- 主从分离，Main Reactor 专注建连接
-- Sub Reactor 并行，充分利用多核
-- 性能最强，可支撑百万级并发
-
-**缺点：**
-- 模型复杂
-- 编程难度高
-
-**代表：Nginx（多进程版）、Netty（推荐配置）**
-
----
-
-#### Reactor 模型总结
-
-| 模型 | 线程数 | 优点 | 缺点 | 代表 |
-|------|--------|------|------|------|
-| 单 Reactor 单线程 | 1 | 简单，无切换 | 无法多核，阻塞影响全局 | Redis（早期） |
-| 单 Reactor 多线程 | 1+N | 业务多核 | 单Reactor瓶颈 | 早期Netty |
-| 多 Reactor 多线程 | M+N | 性能最强 | 复杂 | Nginx、Netty |
-
----
-
-### 4. Proactor 模型
-
-#### 核心思想
-
-> **Reactor 是"数据准备好了通知你来读"**
-> 
-> **Proactor 是"我帮你读好了，你来处理吧"**
-
-| 维度 | Reactor | Proactor |
+| 场景 | GIL 影响 | 推荐方案 |
 |------|---------|---------|
-| I/O 操作 | 程序主动读写 | 内核完成读写 |
-| 通知时机 | 可以读写时通知 | 读写完成时通知 |
-| I/O 模型 | I/O 多路复用 | 异步 I/O |
-| 数据拷贝 | 程序负责 | 内核负责 |
-
-#### 图示
-
-```
-Reactor：
-程序 ──发起epoll──▶ 内核监控 ──数据就绪──▶ 通知程序 ──程序来读──▶ 处理
-
-Proactor：
-程序 ──发起aio_read──▶ 内核等待+拷贝 ──完成──▶ 通知程序 ──直接处理
-```
-
-#### Linux 上的局限
-
-Proactor 在 **Windows（IOCP）** 上实现非常好，性能极高。
-
-但在 **Linux** 上：
-- 内核 AIO 支持不完善
-- 通常通过线程模拟 AIO
-- 实际性能不如 epoll + Reactor
-
-所以：
-
-> **Linux 高性能服务器基本都用 Reactor + epoll，而不是 Proactor。**
+| **CPU 密集型** | 严重影响 | **多进程**（multiprocessing） |
+| **I/O 密集型** | 不影响（I/O 时释放 GIL） | **多线程** 或 **协程**（asyncio） |
+| **高并发网络服务** | 不影响 | **协程**（asyncio）最高效 |
+| **混合型** | 部分影响 | **多进程 + 协程** |
 
 ---
 
-## 四、三大框架的并发模型分析
+## 三、Python 的三种并发模型
 
-理解了理论，再来看看 Nginx、Redis、Netty 实际是怎么做的。
+### 1. 多进程（对应 PPC 模型）
+
+```python
+import multiprocessing
+import os
+
+def worker(name):
+    print(f"Worker {name}, PID: {os.getpid()}")
+    # 做一些 CPU 密集的计算
+    total = sum(range(10_000_000))
+    print(f"Worker {name} done, result: {total}")
+
+if __name__ == "__main__":
+    processes = []
+    for i in range(4):
+        p = multiprocessing.Process(target=worker, args=(i,))
+        processes.append(p)
+        p.start()
+    
+    for p in processes:
+        p.join()
+    
+    print("All workers done")
+```
+
+**进程池（更推荐）：**
+
+```python
+from concurrent.futures import ProcessPoolExecutor
+import os
+
+def cpu_heavy_task(n):
+    """CPU 密集型任务"""
+    total = sum(i * i for i in range(n))
+    return total
+
+if __name__ == "__main__":
+    # 进程池，进程数 = CPU 核数
+    with ProcessPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(cpu_heavy_task, 10_000_000) for _ in range(4)]
+        results = [f.result() for f in futures]
+    
+    print(f"Results: {results}")
+```
+
+**特点：**
+- 绕过 GIL，真正的并行
+- 每个进程有独立的内存空间
+- 进程创建和通信开销大
+- 适合 CPU 密集型任务
 
 ---
 
-### 1. Nginx 的并发模型
+### 2. 多线程（对应 TPC 模型）
 
-#### 架构
+```python
+import threading
+import time
+import requests
 
+def fetch_data(url):
+    """I/O 密集型任务"""
+    response = requests.get(url)
+    return len(response.content)
+
+def main():
+    urls = [
+        "https://httpbin.org/get",
+        "https://httpbin.org/ip",
+        "https://httpbin.org/headers",
+        "https://httpbin.org/user-agent",
+    ] * 5  # 20 个请求
+
+    # 多线程执行
+    start = time.time()
+    threads = []
+    for url in urls:
+        t = threading.Thread(target=fetch_data, args=(url,))
+        threads.append(t)
+        t.start()
+    
+    for t in threads:
+        t.join()
+    
+    print(f"多线程完成: {time.time() - start:.2f}s")
+
+main()
 ```
-                    ┌─────────────────────────────────┐
-                    │           Master 进程           │
-                    │  管理 Worker 进程               │
-                    │  处理信号，reload，日志切割等   │
-                    └────────────┬────────────────────┘
-                                 │
-              ┌──────────────────┼──────────────────┐
-              ▼                  ▼                  ▼
-        ┌──────────┐       ┌──────────┐       ┌──────────┐
-        │ Worker 1 │       │ Worker 2 │       │ Worker N │
-        │单线程    │       │单线程    │       │单线程    │
-        │epoll     │       │epoll     │       │epoll     │
-        │处理所有  │       │处理所有  │       │处理所有  │
-        │I/O事件   │       │I/O事件   │       │I/O事件   │
-        └──────────┘       └──────────┘       └──────────┘
+
+**线程池（更推荐）：**
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+import requests
+import time
+
+def fetch_data(url):
+    response = requests.get(url)
+    return len(response.content)
+
+urls = ["https://httpbin.org/get"] * 20
+
+start = time.time()
+with ThreadPoolExecutor(max_workers=10) as executor:
+    results = list(executor.map(fetch_data, urls))
+print(f"线程池完成: {time.time() - start:.2f}s")
 ```
 
-**Nginx 并发模型特点：**
-
-| 特点 | 说明 |
-|------|------|
-| **多进程** | 每个 Worker 是独立进程 |
-| **单线程** | 每个 Worker 只有一个线程 |
-| **epoll** | 每个 Worker 用 epoll 监控连接 |
-| **Worker 数量** | 通常等于 CPU 核数 |
-| **进程隔离** | 一个 Worker 崩溃不影响其他 |
-
-**为什么是多进程而不是多线程？**
-
-- 进程隔离，稳定性更好
-- 不需要锁（避免并发问题）
-- 充分利用多核 CPU
-
-**Nginx 为什么能支撑 10 万并发？**
-
-1. epoll 高效监控大量连接
-2. 非阻塞 I/O，不等待
-3. 事件驱动，有事件才处理
-4. 多 Worker 并行，充分利用多核
-5. 全程不阻塞，无线程切换开销
+**特点：**
+- I/O 等待时释放 GIL，可以并发
+- 线程切换比进程轻
+- 但受 GIL 限制，CPU 密集不能真正并行
+- 适合 I/O 密集型任务
 
 ---
 
-### 2. Redis 的并发模型
+### 3. 协程/异步（对应 Reactor 模型）★★★
 
-#### 早期（Redis 6.0 之前）
+**这是 Python 高性能的核心。**
 
+```python
+import asyncio
+import aiohttp
+import time
+
+async def fetch_data(session, url):
+    """异步 I/O 密集型任务"""
+    async with session.get(url) as response:
+        data = await response.read()
+        return len(data)
+
+async def main():
+    urls = ["https://httpbin.org/get"] * 20
+    
+    async with aiohttp.ClientSession() as session:
+        # 同时发起所有请求
+        tasks = [fetch_data(session, url) for url in urls]
+        results = await asyncio.gather(*tasks)
+    
+    print(f"Results: {results}")
+
+start = time.time()
+asyncio.run(main())
+print(f"异步完成: {time.time() - start:.2f}s")
 ```
-┌─────────────────────────────────────────────────┐
-│                  Redis 单进程                    │
-│                                                 │
-│  ┌─────────────────────────────────────────┐   │
-│  │           单个线程（主线程）              │   │
-│  │                                         │   │
-│  │  epoll 监控所有连接                      │   │
-│  │       ↓                                 │   │
-│  │  有事件 → 处理命令 → 返回结果            │   │
-│  │                                         │   │
-│  └─────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────┘
-```
 
-**单 Reactor 单线程模型。**
-
-**为什么 Redis 单线程还能这么快？**
-
-很多人认为多线程一定比单线程快，但 Redis 用单线程实现了极高性能，原因是：
-
-| 原因 | 说明 |
-|------|------|
-| **纯内存操作** | 所有数据在内存，没有磁盘 I/O |
-| **操作简单** | Redis 命令执行时间通常是微秒级 |
-| **epoll 高效** | 不阻塞，事件驱动 |
-| **避免锁** | 单线程无并发问题，不需要加锁 |
-| **避免切换** | 无线程上下文切换开销 |
-
-**简单说：Redis 的瓶颈不在 CPU，而在网络 I/O。单线程处理 CPU 已经绰绰有余。**
+**特点：**
+- 单线程，但可以处理大量并发 I/O
+- 没有线程切换开销
+- 没有锁的问题
+- 内存占用极小
+- 适合高并发网络服务
 
 ---
 
-#### Redis 6.0 之后：多线程 I/O
+### 4. 三种模型性能对比
+
+我们做一个直观对比：
+
+```python
+"""
+三种并发模型性能对比：20 个 HTTP 请求
+"""
+import time
+import requests
+import threading
+import asyncio
+import aiohttp
+from concurrent.futures import ThreadPoolExecutor
+
+URL = "https://httpbin.org/delay/1"  # 每个请求需要 1 秒
+COUNT = 20
+
+# ========== 同步（串行） ==========
+def sync_requests():
+    start = time.time()
+    for _ in range(COUNT):
+        requests.get(URL)
+    print(f"同步串行: {time.time() - start:.2f}s")  # 约 20 秒
+
+# ========== 多线程 ==========
+def threaded_requests():
+    start = time.time()
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        list(executor.map(lambda _: requests.get(URL), range(COUNT)))
+    print(f"多线程: {time.time() - start:.2f}s")  # 约 1 秒
+
+# ========== 异步协程 ==========
+async def async_requests():
+    start = time.time()
+    async with aiohttp.ClientSession() as session:
+        tasks = [session.get(URL) for _ in range(COUNT)]
+        await asyncio.gather(*tasks)
+    print(f"异步协程: {time.time() - start:.2f}s")  # 约 1 秒（但内存更少）
+
+# 执行对比
+sync_requests()         # ~20 秒
+threaded_requests()     # ~1 秒
+asyncio.run(async_requests())  # ~1 秒（但内存更少）
+```
+
+**结果对比：**
+
+| 模型 | 20 个请求耗时 | 线程/协程数 | 内存占用 |
+|------|-------------|------------|---------|
+| 同步串行 | ~20 秒 | 1 | 最少 |
+| 多线程（20线程）| ~1 秒 | 20 | 中等 |
+| 异步协程 | ~1 秒 | 1（单线程）| 最少 |
+
+**如果是 10000 个请求呢？**
+
+| 模型 | 10000 个请求 | 资源需求 |
+|------|-------------|---------|
+| 多线程 | 需要 10000 线程，内存爆炸 | 几 GB 内存 |
+| 异步协程 | 1 个线程搞定 | 几十 MB 内存 |
+
+**这就是协程在高并发场景下碾压多线程的原因。**
+
+---
+
+## 四、Python asyncio 深入理解
+
+asyncio 是 Python 的异步编程框架，底层就是 **Reactor 模型**。
+
+### 1. asyncio 的核心架构
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│                      Redis 进程                        │
+│                    asyncio                             │
 │                                                        │
 │  ┌──────────────────────────────────────────────────┐ │
-│  │                    主线程                         │ │
-│  │   epoll 监控连接                                  │ │
-│  │   命令执行（仍然是单线程！）                       │ │
-│  │   数据操作（仍然是单线程！）                       │ │
+│  │              Event Loop（事件循环）                │ │
+│  │                                                  │ │
+│  │   底层：epoll（Linux）/ kqueue（Mac）             │ │
+│  │                                                  │ │
+│  │   ┌──────────────────────────────────────────┐   │ │
+│  │   │    注册的事件                             │   │ │
+│  │   │    socket 可读？→ 调用回调               │   │ │
+│  │   │    socket 可写？→ 调用回调               │   │ │
+│  │   │    定时器到期？→ 调用回调                │   │ │
+│  │   └──────────────────────────────────────────┘   │ │
 │  └──────────────────────────────────────────────────┘ │
 │                                                        │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐              │
-│  │ I/O 线程 │ │ I/O 线程 │ │ I/O 线程 │              │
-│  │ 读取请求 │ │ 读取请求 │ │ 读取请求 │              │
-│  │ 发送响应 │ │ 发送响应 │ │ 发送响应 │              │
+│  │ 协程 1   │ │ 协程 2   │ │ 协程 N   │              │
+│  │ coroutine│ │ coroutine│ │ coroutine│              │
 │  └──────────┘ └──────────┘ └──────────┘              │
 └────────────────────────────────────────────────────────┘
 ```
 
-**关键：命令执行仍然是单线程，只有 I/O 读写用多线程。**
+**asyncio 就是 Python 版的 Reactor：**
 
-**为什么这样设计？**
-
-- I/O 读写可以并行，提升网络吞吐
-- 命令执行保持单线程，避免并发问题
-- 不需要加锁，简单且高效
+| Reactor 概念 | asyncio 对应 |
+|-------------|-------------|
+| Reactor（事件分发器） | Event Loop（事件循环） |
+| I/O 多路复用（epoll） | Selector（底层用 epoll/kqueue） |
+| Handler（事件处理器） | 协程（coroutine） |
+| 注册事件 | `add_reader()` / `create_task()` |
 
 ---
 
-### 3. Netty 的并发模型
+### 2. 协程的本质
 
-Netty 是 Java 生态最流行的高性能网络框架，采用**多 Reactor 多线程**模型。
+```python
+import asyncio
 
-#### 架构
+async def my_coroutine():
+    print("开始")
+    await asyncio.sleep(1)  # 这里让出控制权，事件循环可以去干别的
+    print("1秒后")
+    await asyncio.sleep(1)  # 再次让出
+    print("又1秒后")
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│                          Netty 进程                            │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │             Boss Group（Main Reactor）                    │ │
-│  │   ┌──────────────────────────────────────────────────┐   │ │
-│  │   │  NioEventLoop（通常1个）                          │   │ │
-│  │   │  专门负责 accept 新连接                           │   │ │
-│  │   └──────────────────────────────────────────────────┘   │ │
-│  └────────────────────────┬─────────────────────────────────┘ │
-│                           │ 连接建立后，分配给 Worker Group    │
-│  ┌────────────────────────▼─────────────────────────────────┐ │
-│  │            Worker Group（Sub Reactor）                   │ │
-│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐       │ │
-│  │  │NioEventLoop │ │NioEventLoop │ │NioEventLoop │       │ │
-│  │  │  线程1      │ │  线程2      │ │  线程N      │       │ │
-│  │  │  监控一组   │ │  监控一组   │ │  监控一组   │       │ │
-│  │  │  连接+处理  │ │  连接+处理  │ │  连接+处理  │       │ │
-│  │  └─────────────┘ └─────────────┘ └─────────────┘       │ │
-│  └──────────────────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────────────────┘
+asyncio.run(my_coroutine())
 ```
 
-#### 核心概念
+**关键理解：**
 
-| 概念 | 说明 |
-|------|------|
-| **NioEventLoop** | 一个线程，内部有 epoll，负责监控一组连接 |
-| **Boss Group** | Main Reactor，专门处理新连接 |
-| **Worker Group** | Sub Reactor，处理已建立连接的读写 |
-| **Channel** | 对连接的封装 |
-| **Pipeline** | 处理器链，按顺序处理事件 |
-| **Handler** | 具体的业务处理逻辑 |
+> `await` 不是"阻塞等待"，而是"让出控制权"。
 
-#### 代码示例
+```
+协程 A: 执行 → await（让出）→ ............ → 恢复执行
+协程 B: ........ → 执行 → await（让出）→ ... → 恢复执行
+协程 C: ................ → 执行 → await → ......
 
-```java
-// Netty 服务端启动代码
-EventLoopGroup bossGroup = new NioEventLoopGroup(1);      // Boss: 1个线程
-EventLoopGroup workerGroup = new NioEventLoopGroup(8);    // Worker: 8个线程
+事件循环：不断在协程之间调度
+```
 
-try {
-    ServerBootstrap bootstrap = new ServerBootstrap();
-    bootstrap.group(bossGroup, workerGroup)
-        .channel(NioServerSocketChannel.class)
-        .childHandler(new ChannelInitializer<SocketChannel>() {
-            @Override
-            protected void initChannel(SocketChannel ch) {
-                ch.pipeline().addLast(
-                    new HttpServerCodec(),        // HTTP 编解码
-                    new MyBusinessHandler()       // 业务处理
-                );
-            }
-        });
+**与线程的区别：**
+
+| 维度 | 线程 | 协程 |
+|------|------|------|
+| 调度者 | 操作系统 | 程序自身（事件循环） |
+| 切换开销 | 大（上下文切换） | 极小（只保存少量状态） |
+| 切换时机 | 操作系统决定（抢占式） | 程序员决定（协作式，在 await 处） |
+| 内存占用 | 大（每个线程 512KB~1MB） | 小（每个协程几 KB） |
+| 数量上限 | 千级 | 万级甚至十万级 |
+| 并发安全 | 需要锁 | 天然安全（单线程） |
+
+---
+
+### 3. asyncio 实战：并发处理多个任务
+
+```python
+import asyncio
+import time
+
+async def process_request(request_id: int):
+    """模拟处理一个请求"""
+    print(f"Request {request_id}: 开始处理")
     
-    ChannelFuture future = bootstrap.bind(8080).sync();
-    future.channel().closeFuture().sync();
-} finally {
-    bossGroup.shutdownGracefully();
-    workerGroup.shutdownGracefully();
-}
+    # 模拟查数据库（I/O 操作）
+    await asyncio.sleep(0.1)  # 模拟 100ms 的数据库查询
+    
+    # 模拟调用外部 API
+    await asyncio.sleep(0.05)  # 模拟 50ms 的 API 调用
+    
+    print(f"Request {request_id}: 处理完成")
+    return f"Result-{request_id}"
+
+async def main():
+    start = time.time()
+    
+    # 同时处理 100 个请求
+    tasks = [process_request(i) for i in range(100)]
+    results = await asyncio.gather(*tasks)
+    
+    elapsed = time.time() - start
+    print(f"\n处理 100 个请求，耗时: {elapsed:.2f}s")
+    # 如果串行：100 * 0.15 = 15 秒
+    # 实际异步：约 0.15 秒！
+
+asyncio.run(main())
+```
+
+**100 个请求，每个需要 150ms I/O，但总耗时只有 ~150ms！**
+
+---
+
+### 4. asyncio 的常见模式
+
+#### 模式 1：并发执行多个任务
+
+```python
+import asyncio
+
+async def task_a():
+    await asyncio.sleep(1)
+    return "A done"
+
+async def task_b():
+    await asyncio.sleep(2)
+    return "B done"
+
+async def task_c():
+    await asyncio.sleep(1.5)
+    return "C done"
+
+async def main():
+    # 并发执行，总耗时 = 最长的那个 = 2秒
+    results = await asyncio.gather(task_a(), task_b(), task_c())
+    print(results)  # ['A done', 'B done', 'C done']
+
+asyncio.run(main())
 ```
 
 ---
 
-## 五、如何选择并发模型？
+#### 模式 2：生产者-消费者
 
-学了这么多，实际项目中怎么选？
+```python
+import asyncio
+import random
 
-### 决策流程
+async def producer(queue: asyncio.Queue, name: str):
+    """生产者：生成数据放入队列"""
+    for i in range(5):
+        item = f"{name}-item-{i}"
+        await queue.put(item)
+        print(f"  [生产] {item}")
+        await asyncio.sleep(random.uniform(0.1, 0.5))
+    
+    await queue.put(None)  # 结束信号
 
-```
-业务类型是什么？
-    │
-    ├── I/O 密集型（大量网络连接）
-    │       ├── 是否需要极高性能？
-    │       │       ├── 是 → 多 Reactor 多线程（Netty）
-    │       │       └── 否 → 单 Reactor 多线程 也可以
-    │       └── 业务处理简单？
-    │               ├── 是 → 单 Reactor 单线程（类Redis）
-    │               └── 否 → 多 Reactor 多线程
-    │
-    └── CPU 密集型（大量计算）
-            └── 多进程/多线程（线程数 = CPU核数）
+async def consumer(queue: asyncio.Queue, name: str):
+    """消费者：从队列取数据处理"""
+    while True:
+        item = await queue.get()
+        if item is None:
+            break
+        print(f"  [消费] {name} 处理 {item}")
+        await asyncio.sleep(random.uniform(0.2, 0.8))  # 模拟处理
+        queue.task_done()
+
+async def main():
+    queue = asyncio.Queue(maxsize=10)
+    
+    # 1 个生产者，3 个消费者
+    producer_task = asyncio.create_task(producer(queue, "P1"))
+    consumer_tasks = [
+        asyncio.create_task(consumer(queue, f"C{i}"))
+        for i in range(3)
+    ]
+    
+    await producer_task
+    
+    # 等生产者结束后，给每个消费者发结束信号
+    for _ in consumer_tasks:
+        await queue.put(None)
+    
+    await asyncio.gather(*consumer_tasks)
+    print("全部完成")
+
+asyncio.run(main())
 ```
 
 ---
 
-### 选型建议表
+#### 模式 3：限制并发数
 
-| 场景 | 推荐模型 | 理由 |
+```python
+import asyncio
+import aiohttp
+
+async def fetch_url(session, url, semaphore):
+    """带并发限制的请求"""
+    async with semaphore:  # 限制并发数
+        async with session.get(url) as response:
+            data = await response.read()
+            return len(data)
+
+async def main():
+    urls = [f"https://httpbin.org/get?id={i}" for i in range(100)]
+    
+    # 限制同时最多 10 个并发请求
+    semaphore = asyncio.Semaphore(10)
+    
+    async with aiohttp.ClientSession() as session:
+        tasks = [fetch_url(session, url, semaphore) for url in urls]
+        results = await asyncio.gather(*tasks)
+    
+    print(f"完成 {len(results)} 个请求")
+
+asyncio.run(main())
+```
+
+**为什么要限制并发？**
+- 不限制的话，100 万个协程可能同时打爆目标服务
+- 数据库连接池有上限
+- 网络带宽有限
+
+---
+
+### 5. asyncio 的陷阱
+
+#### 陷阱 1：在 async 函数里调用同步阻塞代码
+
+```python
+import asyncio
+import time
+
+async def bad_example():
+    """错误：在异步函数里用同步阻塞"""
+    time.sleep(1)  # 这会阻塞整个事件循环！
+    return "done"
+
+async def good_example():
+    """正确：用异步方式"""
+    await asyncio.sleep(1)  # 不阻塞事件循环
+    return "done"
+```
+
+**如果必须调用同步阻塞代码：**
+
+```python
+import asyncio
+
+def sync_blocking_operation():
+    """同步阻塞函数（比如调用不支持异步的库）"""
+    import time
+    time.sleep(1)
+    return "result"
+
+async def main():
+    loop = asyncio.get_event_loop()
+    
+    # 在线程池中运行同步阻塞代码
+    result = await loop.run_in_executor(None, sync_blocking_operation)
+    print(result)
+
+asyncio.run(main())
+```
+
+---
+
+#### 陷阱 2：CPU 密集操作阻塞事件循环
+
+```python
+import asyncio
+
+async def cpu_heavy():
+    """错误：CPU 密集操作会阻塞事件循环"""
+    total = 0
+    for i in range(100_000_000):  # 这会阻塞很久
+        total += i
+    return total
+
+# 正确做法：放到进程池
+import concurrent.futures
+
+async def main():
+    loop = asyncio.get_event_loop()
+    
+    with concurrent.futures.ProcessPoolExecutor() as pool:
+        result = await loop.run_in_executor(pool, cpu_heavy_sync)
+
+def cpu_heavy_sync():
+    """同步版本的 CPU 密集函数"""
+    return sum(range(100_000_000))
+```
+
+---
+
+#### 陷阱 3：忘记 await
+
+```python
+async def fetch_data():
+    await asyncio.sleep(1)
+    return "data"
+
+async def main():
+    # 错误：忘记 await，result 是个协程对象，不是结果！
+    result = fetch_data()
+    print(result)  # <coroutine object fetch_data at 0x...>
+    
+    # 正确：
+    result = await fetch_data()
+    print(result)  # "data"
+```
+
+---
+
+## 五、Python Web 框架的并发模型分析
+
+### 1. Django / Flask（WSGI 同步框架）
+
+```
+                    ┌────────────────────────────────────┐
+                    │          Gunicorn（Master）         │
+                    │                                    │
+                    │   ┌──────────────────────────────┐ │
+                    │   │  Worker 1（进程）             │ │
+客户端 ──────────▶ │   │  ┌────────────────────────┐  │ │
+                    │   │  │ Django/Flask 应用       │  │ │
+                    │   │  │ 同步处理请求            │  │ │
+                    │   │  │ 一次处理一个请求        │  │ │
+                    │   │  └────────────────────────┘  │ │
+                    │   └──────────────────────────────┘ │
+                    │                                    │
+                    │   ┌──────────────────────────────┐ │
+                    │   │  Worker 2（进程）             │ │
+                    │   │  ┌────────────────────────┐  │ │
+                    │   │  │ Django/Flask 应用       │  │ │
+                    │   │  └────────────────────────┘  │ │
+                    │   └──────────────────────────────┘ │
+                    │            ...                     │
+                    │   Worker N（通常 = 2*CPU+1）       │
+                    └────────────────────────────────────┘
+```
+
+**特点：**
+- 多进程模型（Prefork）
+- 每个 Worker 同步处理请求
+- 一个 Worker 同时只能处理一个请求（sync worker）
+- Worker 数通常 = 2 * CPU 核数 + 1
+
+**性能瓶颈：**
+- Worker 在等 I/O 时被阻塞
+- 4 核机器，9 个 Worker，最多同时处理 9 个请求
+- 如果每个请求需要 100ms I/O，QPS 上限约 90
+
+**适用场景：**
+- 中小型 Web 应用
+- 内部管理系统
+- 请求量不大的 API
+
+---
+
+#### Gunicorn 配置建议
+
+```python
+# gunicorn.conf.py
+
+# Worker 数量
+workers = 2 * multiprocessing.cpu_count() + 1
+
+# Worker 类型
+worker_class = "sync"  # 同步模式（默认）
+# worker_class = "gevent"  # gevent 协程模式（更高并发）
+# worker_class = "uvicorn.workers.UvicornWorker"  # ASGI 模式
+
+# 每个 Worker 的线程数（如果用 gthread）
+threads = 4
+
+# 每个 Worker 的最大并发连接数（gevent 模式）
+worker_connections = 1000
+
+# 超时
+timeout = 30
+
+# 绑定地址
+bind = "0.0.0.0:8000"
+```
+
+**Gunicorn 不同 Worker 类型对比：**
+
+| Worker 类型 | 并发模型 | 并发能力 | 适用场景 |
+|------------|---------|---------|---------|
+| sync | 同步，一次一个请求 | 低 | 简单应用 |
+| gthread | 多线程 | 中 | I/O 较多的应用 |
+| gevent | 协程（猴子补丁）| 高 | I/O 密集应用 |
+| uvicorn | asyncio | 最高 | ASGI 应用 |
+
+---
+
+### 2. FastAPI + Uvicorn（ASGI 异步框架）★★★
+
+```
+                    ┌────────────────────────────────────────────┐
+                    │          Uvicorn（ASGI Server）             │
+                    │                                            │
+                    │   ┌──────────────────────────────────────┐ │
+                    │   │        事件循环（Event Loop）          │ │
+客户端 ──────────▶ │   │        底层：uvloop（epoll）          │ │
+                    │   │                                      │ │
+                    │   │   ┌────────────┐ ┌────────────┐     │ │
+                    │   │   │  协程 1    │ │  协程 2    │     │ │
+                    │   │   │  处理请求1 │ │  处理请求2 │     │ │
+                    │   │   └────────────┘ └────────────┘     │ │
+                    │   │   ┌────────────┐ ┌────────────┐     │ │
+                    │   │   │  协程 3    │ │  协程 N    │     │ │
+                    │   │   │  处理请求3 │ │  处理请求N │     │ │
+                    │   │   └────────────┘ └────────────┘     │ │
+                    │   │                                      │ │
+                    │   │  单线程，但可同时处理数千个请求       │ │
+                    │   └──────────────────────────────────────┘ │
+                    └────────────────────────────────────────────┘
+```
+
+**FastAPI 示例：**
+
+```python
+from fastapi import FastAPI
+import asyncio
+import aiohttp
+
+app = FastAPI()
+
+@app.get("/user/{user_id}")
+async def get_user(user_id: int):
+    """异步处理请求"""
+    # 异步查数据库
+    user = await async_db_query(f"SELECT * FROM user WHERE id = {user_id}")
+    
+    # 异步调用外部 API
+    extra_info = await async_api_call(f"https://api.example.com/user/{user_id}")
+    
+    return {"user": user, "extra": extra_info}
+
+async def async_db_query(sql: str):
+    """模拟异步数据库查询"""
+    await asyncio.sleep(0.01)  # 模拟 10ms 查询
+    return {"id": 1, "name": "test"}
+
+async def async_api_call(url: str):
+    """模拟异步 API 调用"""
+    await asyncio.sleep(0.02)  # 模拟 20ms API 调用
+    return {"status": "ok"}
+```
+
+**FastAPI + Uvicorn 部署：**
+
+```bash
+# 单进程（开发）
+uvicorn main:app --host 0.0.0.0 --port 8000
+
+# 多进程（生产）
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+
+# 或用 Gunicorn 管理多个 Uvicorn Worker
+gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+```
+
+**特点：**
+- 异步处理，单线程可处理数千并发
+- 多 Worker 可利用多核
+- 性能远超 Django/Flask
+
+---
+
+### 3. Django / Flask vs FastAPI 性能对比
+
+```
+场景：100 个并发请求，每个请求需要查数据库（50ms）+ 调用外部 API（50ms）
+
+Django（sync，4 Worker）:
+  ┌────────┐
+  │Worker 1│ ████████████████████████████████ (100ms)
+  │Worker 2│ ████████████████████████████████ (100ms)  
+  │Worker 3│ ████████████████████████████████ (100ms)
+  │Worker 4│ ████████████████████████████████ (100ms)
+  └────────┘
+  4 个 Worker 同时处理 4 个请求
+  100 个请求需要：100 / 4 * 100ms = 2500ms
+
+FastAPI（async，1 Worker）:
+  ┌────────┐
+  │Worker 1│ 同时处理 100 个请求的 I/O
+  │        │ 所有请求的 I/O 并发进行
+  │        │ 总耗时 ≈ 100ms（单批）
+  └────────┘
+  100 个请求需要：约 100ms！
+
+差距：25 倍！
+```
+
+---
+
+### 4. Python Web 框架选型建议
+
+| 场景 | 推荐框架 | 理由 |
 |------|---------|------|
-| 高并发网络服务（10万+） | 多 Reactor 多线程 | 性能最强 |
-| 内存数据库/缓存 | 单 Reactor 单线程 | 操作简单快，无需多线程 |
-| 普通 Web 服务 | 线程池 + 异步 I/O | 简单够用 |
-| CPU 密集计算 | 多线程/多进程 | 充分利用多核 |
-| 传统 BIO 服务 | TPC + 线程池 | 简单，低并发够用 |
+| 内部管理系统 | Django | 功能全，admin 好用 |
+| 简单 API | Flask | 轻量灵活 |
+| 高性能 API | **FastAPI** | 异步、类型安全、性能高 |
+| 高并发长连接 | FastAPI / Tornado | 异步支持好 |
+| 微服务 | **FastAPI** | 轻量、性能高、文档好 |
+| 已有 Django 项目 | Django + Channels | 给 Django 加异步能力 |
 
 ---
 
-### 技术选型建议
+## 六、Python 高性能实战架构
 
-| 需求 | 推荐技术 | 说明 |
-|------|---------|------|
-| Java 高性能网络 | Netty | 多 Reactor，生态好 |
-| Go 高并发 | goroutine + channel | 天然并发支持 |
-| C/C++ 高性能 | libevent/libuv | 成熟的事件库 |
-| Node.js | 内置 | 单线程 Reactor |
-| Nginx | 直接用 | 最强反向代理 |
+### 1. 典型的 Python 高性能部署架构
+
+```
+                         ┌─────────┐
+                         │  Nginx  │
+                         │ 反向代理 │
+                         │ 静态文件 │
+                         │ 负载均衡 │
+                         └────┬────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+        ┌──────────┐   ┌──────────┐   ┌──────────┐
+        │ Uvicorn  │   │ Uvicorn  │   │ Uvicorn  │
+        │ Worker 1 │   │ Worker 2 │   │ Worker N │
+        │ FastAPI  │   │ FastAPI  │   │ FastAPI  │
+        │ asyncio  │   │ asyncio  │   │ asyncio  │
+        └────┬─────┘   └────┬─────┘   └────┬─────┘
+             │               │               │
+    ┌────────┼───────────────┼───────────────┤
+    ▼        ▼               ▼               ▼
+┌───────┐ ┌───────┐   ┌──────────┐    ┌──────────┐
+│ Redis │ │ MySQL │   │ RabbitMQ │    │ 外部API  │
+│ 缓存  │ │ 数据库 │   │ 消息队列 │    │          │
+└───────┘ └───────┘   └──────────┘    └──────────┘
+```
 
 ---
 
-## 六、单机性能优化的其他手段
+### 2. 完整的 FastAPI 高性能示例
 
-除了 I/O 模型和并发模型，单机性能还有以下优化手段：
+```python
+"""
+高性能 FastAPI 服务示例
+"""
+from fastapi import FastAPI, Depends
+from contextlib import asynccontextmanager
+import asyncio
+import aioredis
+import aiomysql
+import aiohttp
 
-### 1. 零拷贝（Zero Copy）
+# ========== 全局连接池 ==========
+class AppState:
+    redis_pool = None
+    mysql_pool = None
+    http_session = None
 
-**传统数据传输：**
+state = AppState()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用启动和关闭时管理连接池"""
+    # 启动时：创建连接池
+    state.redis_pool = await aioredis.from_url(
+        "redis://localhost:6379",
+        max_connections=20
+    )
+    state.mysql_pool = await aiomysql.create_pool(
+        host="localhost",
+        port=3306,
+        user="root",
+        password="password",
+        db="mydb",
+        minsize=5,
+        maxsize=20
+    )
+    state.http_session = aiohttp.ClientSession()
+    
+    print("连接池已创建")
+    yield
+    
+    # 关闭时：释放连接池
+    await state.redis_pool.close()
+    state.mysql_pool.close()
+    await state.mysql_pool.wait_closed()
+    await state.http_session.close()
+    print("连接池已关闭")
+
+app = FastAPI(lifespan=lifespan)
+
+# ========== 异步数据库查询 ==========
+async def get_user_from_db(user_id: int) -> dict:
+    """异步查询 MySQL"""
+    async with state.mysql_pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute(
+                "SELECT id, name, email FROM user WHERE id = %s",
+                (user_id,)
+            )
+            result = await cur.fetchone()
+            return result
+
+# ========== 缓存层 ==========
+async def get_user_cached(user_id: int) -> dict:
+    """先查缓存，没有再查数据库"""
+    cache_key = f"user:{user_id}"
+    
+    # 1. 查缓存
+    cached = await state.redis_pool.get(cache_key)
+    if cached:
+        import json
+        return json.loads(cached)
+    
+    # 2. 缓存未命中，查数据库
+    user = await get_user_from_db(user_id)
+    if user:
+        import json
+        # 3. 写入缓存，设置过期时间
+        await state.redis_pool.setex(
+            cache_key,
+            300,  # 5 分钟过期
+            json.dumps(user, default=str)
+        )
+    
+    return user
+
+# ========== API 接口 ==========
+@app.get("/user/{user_id}")
+async def get_user(user_id: int):
+    """获取用户信息"""
+    user = await get_user_cached(user_id)
+    if not user:
+        return {"error": "User not found"}, 404
+    return {"data": user}
+
+@app.get("/user/{user_id}/full")
+async def get_user_full(user_id: int):
+    """获取用户完整信息（并发查询多个数据源）"""
+    # 并发执行多个异步查询
+    user_task = get_user_cached(user_id)
+    orders_task = get_user_orders(user_id)
+    score_task = get_user_score(user_id)
+    
+    # 同时等待所有结果
+    user, orders, score = await asyncio.gather(
+        user_task, orders_task, score_task
+    )
+    
+    return {
+        "user": user,
+        "orders": orders,
+        "score": score
+    }
+
+async def get_user_orders(user_id: int) -> list:
+    """查询用户订单"""
+    async with state.mysql_pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute(
+                "SELECT * FROM order_info WHERE user_id = %s ORDER BY id DESC LIMIT 10",
+                (user_id,)
+            )
+            return await cur.fetchall()
+
+async def get_user_score(user_id: int) -> dict:
+    """调用外部积分服务"""
+    url = f"http://score-service/api/score/{user_id}"
+    async with state.http_session.get(url) as resp:
+        return await resp.json()
 ```
-磁盘 ──▶ 内核缓冲区 ──▶ 用户缓冲区 ──▶ Socket 缓冲区 ──▶ 网卡
-                         （2次拷贝）        （2次拷贝）
-                      共 4 次拷贝，4 次上下文切换
-```
 
-**零拷贝（sendfile）：**
-
-```
-磁盘 ──▶ 内核缓冲区 ──▶ Socket 缓冲区 ──▶ 网卡
-                         （1次拷贝）
-                      共 2 次拷贝，2 次上下文切换
-```
-
-**应用：**
-- Kafka 的消息传输用了 sendfile
-- Nginx 发送静态文件用了 sendfile
-- Java NIO 的 `FileChannel.transferTo()` 底层用了 sendfile
+**这个例子展示了：**
+1. 异步连接池（Redis、MySQL、HTTP）
+2. 缓存层设计
+3. 并发查询多个数据源（asyncio.gather）
+4. 应用生命周期管理
 
 ---
 
-### 2. 内存映射（mmap）
+### 3. 多进程 + 协程的组合架构
+
+```python
+"""
+生产环境部署：多进程 + 协程
+
+Gunicorn（多进程管理） + Uvicorn（异步事件循环）
+"""
+
+# gunicorn_config.py
+
+import multiprocessing
+
+# Worker 数量 = CPU 核数
+workers = multiprocessing.cpu_count()
+
+# Worker 类型：Uvicorn（异步）
+worker_class = "uvicorn.workers.UvicornWorker"
+
+# 每个 Worker 的最大并发
+# Uvicorn Worker 基于 asyncio，可以处理大量并发
+# 这个数字取决于你的业务和内存
+
+# 绑定
+bind = "0.0.0.0:8000"
+
+# 超时
+timeout = 30
+graceful_timeout = 30
+
+# 预加载应用（减少 Worker 启动时间）
+preload_app = True
+
+# 日志
+accesslog = "-"
+errorlog = "-"
+loglevel = "info"
+```
+
+```bash
+# 启动命令
+gunicorn main:app -c gunicorn_config.py
+```
+
+**架构效果：**
 
 ```
-文件 ──▶ 内核缓冲区 ──▶ 映射到用户空间（共享同一块内存）
+                    ┌─────────────────────────────────────────────┐
+                    │              Gunicorn Master                │
+                    └─────────────┬───────────────────────────────┘
+                                  │
+          ┌───────────────────────┼───────────────────────┐
+          ▼                       ▼                       ▼
+   ┌──────────────┐       ┌──────────────┐       ┌──────────────┐
+   │ Worker 1     │       │ Worker 2     │       │ Worker N     │
+   │ (进程 1)     │       │ (进程 2)     │       │ (进程 N)     │
+   │              │       │              │       │              │
+   │ Event Loop   │       │ Event Loop   │       │ Event Loop   │
+   │ 数千个协程   │       │ 数千个协程   │       │ 数千个协程   │
+   │              │       │              │       │              │
+   │ 处理数千个   │       │ 处理数千个   │       │ 处理数千个   │
+   │ 并发请求     │       │ 并发请求     │       │ 并发请求     │
+   └──────────────┘       └──────────────┘       └──────────────┘
+   
+   4 核机器，4 个 Worker
+   每个 Worker 处理 5000 并发
+   总并发能力：20000
 ```
-
-- 读取文件时无需拷贝到用户空间
-- 适合大文件处理
-
-**应用：**
-- RocketMQ 用 mmap 读写消息文件
-- Kafka 底层存储
-- 内存数据库
 
 ---
 
-### 3. 连接池
+## 七、Python 异步生态
 
-**没有连接池：**
+使用 asyncio 时，必须配套使用异步库，否则同步库会阻塞事件循环。
 
-```
-每次请求 → 建立连接（三次握手）→ 操作 → 关闭连接（四次挥手）
-```
+### 异步库对照表
 
-建立和关闭连接的开销很大！
-
-**有连接池：**
-
-```
-提前建立 N 个连接
-每次请求 → 从池中取一个 → 操作 → 放回池中
-```
-
-- 省去了连接建立/关闭的开销
-- 连接数可控
-- 性能提升明显
-
-**数据库连接池：HikariCP、Druid**
-**Redis 连接池：JedisPool**
+| 功能 | 同步库 | 异步库 |
+|------|--------|--------|
+| HTTP 客户端 | requests | **aiohttp** / httpx |
+| MySQL | pymysql / mysqlclient | **aiomysql** |
+| PostgreSQL | psycopg2 | **asyncpg** |
+| Redis | redis-py | **aioredis** / redis-py (async) |
+| MongoDB | pymongo | **motor** |
+| ORM | SQLAlchemy（同步） | **SQLAlchemy 2.0（async）** / Tortoise ORM |
+| HTTP 框架 | Flask / Django | **FastAPI** / aiohttp |
+| 消息队列 | pika（RabbitMQ） | **aio-pika** |
+| 文件操作 | open() | **aiofiles** |
+| WebSocket | - | **websockets** |
 
 ---
 
-### 4. 序列化优化
+### SQLAlchemy 2.0 异步示例
 
-**不同序列化性能对比：**
+```python
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import Column, Integer, String, select
 
-| 序列化 | 速度 | 大小 | 跨语言 |
-|--------|------|------|--------|
-| Java 原生 | 慢 | 大 | 差 |
-| JSON | 中 | 中 | 好 |
-| Protobuf | 快 | 小 | 好 |
-| Thrift | 快 | 小 | 好 |
-| Kryo | 最快 | 最小 | 差（Java 专用） |
+# 创建异步引擎
+engine = create_async_engine(
+    "mysql+aiomysql://root:password@localhost/mydb",
+    pool_size=20,
+    max_overflow=10
+)
 
-**建议：**
-- 内部服务通信：Protobuf（性能好、跨语言）
-- 对外接口：JSON（可读性好）
-- Java 微服务内部：Kryo（性能极强）
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = "user"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(64))
+    email = Column(String(128))
+
+# 异步查询
+async def get_user(user_id: int):
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(User).where(User.id == user_id)
+        )
+        return result.scalar_one_or_none()
+
+# 在 FastAPI 中使用
+from fastapi import FastAPI, Depends
+
+app = FastAPI()
+
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        yield session
+
+@app.get("/user/{user_id}")
+async def read_user(user_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        return {"error": "Not found"}
+    return {"id": user.id, "name": user.name}
+```
 
 ---
 
-## 七、面试高频题：单机高性能类
+## 八、容量估算：Python 服务能扛多少 QPS？
 
-### 1. Reactor 模型是什么？有几种变体？
+### 估算方法
+
+```
+QPS = Worker 数 × 每个 Worker 每秒处理请求数
+
+每个 Worker 每秒处理请求数 = 1000ms / 平均请求处理时间
+
+同步模型：
+  每个 Worker 串行处理，一次只处理一个请求
+  QPS = Worker 数 × (1000 / 请求耗时ms)
+
+异步模型：
+  每个 Worker 可以并发处理大量请求
+  QPS ≈ Worker 数 × 并发数 × (1000 / 请求耗时ms)
+  （受限于连接池大小、网络带宽等）
+```
+
+### 具体估算
+
+**场景：4 核服务器，每个请求平均 50ms（其中 I/O 等待 45ms，计算 5ms）**
+
+**Django + Gunicorn（sync，9 个 Worker）：**
+```
+QPS = 9 × (1000 / 50) = 180
+```
+
+**Django + Gunicorn（gevent，4 个 Worker，每个 1000 协程）：**
+```
+QPS ≈ 4 × 1000 × (1000 / 50) = 80000（理论上限）
+实际受连接池和带宽限制，大约 5000~10000
+```
+
+**FastAPI + Uvicorn（4 个 Worker）：**
+```
+QPS ≈ 4 × 数千并发 × (1000 / 50) = 数万
+实际大约 5000~20000（取决于连接池和硬件）
+```
+
+### 对比总结
+
+| 部署方式 | QPS 估算（4核，50ms/请求） |
+|---------|--------------------------|
+| Django sync | ~200 |
+| Django gthread | ~500-1000 |
+| Django gevent | ~5000-10000 |
+| FastAPI async | ~5000-20000 |
+| Go（对比） | ~50000+ |
+
+**注意：**
+- 这只是粗略估算
+- 实际性能取决于具体业务
+- Python 的性能天花板确实不如 Go/Java
+- 但大多数业务场景，Python async 已经够用
+
+---
+
+## 九、面试高频题（Python 版）
+
+### 1. Python GIL 是什么？对性能有什么影响？
 
 **答题框架：**
 
-**什么是 Reactor：**
-> Reactor 是一种基于事件驱动的并发处理模型。核心思想是：用 I/O 多路复用（epoll）监控多个连接，有事件来了再处理，没事件不等待。
+**什么是 GIL：**
+> GIL 是 CPython 解释器的全局解释器锁，确保同一时刻只有一个线程执行 Python 字节码。
 
-**三种变体：**
+**影响：**
+1. CPU 密集型任务：多线程无法并行，性能甚至更差
+2. I/O 密集型任务：影响不大，因为 I/O 等待时 GIL 会释放
 
-1. **单 Reactor 单线程**
-   - 所有操作在一个线程里
-   - 简单但无法多核，阻塞影响全局
-   - 代表：Redis（早期）
-
-2. **单 Reactor 多线程**
-   - Reactor 是单线程，业务处理用线程池
-   - 能利用多核，但 Reactor 可能成瓶颈
-
-3. **多 Reactor 多线程**
-   - Main Reactor 处理连接，Sub Reactor 处理读写
-   - 性能最强，充分利用多核
-   - 代表：Nginx、Netty
+**应对策略：**
+- CPU 密集 → 多进程（multiprocessing）
+- I/O 密集 → 多线程或协程（asyncio）
+- 高并发网络 → asyncio + 异步框架（FastAPI）
 
 ---
 
-### 2. Reactor 和 Proactor 的区别？
-
-**答题思路：**
-
-| 维度 | Reactor | Proactor |
-|------|---------|---------|
-| I/O 操作者 | 程序主动读写 | 内核完成 |
-| 通知时机 | 可以读写时 | 读写完成时 |
-| 底层模型 | I/O 多路复用（epoll） | 异步 I/O（AIO） |
-| Linux 支持 | 非常好 | 较差 |
-| 主流应用 | Nginx、Netty、Redis | Windows IOCP |
-
-**一句话总结：**
-> Reactor 是"来通知我，我自己来读"；Proactor 是"你帮我读好，再通知我处理"。
-
----
-
-### 3. Redis 单线程为什么这么快？
+### 2. 多进程、多线程、协程的区别和选择？
 
 **答题框架：**
 
-1. **纯内存操作**
-   - 所有数据在内存，读写速度是纳秒级
-   - 没有磁盘 I/O 瓶颈
-
-2. **I/O 多路复用**
-   - 用 epoll 高效监控多个连接
-   - 不阻塞，事件驱动
-
-3. **单线程避免锁**
-   - 不需要加锁
-   - 没有线程切换开销
-
-4. **命令简单**
-   - Redis 命令执行通常是微秒级
-   - CPU 不是瓶颈，网络才是
-
-5. **数据结构高效**
-   - 底层数据结构经过优化
-   - SDS、压缩列表、跳表等
+| 维度 | 多进程 | 多线程 | 协程 |
+|------|--------|--------|------|
+| 并行能力 | 真正并行 | 受 GIL 限制 | 单线程并发 |
+| 切换开销 | 大 | 中 | 极小 |
+| 内存占用 | 大（独立空间） | 中（共享空间） | 小（几KB/协程） |
+| 通信方式 | 管道/队列/共享内存 | 共享变量（需加锁） | 无需锁 |
+| 适用场景 | CPU 密集 | I/O 密集 | 高并发 I/O |
+| 数量上限 | 十几个 | 几百~几千 | 几万~几十万 |
 
 ---
 
-### 4. epoll 比 select 好在哪里？
+### 3. asyncio 的原理是什么？
 
 **答题框架：**
 
-| 对比维度 | select | epoll |
-|---------|--------|-------|
-| 最大 fd 数 | 1024（FD_SETSIZE）| 无限制 |
-| fd 集合拷贝 | 每次调用都拷贝 | 只注册一次 |
-| 事件检测 | 遍历所有 fd，O(n) | 只返回有事件的，O(1) |
-| 内存使用 | fd 集合存在用户空间 | 内核红黑树 |
-| 适用场景 | 连接少 | 连接多、不活跃 |
+> asyncio 本质上是 Python 实现的 **Reactor 模型**：
 
-**epoll 的核心优势：**
-1. 无连接数限制
-2. 不需要每次拷贝 fd 集合
-3. 只返回有事件的 fd，不需要全量遍历
-4. 适合高并发（万级以上连接）
+1. **Event Loop（事件循环）** = Reactor
+   - 底层用 epoll（Linux）监控所有 I/O
+   - 不断循环检查哪些 I/O 准备好了
+
+2. **协程** = Handler
+   - 用 `async/await` 定义
+   - `await` 时让出控制权，不阻塞
+
+3. **工作流程：**
+   - 协程发起 I/O → 注册到事件循环 → 让出控制权
+   - 事件循环切换到其他协程
+   - I/O 完成 → 事件循环通知协程恢复
+
+4. **核心优势：**
+   - 单线程处理大量并发 I/O
+   - 无线程切换开销
+   - 无需加锁
 
 ---
 
-### 5. Nginx 为什么能支持高并发？
+### 4. 为什么 FastAPI 比 Django 性能高？
 
 **答题框架：**
 
-1. **多 Worker 进程，充分利用多核**
+| 维度 | Django（WSGI） | FastAPI（ASGI） |
+|------|---------------|-----------------|
+| 并发模型 | 同步阻塞 | 异步非阻塞 |
+| I/O 处理 | 等 I/O 时线程阻塞 | 等 I/O 时切换到其他请求 |
+| Worker 利用率 | 低（大量时间在等待） | 高（几乎不等待） |
+| 并发能力 | 低（受 Worker 数限制） | 高（单 Worker 数千并发） |
+| 底层框架 | WSGI（同步协议） | ASGI（异步协议） |
+| 事件循环 | 无 | uvloop（epoll） |
+
+**简单说：**
+> Django 一个 Worker 同时只能处理一个请求，等 I/O 时 Worker 闲着。FastAPI 一个 Worker 可以同时处理数千个请求，等 I/O 时去处理其他请求。
+
+---
+
+### 5. Python 后端如何做到高性能？
+
+**答题框架：**
+
+1. **选择异步框架**
+   - FastAPI + Uvicorn
+   - 全链路异步（异步数据库驱动、异步 Redis 等）
+
+2. **多进程 + 协程**
+   - Gunicorn + UvicornWorker
    - Worker 数 = CPU 核数
 
-2. **每个 Worker 用 epoll 单线程处理所有连接**
-   - 不是一连接一线程
-   - epoll 高效监控大量连接
+3. **缓存**
+   - Redis 缓存热点数据
+   - 本地缓存（如 cachetools）
 
-3. **全程非阻塞**
-   - I/O 不阻塞
-   - 事件驱动，有事件才处理
+4. **连接池**
+   - 数据库连接池
+   - Redis 连接池
+   - HTTP 连接池
 
-4. **内存占用少**
-   - 不是每个连接一个线程
-   - Worker 数固定，连接数增加内存不增加
+5. **计算密集任务卸载**
+   - 用 Celery 异步处理
+   - 用多进程处理 CPU 密集任务
+   - 用 C 扩展（Cython）加速核心逻辑
 
-5. **零拷贝**
-   - 发送静态文件用 sendfile
+6. **架构层面**
+   - Nginx 反向代理 + 负载均衡
+   - 读写分离
+   - 消息队列削峰
 
 ---
 
-### 6. BIO、NIO、AIO 的区别？
+### 6. 如果让你设计一个高并发 Python 后端，你会怎么做？
 
 **答题框架：**
 
-| 维度 | BIO | NIO | AIO |
-|------|-----|-----|-----|
-| 等待数据 | 阻塞 | 轮询/多路复用 | 不阻塞 |
-| 读取数据 | 阻塞 | 阻塞（就绪后）| 内核完成 |
-| 编程难度 | 简单 | 中等 | 复杂 |
-| 并发能力 | 低 | 高 | 最高（理论上） |
-| Java 实现 | java.io | java.nio + Selector | java.nio.AsynchronousChannel |
-| 实际应用 | 传统Tomcat | Netty、Nginx | 较少（Linux AIO 不完善）|
+```
+1. 框架选型：FastAPI + Uvicorn
+
+2. 部署架构：
+   Nginx → Gunicorn（4 Worker）→ Uvicorn（asyncio）
+
+3. 数据层：
+   - MySQL + asyncpg/aiomysql（异步驱动）
+   - Redis 缓存（aioredis）
+   - 连接池
+
+4. 异步全链路：
+   - 所有 I/O 操作都用异步
+   - 数据库查询异步
+   - 外部 API 调用异步
+   - Redis 操作异步
+
+5. CPU 密集任务：
+   - Celery 异步任务队列
+   - 或 ProcessPoolExecutor
+
+6. 性能优化：
+   - 热点数据缓存
+   - 数据库索引优化
+   - 批量操作替代逐条操作
+   - 限流保护
+
+7. 监控：
+   - Prometheus + Grafana
+   - 慢查询监控
+   - 请求耗时监控
+```
 
 ---
 
-## 八、本讲核心要点总结
+## 十、本讲核心要点总结
 
 ### 必须记住的 12 条
 
-1. **I/O 是大多数后端系统的性能瓶颈，不是 CPU 计算**
-2. **epoll 是 Linux 下最高效的 I/O 多路复用实现**
-3. **epoll 对比 select：无数量限制、O(1) 事件检测、减少内核拷贝**
-4. **Reactor 的核心：事件驱动 + I/O 多路复用**
-5. **三种 Reactor 变体：单Reactor单线程、单Reactor多线程、多Reactor多线程**
-6. **Nginx 用多进程 + epoll，每个 Worker 是单线程 Reactor**
-7. **Redis（早期）是单 Reactor 单线程，操作纯内存所以很快**
-8. **Redis 6.0 I/O 多线程，但命令执行仍是单线程**
-9. **Netty 是多 Reactor 多线程，Boss Group 接连接，Worker Group 处理读写**
-10. **Proactor 是"内核帮你读好再通知"，Linux 支持不好，主流用 Reactor**
-11. **零拷贝（sendfile）减少数据拷贝次数，Nginx、Kafka 都用了**
-12. **连接池避免频繁建立关闭连接，提升性能**
+1. **Python 高性能的最大障碍是 GIL，CPU 密集用多进程，I/O 密集用协程**
+2. **asyncio 本质是 Python 版的 Reactor 模型，底层用 epoll**
+3. **await 不是阻塞等待，是让出控制权给事件循环**
+4. **协程比线程轻：几 KB vs 几百 KB，可以开数万个**
+5. **FastAPI（ASGI）比 Django（WSGI）性能高的核心原因是异步非阻塞**
+6. **生产部署：Gunicorn + UvicornWorker，Worker 数 = CPU 核数**
+7. **全链路异步：数据库、Redis、HTTP 客户端都必须用异步库**
+8. **在 async 函数里调用同步阻塞代码，会阻塞整个事件循环**
+9. **必须调用同步代码时，用 `run_in_executor` 放到线程池**
+10. **连接池是必须的：数据库连接池、Redis 连接池、HTTP Session 复用**
+11. **asyncio.gather 并发执行多个协程，比串行快数倍**
+12. **Python 性能天花板不如 Go/Java，但用好异步框架，大多数场景够用**
 
 ---
 
-## 九、课后练习
+## 十一、课后练习
 
-### 练习 1：I/O 模型理解
+### 练习 1：GIL 理解
 
-用自己的话解释：
-1. 为什么阻塞 I/O 不适合高并发？
-2. I/O 多路复用是如何解决这个问题的？
-3. epoll 和 select 的本质区别是什么？
+用代码验证：
+1. CPU 密集型任务，多线程 vs 多进程的性能差异
+2. I/O 密集型任务，多线程 vs 协程的性能差异
 
----
+```python
+# 请补全以下代码，对比性能
 
-### 练习 2：Reactor 模型分析
+import time
+import threading
+import multiprocessing
+import asyncio
 
-分析以下场景，应该选择哪种 Reactor 变体，并说明理由：
+# CPU 密集型
+def cpu_task():
+    return sum(i * i for i in range(5_000_000))
 
-**场景 A：**
-> 一个简单的内存 Key-Value 存储服务，命令处理极快（微秒级），需要支持 5 万 QPS。
-
-**场景 B：**
-> 一个 HTTP 服务器，每个请求需要查询数据库（耗时 10-100ms），需要支持 5000 并发连接。
-
-**场景 C：**
-> 一个即时通讯服务器，需要维持 100 万长连接，消息推送延迟要求 < 10ms。
-
----
-
-### 练习 3：性能分析
-
-一个服务用 TPC（线程池，200个线程）处理请求：
-- 平均每个请求耗时 100ms
-- 其中 I/O 等待 90ms，业务处理 10ms
-
-问：
-1. 这个服务的 QPS 上限大概是多少？
-2. 如果改成 Reactor 模型，QPS 上限会提升多少？（假设线程数不变）
-3. 瓶颈在哪里？
+# 1. 单线程执行 4 次
+# 2. 多线程（4线程）执行 4 次
+# 3. 多进程（4进程）执行 4 次
+# 分别计时并对比
+```
 
 ---
 
-### 练习 4：技术选型
+### 练习 2：asyncio 实战
 
-如果你要用 Java 开发一个需要支持 10 万并发连接的即时通讯服务器，你会怎么选型？
-
-请说明：
-1. 选择什么网络框架？
-2. 用哪种并发模型？
-3. 线程数如何配置？
-4. 有哪些需要注意的点？
+用 asyncio 实现一个简单的并发爬虫：
+1. 给定 50 个 URL
+2. 限制最多同时 10 个并发
+3. 统计每个 URL 的响应大小
+4. 计算总耗时
 
 ---
 
-## 十、下一讲预告
+### 练习 3：框架对比
 
-下一讲我们继续高性能架构，进入集群层面：
+用 FastAPI 和 Flask 分别实现一个简单的 API：
+- 接收用户 ID
+- 模拟查询数据库（sleep 50ms）
+- 返回用户信息
 
-**第 4 讲：高性能架构模式（下）——集群与数据库高性能**
+然后用 `wrk` 或 `ab` 做压测，对比两者的 QPS。
+
+---
+
+### 练习 4：架构设计
+
+假设你要为公司设计一个通知服务：
+- 支持发送短信、邮件、站内消息
+- 预期每秒 1000 条消息
+- 要求消息不能丢
+
+请用 Python 生态设计方案，包括：
+1. 选什么框架？
+2. 用什么并发模型？
+3. 消息怎么保证不丢？
+4. 架构图是怎样的？
+
+---
+
+## 十二、下一讲预告
+
+下一讲我们进入集群层面的高性能架构：
+
+**第 4 讲：高性能架构模式（下）——负载均衡、读写分离、分库分表**
 
 会讲：
-- 负载均衡：DNS、硬件、软件负载均衡
-- 负载均衡算法：轮询、加权、最少连接、一致性哈希
-- 读写分离：原理、实现、坑点
+- 负载均衡：DNS、Nginx、LVS 的层次与选型
+- 负载均衡算法：轮询、加权、一致性哈希
+- 读写分离：原理、Python 实现、坑点
 - 分库分表：垂直拆分、水平拆分、分片键选择
-- 全局 ID 生成：UUID、雪花算法、号段模式
-- 分库分表后的分页、排序、聚合问题
-- 面试高频题详解
-
-这一讲是后端开发和架构面试必考内容，也是日常工作中最常遇到的性能问题解决方案。
+- 全局 ID 生成方案
+- 缓存架构：穿透、雪崩、热点
+- 消息队列：Celery、RabbitMQ、Kafka 选型
+- Python 生态的对应实现
+- 面试高频题
