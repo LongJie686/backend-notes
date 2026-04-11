@@ -145,7 +145,15 @@ export default defineConfig({
         items: [
           { text: '学习路线', link: '/microservice/' },
           { text: 'L1: 微服务架构认知', link: '/microservice/lecture-1' },
-          { text: 'L2: 服务通信与 gRPC 实战', link: '/microservice/lecture-2' }
+          { text: 'L2: 服务通信与 gRPC 实战', link: '/microservice/lecture-2' },
+          { text: 'L3: 服务注册发现与配置中心', link: '/microservice/lecture-3' },
+          { text: 'L4: 服务治理（限流/熔断/降级）', link: '/microservice/lecture-4' },
+          { text: 'L5: API网关', link: '/microservice/lecture-5' },
+          { text: 'L6: 分布式数据一致性', link: '/microservice/lecture-6' },
+          { text: 'L7: 可观测性（监控/日志/追踪）', link: '/microservice/lecture-7' },
+          { text: 'L8: 容器化与CI/CD', link: '/microservice/lecture-8' },
+          { text: 'L9: Service Mesh', link: '/microservice/lecture-9' },
+          { text: 'L10: 面试题与项目实战', link: '/microservice/lecture-10' }
         ]
       },
       {
@@ -154,7 +162,13 @@ export default defineConfig({
         items: [
           { text: '学习路线', link: '/architecture/' },
           { text: 'L1: 架构定义与复杂度', link: '/architecture/lecture-1' },
-          { text: 'L2: 架构设计三原则与四步法', link: '/architecture/lecture-2' }
+          { text: 'L2: 架构设计三原则与四步法', link: '/architecture/lecture-2' },
+          { text: 'L3: 高性能架构模式', link: '/architecture/lecture-3' },
+          { text: 'L4: 高可用架构模式', link: '/architecture/lecture-4' },
+          { text: 'L5: 可扩展架构模式', link: '/architecture/lecture-5' },
+          { text: 'L6: 架构实战与案例分析', link: '/architecture/lecture-6' },
+          { text: 'L7: 面试题总结', link: '/architecture/lecture-7' },
+          { text: 'L8: 练习题库', link: '/architecture/lecture-8' }
         ]
       },
       {
@@ -163,7 +177,12 @@ export default defineConfig({
         items: [
           { text: '学习路线', link: '/high-concurrency/' },
           { text: 'L1: 基础认知与架构演进', link: '/high-concurrency/lecture-1' },
-          { text: 'L2: 缓存设计与防护方案', link: '/high-concurrency/lecture-2' }
+          { text: 'L2: 缓存设计与防护方案', link: '/high-concurrency/lecture-2' },
+          { text: 'L3: 消息队列（Kafka/RocketMQ）', link: '/high-concurrency/lecture-3' },
+          { text: 'L4: 分库分表', link: '/high-concurrency/lecture-4' },
+          { text: 'L5: 高可用设计（限流/熔断/降级）', link: '/high-concurrency/lecture-5' },
+          { text: 'L6: 服务治理（注册发现/配置中心/分布式锁）', link: '/high-concurrency/lecture-6' },
+          { text: 'L7: 场景实战（秒杀/Feed流/计数）', link: '/high-concurrency/lecture-7' }
         ]
       },
       {
