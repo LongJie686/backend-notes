@@ -1,337 +1,948 @@
-# 第3讲：服务注册发现与配置中心
+# 第 3 讲：服务注册与发现（Python 版）— Consul 实战
 
-## 核心结论（5条必记）
+这一讲是微服务的"大脑"和"地图"。
 
-1. **注册中心的核心功能是服务注册与发现** -- 让服务启动时自动注册，调用方动态获取服务地址，解耦服务提供方和消费方
-2. **注册中心选型要看CAP权衡** -- Zookeeper是CP（一致性优先），Nacos/Eureka是AP（可用性优先），大多数场景选AP
-3. **心跳机制是健康检测的关键** -- 服务定期发送心跳证明存活，超时未收到则从注册表剔除，避免调用已下线的服务
-4. **配置中心实现配置统一管理和动态推送** -- 不同环境的配置集中管理，变更后实时推送到服务，支持灰度发布
-5. **本地缓存是注册中心挂了的兜底** -- 服务从注册中心拉取地址后会缓存到本地，注册中心短暂故障不影响已有调用
+微服务拆分后，服务实例会动态变化（扩容、缩容、迁移、故障）。如果不知道服务在哪，通信就无法进行。
 
----
-
-## 一、服务注册中心原理
-
-### 为什么需要注册中心
-
-**没有注册中心的问题：**
-- 服务地址硬编码：部署环境变化需要修改代码
-- 负载均衡困难：需要手动维护服务地址列表
-- 服务上线下线需要手动通知所有调用方
-- 无法自动感知服务健康状态
-
-**注册中心解决的问题：**
-- 服务启动时自动注册，下线时自动注销
-- 调用方动态获取可用服务地址
-- 自动剔除不健康的服务实例
-- 支持服务扩缩容
-
-### 注册中心核心功能
-
-| 功能 | 说明 | 实现要点 |
-|------|------|----------|
-| 服务注册 | 服务启动时注册自己的地址 | 包含IP、端口、服务名、健康检查地址 |
-| 服务发现 | 调用方查询可用服务地址 | 按服务名查询，返回可用实例列表 |
-| 健康检查 | 定期检测服务是否存活 | 心跳机制，超时未收到则剔除 |
-| 变更通知 | 服务列表变化时通知调用方 | 推送+拉取结合 |
+这一讲的目标是让你：
+- **理解为什么微服务必须要有注册中心**
+- **掌握服务注册与发现的完整流程**
+- **理解 Consul 的核心架构和原理**
+- **能用 Python 接入 Consul 实现服务注册与发现**
+- **掌握健康检查机制**
+- **理解客户端负载均衡**
+- **知道注册中心挂了怎么办**
+- **规避大厂常见的注册中心坑点**
 
 ---
 
-## 二、主流注册中心对比
+## 一、为什么微服务需要注册中心？
 
-### Zookeeper
+### 1. 微服务的痛点：服务地址动态变化
+
+在单体架构里，服务地址是固定的：
+```python
+# 单体架构：数据库地址写死在配置文件里
+DATABASE_URL = "mysql://localhost:3306/mydb"
+```
+
+但在微服务架构里，问题复杂了：
+
+**场景：**
+- 订单服务要调用用户服务
+- 用户服务有 3 个实例：`10.0.0.1:8001`、`10.0.0.2:8001`、`10.0.0.3:8001`
+- 突然流量暴增，K8s 自动扩容到 5 个实例
+- 突然某个实例挂了，K8s 自动重启，IP 变了
+- 发布新版本，旧实例下线，新实例上线
+
+**问题：**
+- 订单服务怎么知道用户服务的实例列表？
+- 实例变化了，订单服务怎么感知？
+- 不能把 IP 写死在配置文件里，维护成本太高
+
+---
+
+### 2. 解决方案：服务注册与发现
+
+**核心思想：**
+- **服务注册**：服务启动时，把自己的信息（IP、端口、元数据）注册到注册中心
+- **服务发现**：调用方从注册中心查询服务列表，动态获取可用实例
+- **健康检查**：注册中心定期检查服务是否存活，剔除不可用实例
+
+**架构图：**
+```
+┌─────────────┐           ┌──────────────────┐
+│  User Service│ ───────► │                  │
+│  (实例1)     │  注册    │                  │
+└─────────────┘           │                  │
+┌─────────────┐           │                  │
+│  User Service│ ───────► │   Consul 注册中心 │
+│  (实例2)     │  注册    │                  │
+└─────────────┘           │                  │
+┌─────────────┐           │                  │
+│  User Service│ ───────► │                  │
+│  (实例3)     │  注册    │                  │
+└─────────────┘           │                  │
+                          │                  │
+                          │                  │
+                          │◄─────────────────┘
+                          │      查询
+┌─────────────┐           │
+│ Order Service│ ────────►│
+│  (调用方)   │           │
+└─────────────┘           │
+```
+
+---
+
+### 3. 注册中心的核心职责
+
+| 职责 | 说明 |
+|------|------|
+| **服务注册** | 服务启动时注册信息 |
+| **服务发现** | 提供查询接口，返回可用实例列表 |
+| **健康检查** | 定期检测服务存活，剔除故障实例 |
+| **变更通知** | 服务列表变化时通知调用方（或调用方轮询） |
+| **元数据存储** | 存储服务的版本、区域、权重等信息 |
+
+---
+
+## 二、主流注册中心选型
+
+### 1. Consul（推荐）
 
 **特点：**
-- CP模型：一致性优先，牺牲可用性
-- 临时节点：服务断开连接后自动删除
-- Watch机制：数据变更时主动通知
-
-**优点：**
-- 数据强一致
-- 成熟稳定，社区活跃
-
-**缺点：**
-- 集群选举期间服务不可用
-- 运维复杂度高
-- 不适合大规模服务集群
-
-### Nacos
-
-**特点：**
-- AP/CP可切换：支持AP和CP两种模式
-- 统一配置管理：注册中心+配置中心一体化
-- 支持DNS和RPC两种服务发现方式
-
-**优点：**
-- 部署简单，开箱即用
-- 支持动态配置推送
-- 控制台管理界面友好
-
-**缺点：**
-- 相对较新，生态还在发展中
-
-### Eureka
-
-**特点：**
-- AP模型：可用性优先
-- 自我保护机制：网络分区时保留注册信息
-- 去中心化架构：peer-to-peer复制
-
-**优点：**
-- 高可用设计
-- 与Spring Cloud深度集成
-
-**缺点：**
-- 已闭源（Netflix）
-- 2.0版本开源后维护不活跃
-- 客户端缓存导致数据不一致
-
-### Consul
-
-**特点：**
-- CP模型
+- HashiCorp 开源
+- **CP 架构**（强一致性，基于 Raft 协议）
 - 支持多数据中心
 - 内置健康检查
-- 支持KV存储
+- 支持 KV 存储（可做配置中心）
+- 有 Web UI
+- 多语言支持好
 
-**优点：**
-- 功能全面
-- Go语言实现，性能好
-- 支持服务网格
-
-**缺点：**
-- 运维复杂度较高
-- 学习曲线陡峭
+**适用场景：**
+- 追求强一致性
+- 需要多数据中心支持
+- Python/Go 微服务
 
 ---
 
-## 三、服务注册流程
+### 2. Etcd
 
-### 服务注册
+**特点：**
+- CoreOS 开源（现 CNCF）
+- **CP 架构**（强一致性，基于 Raft 协议）
+- Kubernetes 默认注册中心
+- 纯 KV 存储，需自己实现服务发现逻辑
 
-```
-服务启动
-  -> 读取配置（服务名、注册中心地址）
-  -> 连接注册中心
-  -> 创建临时节点（或发送注册请求）
-  -> 定期发送心跳
-```
-
-**注册信息包含：**
-- 服务名称
-- 服务实例ID（唯一）
-- IP地址
-- 端口
-- 健康检查地址
-- 元数据（版本、环境、权重等）
-
-### 心跳机制
-
-| 心跳方式 | 说明 | 代表 |
-|----------|------|------|
-| 长连接 | 保持TCP连接，断开即认为下线 | Zookeeper |
-| 定时心跳 | 定期发送心跳包 | Eureka、Nacos |
-| 主动探测 | 注册中心主动探测 | Consul |
-
-**超时剔除：**
-- 超过阈值时间未收到心跳 → 标记为不健康
-- 再超过阈值时间 → 从注册表剔除
-- 剔除后服务恢复 → 重新注册
+**适用场景：**
+- Kubernetes 原生应用
+- 需要强一致性
 
 ---
 
-## 四、服务发现方式
+### 3. Nacos
 
-### 客户端发现
+**特点：**
+- 阿里开源
+- **AP/CP 可切换**（默认 AP）
+- 集配置中心、注册中心于一体
+- Spring Cloud 生态最完善
+- 有 Web UI
 
-**流程：**
-```
-客户端 -> 注册中心查询服务地址
-  -> 从返回列表中选择一个（负载均衡）
-  -> 直接调用服务
-```
-
-**优点：**
-- 直连调用，性能好
-- 逻辑简单，易于实现
-
-**缺点：**
-- 客户端需要集成注册中心SDK
-- 多语言支持复杂
-
-**代表：** Eureka、Nacos
-
-### 服务端发现
-
-**流程：**
-```
-客户端 -> 负载均衡器
-  -> 负载均衡器从注册中心获取地址
-  -> 转发请求到后端服务
-```
-
-**优点：**
-- 客户端无需感知服务发现
-- 多语言友好
-
-**缺点：**
-- 增加一跳，延迟略高
-- 负载均衡器成为瓶颈
-
-**代表：** Nginx + Consul、K8s Service
+**适用场景：**
+- Java/Spring Cloud 生态
+- 国内团队多用
+- 需要配置中心一体化
 
 ---
 
-## 五、配置中心
+### 4. Eureka（不推荐）
 
-### 为什么需要配置中心
+**特点：**
+- Netflix 开源
+- **AP 架构**（最终一致性）
+- **已停止维护**（Netflix 已停更）
+- Spring Cloud Netflix 已进入维护模式
 
-**本地配置的问题：**
-- 配置分散：每个服务独立配置，管理困难
-- 环境差异：开发、测试、生产环境配置不同
-- 修改麻烦：配置变更需要重新打包部署
-- 敏感信息泄露：密钥明文存储在代码仓库
+**适用场景：**
+- 老项目维护
 
-**配置中心的价值：**
-- 集中管理：统一管理所有服务的配置
-- 环境隔离：支持多环境配置
-- 动态推送：配置变更实时生效，无需重启
-- 安全加密：敏感配置加密存储
+---
 
-### 配置分类
+### 选型建议
 
-| 类型 | 说明 | 示例 |
+| 场景 | 推荐 |
+|------|------|
+| Python/Go 微服务，追求强一致性 | **Consul** |
+| Kubernetes 原生应用 | **Etcd** |
+| Java/Spring Cloud 生态 | **Nacos** |
+| 简单项目，不需要强一致性 | Nacos (AP 模式) |
+
+**本讲重点讲 Consul，因为它在 Python 生态中非常流行。**
+
+---
+
+## 三、Consul 核心架构
+
+### 1. 架构组件
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  Consul Cluster                     │
+├─────────────────────────────────────────────────────┤
+│  ┌─────────┐    ┌─────────┐    ┌─────────┐         │
+│  │ Server  │    │ Server  │    │ Server  │         │
+│  │ (Leader)│◄───│ (Follower)│◄───│ (Follower)│       │
+│  └─────────┘    └─────────┘    └─────────┘         │
+│       │               │               │             │
+│       └───────────────┼───────────────┘             │
+│                       │                             │
+│              ┌────────▼────────┐                    │
+│              │   Raft Log      │                    │
+│              │   (数据同步)     │                    │
+│              └─────────────────┘                    │
+└─────────────────────────────────────────────────────┘
+                        │
+        ┌───────────────┼───────────────┐
+        ▼               ▼               ▼
+   ┌─────────┐    ┌─────────┐    ┌─────────┐
+   │ Client  │    │ Client  │    │ Client  │
+   │ (Agent) │    │ (Agent) │    │ (Agent) │
+   └─────────┘    └─────────┘    └─────────┘
+        │               │               │
+   ┌────▼────┐     ┌────▼────┐     ┌────▼────┐
+   │Service A│     │Service B│     │Service C│
+   └─────────┘     └─────────┘     └─────────┘
+```
+
+**组件说明：**
+
+- **Server**：Consul 服务端，负责存储数据、维护集群状态。建议 3 或 5 个（奇数），通过 Raft 选举 Leader。
+- **Client**：Consul 客户端（Agent），运行在每个节点上，负责转发请求、健康检查、服务注册。
+- **Raft**：一致性协议，保证数据在多个 Server 间同步。
+
+---
+
+### 2. 数据模型
+
+Consul 存储的服务信息：
+
+```json
+{
+  "ID": "user-service-1",
+  "Name": "user-service",
+  "Tags": ["v1", "zone-a"],
+  "Address": "10.0.0.1",
+  "Port": 8001,
+  "Meta": {
+    "version": "1.0.0"
+  },
+  "Check": {
+    "HTTP": "http://10.0.0.1:8001/health",
+    "Interval": "10s"
+  }
+}
+```
+
+---
+
+### 3. 健康检查机制
+
+Consul 支持多种健康检查方式：
+
+| 类型 | 说明 |
+|------|------|
+| **HTTP** | 访问 HTTP 接口，返回 2xx 为健康 |
+| **TCP** | 尝试 TCP 连接，连通为健康 |
+| **Script** | 执行脚本，返回 0 为健康 |
+| **TTL** | 服务定期上报心跳，超时为不健康 |
+| **gRPC** | gRPC 健康检查协议 |
+
+**推荐：** HTTP 或 gRPC 健康检查。
+
+---
+
+## 四、Consul 实战（Python 版）
+
+### 1. 环境准备
+
+#### 安装 Consul
+
+**方式 1：Docker（推荐）**
+```bash
+# 开发模式（单节点，不适合生产）
+docker run -d --name consul \
+  -p 8500:8500 \
+  -p 8600:8600/udp \
+  consul agent -dev -client=0.0.0.0
+```
+
+**方式 2：二进制**
+```bash
+# 下载 Consul
+wget https://releases.hashicorp.com/consul/1.15.0/consul_1.15.0_linux_amd64.zip
+unzip consul_1.15.0_linux_amd64.zip
+sudo mv consul /usr/local/bin/
+
+# 启动开发模式
+consul agent -dev -client=0.0.0.0
+```
+
+---
+
+#### 访问 Web UI
+
+```
+http://localhost:8500
+```
+
+可以看到服务列表、KV 存储、节点状态。
+
+---
+
+### 2. 安装 Python 客户端
+
+```bash
+pip install python-consul
+```
+
+---
+
+### 3. 服务注册
+
+#### 场景：用户服务启动时注册到 Consul
+
+```python
+import consul
+import socket
+import uuid
+
+# 连接 Consul
+consul_client = consul.Consul(host='localhost', port=8500)
+
+# 服务信息
+service_name = "user-service"
+service_id = f"{service_name}-{uuid.uuid4().hex[:8]}"  # 唯一 ID
+service_address = socket.gethostbyname(socket.gethostname())  # 获取本机 IP
+service_port = 8001
+
+# 注册服务
+consul_client.agent.service.register(
+    name=service_name,
+    service_id=service_id,
+    address=service_address,
+    port=service_port,
+    tags=["v1", "python"],
+    check=consul.Check.http(
+        f"http://{service_address}:{service_port}/health",
+        interval="10s",  # 检查间隔
+        timeout="5s"     # 超时时间
+    )
+)
+
+print(f"Service registered: {service_id}")
+```
+
+---
+
+### 4. 服务发现
+
+#### 场景：订单服务查询用户服务实例
+
+```python
+import consul
+import random
+
+# 连接 Consul
+consul_client = consul.Consul(host='localhost', port=8500)
+
+# 查询服务
+def get_service_instances(service_name):
+    # 获取健康的服务实例
+    index, services = consul_client.health.service(
+        service_name,
+        passing=True  # 只返回健康的实例
+    )
+
+    instances = []
+    for service in services:
+        instance = {
+            'id': service['Service']['ID'],
+            'address': service['Service']['Address'],
+            'port': service['Service']['Port'],
+            'tags': service['Service']['Tags']
+        }
+        instances.append(instance)
+
+    return instances
+
+# 使用示例
+instances = get_service_instances("user-service")
+
+if instances:
+    # 简单的负载均衡：随机选择
+    instance = random.choice(instances)
+    print(f"Selected instance: {instance['address']}:{instance['port']}")
+
+    # 这里可以发起 gRPC 或 HTTP 请求
+    # grpc_channel = grpc.insecure_channel(f"{instance['address']}:{instance['port']}")
+else:
+    print("No healthy instances found")
+```
+
+---
+
+### 5. 服务注销
+
+#### 场景：服务优雅关闭时注销
+
+```python
+import atexit
+
+# 注册退出处理函数
+def deregister_service():
+    consul_client.agent.service.deregister(service_id)
+    print(f"Service deregistered: {service_id}")
+
+atexit.register(deregister_service)
+```
+
+---
+
+### 6. 完整示例：用户服务 + 订单服务
+
+#### 用户服务（服务提供者）
+
+```python
+# user_service.py
+import consul
+import socket
+import uuid
+import atexit
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+# Consul 配置
+CONSUL_HOST = 'localhost'
+CONSUL_PORT = 8500
+SERVICE_NAME = 'user-service'
+SERVICE_PORT = 8001
+
+# 初始化 Consul 客户端
+consul_client = consul.Consul(host=CONSUL_HOST, port=CONSUL_PORT)
+
+# 服务注册
+def register_service():
+    service_id = f"{SERVICE_NAME}-{uuid.uuid4().hex[:8]}"
+    service_address = socket.gethostbyname(socket.gethostname())
+
+    consul_client.agent.service.register(
+        name=SERVICE_NAME,
+        service_id=service_id,
+        address=service_address,
+        port=SERVICE_PORT,
+        tags=["v1"],
+        check=consul.Check.http(
+            f"http://{service_address}:{SERVICE_PORT}/health",
+            interval="10s",
+            timeout="5s"
+        )
+    )
+
+    # 注册退出处理
+    atexit.register(lambda: consul_client.agent.service.deregister(service_id))
+
+    print(f"Registered: {service_id} at {service_address}:{SERVICE_PORT}")
+    return service_id
+
+# 健康检查端点
+@app.route('/health')
+def health():
+    return jsonify({"status": "healthy"})
+
+# 业务接口
+@app.route('/users/<user_id>')
+def get_user(user_id):
+    return jsonify({
+        "id": user_id,
+        "name": f"User{user_id}",
+        "email": f"user{user_id}@example.com"
+    })
+
+if __name__ == '__main__':
+    register_service()
+    app.run(host='0.0.0.0', port=SERVICE_PORT)
+```
+
+---
+
+#### 订单服务（服务调用者）
+
+```python
+# order_service.py
+import consul
+import random
+import requests
+
+# Consul 配置
+CONSUL_HOST = 'localhost'
+CONSUL_PORT = 8500
+USER_SERVICE_NAME = 'user-service'
+
+consul_client = consul.Consul(host=CONSUL_HOST, port=CONSUL_PORT)
+
+def get_user_service_url():
+    """服务发现：获取用户服务地址"""
+    index, services = consul_client.health.service(
+        USER_SERVICE_NAME,
+        passing=True
+    )
+
+    if not services:
+        raise Exception("No healthy user-service instances")
+
+    # 简单的负载均衡：随机选择
+    service = random.choice(services)
+    address = service['Service']['Address']
+    port = service['Service']['Port']
+
+    return f"http://{address}:{port}"
+
+def get_user(user_id):
+    """调用用户服务"""
+    base_url = get_user_service_url()
+    url = f"{base_url}/users/{user_id}"
+
+    response = requests.get(url, timeout=3)
+    return response.json()
+
+# 使用示例
+if __name__ == '__main__':
+    try:
+        user = get_user("123")
+        print(f"User: {user}")
+    except Exception as e:
+        print(f"Error: {e}")
+```
+
+---
+
+## 五、客户端负载均衡
+
+### 1. 什么是客户端负载均衡？
+
+**服务端负载均衡：**
+```
+Client → Nginx/LB → Service A
+                → Service B
+```
+- 由独立的 LB（如 Nginx）分发流量
+- 客户端不知道后端有多少实例
+
+**客户端负载均衡：**
+```
+Client → 查询 Consul → 获取实例列表
+         → 自己选择实例 → 直接调用
+```
+- 客户端从注册中心获取实例列表
+- 客户端自己选择实例（随机、轮询、加权）
+- 客户端直接调用服务，无中间代理
+
+**优缺点：**
+
+| 方式 | 优点 | 缺点 |
 |------|------|------|
-| 环境配置 | 环境相关的配置 | 数据库地址、Redis地址 |
-| 业务配置 | 业务相关的配置 | 限额、开关、特性开关 |
-| 敏感配置 | 需要加密的配置 | 密钥、密码、Token |
+| 服务端 LB | 客户端简单，统一管理 | LB 成为单点，性能瓶颈 |
+| 客户端 LB | 无单点，性能好，直连 | 客户端逻辑复杂，需感知注册中心 |
 
-### 动态配置推送
-
-**推送流程：**
-```
-配置修改
-  -> 配置中心验证
-  -> 版本管理（Git）
-  -> 灰度发布（先推部分实例）
-  -> 推送到目标服务
-  -> 服务监听到变更
-  -> 重新加载配置
-```
-
-**配置监听实现：**
-- 长轮询：客户端定期询问是否有变更
-- WebSocket：服务端主动推送
-- MQ：通过消息队列推送变更
+**微服务常用：** 客户端负载均衡（配合注册中心）
 
 ---
 
-## 六、Nacos实战
+### 2. 负载均衡策略
 
-### 服务注册示例
+```python
+import random
 
-```yaml
-# application.yml
-spring:
-  cloud:
-    nacos:
-      discovery:
-        server-addr: 127.0.0.1:8848
-        namespace: dev
-        group: DEFAULT_GROUP
-```
+class LoadBalancer:
+    """负载均衡器"""
 
-```java
-@SpringBootApplication
-@EnableDiscoveryClient
-public class UserServiceApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(UserServiceApplication.class, args);
-    }
-}
-```
+    def __init__(self, instances):
+        self.instances = instances
+        self.index = 0
 
-### 服务调用示例
+    def random(self):
+        """随机"""
+        return random.choice(self.instances)
 
-```java
-@RestController
-public class OrderController {
+    def round_robin(self):
+        """轮询"""
+        instance = self.instances[self.index]
+        self.index = (self.index + 1) % len(self.instances)
+        return instance
 
-    @Autowired
-    private DiscoveryClient discoveryClient;
+    def weighted(self, weights):
+        """加权轮询"""
+        # weights: {'instance_id': weight}
+        pass
 
-    @GetMapping("/order/call-user")
-    public String callUserService() {
-        // 获取用户服务实例列表
-        List<ServiceInstance> instances = discoveryClient.getInstances("user-service");
-        
-        // 负载均衡选择一个实例
-        ServiceInstance instance = loadBalancer.choose(instances);
-        
-        // 调用服务
-        String url = instance.getUri() + "/user/info";
-        return restTemplate.getForObject(url, String.class);
-    }
-}
-```
-
-### 配置中心示例
-
-```yaml
-# bootstrap.yml
-spring:
-  cloud:
-    nacos:
-      config:
-        server-addr: 127.0.0.1:8848
-        namespace: dev
-        group: DEFAULT_GROUP
-        file-extension: yaml
-```
-
-```java
-@RefreshScope
-@RestController
-public class ConfigController {
-
-    @Value("${user.limit:100}")
-    private Integer userLimit;
-
-    @GetMapping("/config/limit")
-    public Integer getLimit() {
-        return userLimit;
-    }
-}
+    def consistent_hash(self, key):
+        """一致性哈希"""
+        # 相同 key 始终路由到同一实例
+        pass
 ```
 
 ---
 
-## 七、面试高频题
+### 3. 实战：带负载均衡的服务调用
 
-### 1. 注册中心选CP还是AP？
-大多数场景选AP，可用性优先 -> CP方案在注册中心选举期间服务不可用，影响范围大 -> 注册中心短暂故障不影响已有调用（本地缓存兜底） -> 保障服务可用性比强一致更重要
+```python
+import consul
+import random
 
-### 2. 注册中心挂了会怎样？
-已有调用依赖本地缓存继续工作，新服务发现不了 -> 服务间调用不受影响，但新服务上线无法被发现 -> 注册中心恢复后自动同步
+class ServiceClient:
+    """带服务发现和负载均衡的客户端"""
 
-### 3. Eureka和Nacos有什么区别？
-Eureka是AP，Nacos支持AP/CP切换 -> Eureka已闭源，Nacos活跃开发 -> Nacos同时支持注册中心和配置中心 -> Nacos支持更丰富的服务治理功能
+    def __init__(self, consul_host='localhost', consul_port=8500):
+        self.consul = consul.Consul(host=consul_host, port=consul_port)
+        self.cache = {}  # 本地缓存
+        self.cache_ttl = 30  # 缓存 30 秒
 
-### 4. 配置中心怎么实现配置动态生效？
-使用@RefreshScope注解标记需要刷新的Bean -> 配置变更后通过WebSocket/长轮询推送 -> Bean接收到变更后重新绑定属性 -> 无需重启服务
+    def get_instances(self, service_name):
+        """获取服务实例（带缓存）"""
+        import time
+
+        # 检查缓存
+        if service_name in self.cache:
+            cached_time, instances = self.cache[service_name]
+            if time.time() - cached_time < self.cache_ttl:
+                return instances
+
+        # 查询 Consul
+        index, services = self.consul.health.service(
+            service_name,
+            passing=True
+        )
+
+        instances = [
+            {
+                'address': s['Service']['Address'],
+                'port': s['Service']['Port'],
+                'id': s['Service']['ID']
+            }
+            for s in services
+        ]
+
+        # 更新缓存
+        self.cache[service_name] = (time.time(), instances)
+
+        return instances
+
+    def call_service(self, service_name, path, method='GET', **kwargs):
+        """调用服务"""
+        instances = self.get_instances(service_name)
+
+        if not instances:
+            raise Exception(f"No healthy instances for {service_name}")
+
+        # 随机负载均衡
+        instance = random.choice(instances)
+
+        url = f"http://{instance['address']}:{instance['port']}{path}"
+
+        # 发起请求
+        if method == 'GET':
+            response = requests.get(url, **kwargs)
+        elif method == 'POST':
+            response = requests.post(url, **kwargs)
+
+        return response.json()
+
+# 使用
+client = ServiceClient()
+user = client.call_service('user-service', '/users/123')
+```
 
 ---
 
-## 练习题
+## 六、注册中心挂了怎么办？
 
-- [ ] 练习1：本地搭建Nacos服务，体验服务注册与发现
-- [ ] 练习2：实现两个服务间的RPC调用，通过Nacos发现地址
-- [ ] 练习3：模拟服务宕机场景，观察注册中心的剔除机制
-- [ ] 练习4：使用Nacos配置中心，实现配置动态刷新
-- [ ] 练习5：对比Zookeeper和Nacos的差异，分析适用场景
+### 1. 问题分析
+
+如果 Consul 挂了：
+- 新服务无法注册
+- 服务无法发现新实例
+- **但已有的服务调用不受影响**（如果有本地缓存）
 
 ---
 
-## 下讲预告
+### 2. 解决方案
 
-第4讲将深入服务治理：限流、熔断、降级、负载均衡等核心机制，保障微服务系统的稳定性和弹性。
+#### 方案 1：Consul 集群高可用
+
+```
+┌─────────────┐
+│   Client    │
+└──────┬──────┘
+       │
+    ┌──▼──┐
+    │Consul│  (3-5 个 Server 组成集群)
+    │Cluster│
+    └──────┘
+```
+
+- 部署 3 或 5 个 Server 节点
+- 通过 Raft 选举 Leader
+- 只要超过半数节点存活，集群可用
+
+---
+
+#### 方案 2：客户端本地缓存
+
+**原理：**
+- 客户端缓存服务列表
+- Consul 挂了时，使用缓存
+- 定期后台刷新缓存
+
+**代码实现：**（上面的 `ServiceClient` 已实现缓存）
+
+```python
+def get_instances(self, service_name):
+    # 1. 先查缓存
+    # 2. 缓存过期，查 Consul
+    # 3. Consul 挂了，返回缓存（如果有）
+    # 4. 都没有，抛异常
+```
+
+---
+
+#### 方案 3：多注册中心
+
+```
+Client → Consul (主)
+     ↘
+      → Etcd (备)
+```
+
+- 同时连接多个注册中心
+- 一个挂了，用另一个
+
+---
+
+### 3. 最佳实践
+
+1. **Consul 集群部署**：至少 3 个 Server 节点
+2. **客户端缓存**：必须有本地缓存，防止注册中心抖动影响业务
+3. **优雅降级**：注册中心不可用时，使用缓存或静态配置
+4. **监控告警**：监控 Consul 集群状态
+
+---
+
+## 七、大厂常见注册中心坑点
+
+### 坑点 1：健康检查不准确
+
+**问题：**
+- 服务进程在，但业务逻辑挂了（如数据库连接断了）
+- 健康检查只检查进程存活，返回健康
+- 流量路由到故障实例
+
+**正确做法：**
+```python
+@app.route('/health')
+def health():
+    # 检查数据库连接
+    if not db.is_connected():
+        return jsonify({"status": "unhealthy"}), 503
+
+    # 检查依赖服务
+    if not check_dependencies():
+        return jsonify({"status": "unhealthy"}), 503
+
+    return jsonify({"status": "healthy"})
+```
+
+---
+
+### 坑点 2：服务注册风暴
+
+**场景：**
+- Consul 重启
+- 所有服务同时重新注册
+- Consul 被打挂
+
+**正确做法：**
+- 服务启动时随机延迟注册（0~30 秒）
+- Consul 限流配置
+
+---
+
+### 坑点 3：缓存过期时间设置不当
+
+**问题：**
+- 缓存时间太长：服务下线了，客户端还在调
+- 缓存时间太短：频繁查询 Consul，压力大
+
+**建议：**
+- 缓存 TTL：10~30 秒
+- 后台异步刷新
+
+---
+
+### 坑点 4：没有处理空列表
+
+**问题：**
+```python
+instances = get_instances("user-service")
+instance = random.choice(instances)  # 如果 instances 为空，直接崩
+```
+
+**正确做法：**
+```python
+instances = get_instances("user-service")
+if not instances:
+    # 降级：返回默认值、抛异常、使用静态配置
+    raise ServiceUnavailableException()
+```
+
+---
+
+### 坑点 5：网络分区导致脑裂
+
+**场景：**
+- Consul 集群网络分区
+- 出现两个 Leader
+- 数据不一致
+
+**预防：**
+- Consul Server 部署在同一网络段
+- 使用奇数个节点（3 或 5）
+- 监控集群状态
+
+---
+
+## 八、面试高频题（这一讲相关）
+
+### 1. 为什么微服务需要注册中心？
+
+**参考答案：**
+
+微服务拆分后，服务实例动态变化（扩容、缩容、故障、迁移），IP 和端口不固定。注册中心解决：
+1. **服务注册**：服务启动时自动注册
+2. **服务发现**：调用方动态获取实例列表
+3. **健康检查**：剔除故障实例
+4. **元数据管理**：存储服务版本、区域等信息
+
+---
+
+### 2. Consul 和 Eureka 的区别？
+
+| 维度 | Consul | Eureka |
+|------|--------|--------|
+| 一致性 | CP（强一致性） | AP（最终一致性） |
+| 协议 | Raft | 自己实现 |
+| 语言支持 | 多语言 | Java 为主 |
+| 健康检查 | 丰富（HTTP/TCP/Script/TTL） | 简单 |
+| 状态 | 活跃维护 | 已停更 |
+| KV 存储 | 支持 | 不支持 |
+
+**选型建议：** 追求强一致性选 Consul，Java 生态且能接受最终一致性可选 Nacos。
+
+---
+
+### 3. 服务注册与发现的流程？
+
+**参考答案：**
+
+1. **服务启动**：向注册中心发送注册请求（IP、端口、元数据）
+2. **健康检查**：注册中心定期检查服务健康状态
+3. **服务发现**：调用方查询注册中心，获取健康实例列表
+4. **负载均衡**：调用方选择实例发起调用
+5. **服务下线**：服务关闭时注销，或健康检查失败被剔除
+
+---
+
+### 4. 客户端负载均衡和服务端负载均衡的区别？
+
+**参考答案：**
+
+| 维度 | 客户端 LB | 服务端 LB |
+|------|----------|----------|
+| 架构 | 客户端直接调用服务 | 通过中间代理（Nginx） |
+| 服务发现 | 客户端从注册中心获取 | LB 从注册中心获取 |
+| 优点 | 无单点，性能好 | 客户端简单 |
+| 缺点 | 客户端逻辑复杂 | LB 成为瓶颈 |
+
+**微服务常用：** 客户端负载均衡。
+
+---
+
+### 5. 注册中心挂了怎么办？
+
+**参考答案：**
+
+1. **集群部署**：Consul 部署 3~5 个 Server，保证高可用
+2. **客户端缓存**：本地缓存服务列表，注册中心挂了用缓存
+3. **优雅降级**：缓存也没了，使用静态配置或熔断
+4. **监控告警**：及时发现并处理
+
+---
+
+### 6. 怎么保证服务注册的准确性？
+
+**参考答案：**
+
+1. **健康检查**：不仅检查进程，还要检查业务依赖（数据库、下游服务）
+2. **优雅注销**：服务关闭时主动注销，避免僵尸实例
+3. **TTL 机制**：服务定期上报心跳，超时自动剔除
+4. **防抖动**：避免网络抖动导致频繁上下线
+
+---
+
+## 九、这一讲你必须记住的核心结论
+
+1. **微服务必须要有注册中心**，解决服务地址动态变化问题
+2. **Consul 是 CP 架构**，追求强一致性，适合 Python/Go 微服务
+3. **服务注册**：启动时注册，关闭时注销
+4. **服务发现**：查询健康实例列表
+5. **健康检查**：必须检查业务依赖，不仅是进程
+6. **客户端负载均衡**：微服务常用，客户端直接选择实例调用
+7. **本地缓存**：必须有，防止注册中心故障影响业务
+8. **Consul 集群**：生产环境至少 3 个 Server 节点
+9. **常见坑**：健康检查不准、注册风暴、缓存设置不当
+10. **选型**：Python 推荐 Consul，K8s 原生推荐 Etcd，Java 推荐 Nacos
+
+---
+
+## 十、这一讲的练习题
+
+### 练习 1：完善健康检查
+
+**要求：**
+修改用户服务的 `/health` 接口，检查：
+1. 数据库连接是否正常
+2. Redis 连接是否正常
+3. 磁盘空间是否充足
+
+如果任何一项失败，返回 503。
+
+---
+
+### 练习 2：实现加权负载均衡
+
+**要求：**
+实现一个加权轮询负载均衡器：
+- 实例 A 权重 3
+- 实例 B 权重 1
+- 4 次请求中，A 被选 3 次，B 被选 1 次
+
+---
+
+### 练习 3：模拟注册中心故障
+
+**要求：**
+1. 启动 Consul、用户服务、订单服务
+2. 停止 Consul
+3. 观察订单服务的表现（应该能用缓存继续调用一段时间）
+4. 重启 Consul，观察服务是否自动恢复
+
+---
+
+## 十一、下一讲预告
+
+下一讲我们进入微服务的"保护伞"：
+
+**第 4 讲：服务治理（Python 版）— 限流、熔断、降级实战**
+
+会讲：
+- 为什么需要服务治理？
+- 服务限流：令牌桶、漏桶算法实战
+- 服务熔断：熔断器状态机
+- 服务降级：返回默认值、降级策略
+- Python 限流库：ratelimit
+- Python 熔断库：pybreaker
+- 超时控制与重试机制
+- 幂等性设计
+- 大厂常见服务治理坑点
