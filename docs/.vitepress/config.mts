@@ -70,7 +70,8 @@ export default defineConfig({
             collapsed: true,
             items: [
               { text: 'Claude Code 学习笔记', link: '/ai-app/agent-analysis/learn-claude-code' },
-              { text: 'NanoClaw 项目解析', link: '/ai-app/agent-analysis/nanoclaw' }
+              { text: 'NanoClaw 项目解析', link: '/ai-app/agent-analysis/nanoclaw' },
+              { text: 'Hermes Agent 框架分析', link: '/ai-app/agent-analysis/hermes-agent' }
             ]
           },
           {
