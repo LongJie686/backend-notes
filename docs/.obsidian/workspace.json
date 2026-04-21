@@ -186,6 +186,7 @@
   },
   "active": "6cf2868e7b37dec0",
   "lastOpenFiles": [
+    "database/mysql-notes/lecture-10.md",
     "high-concurrency/lecture-7.md",
     "high-concurrency/lecture-6.md",
     "high-concurrency/lecture-5.md",
@@ -211,7 +212,6 @@
     "high-concurrency/lecture-2.md",
     "database/mysql-notes/lecture-8.md",
     "backend/jwt.md",
-    "engineering/osgb-3dtiles.md",
     "data-analysis",
     "ai-app/skills",
     "big-data",
