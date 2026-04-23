@@ -46,7 +46,7 @@ Text: "This product is amazing!" -> Positive
 Text: "Terrible experience" -> Negative
 Text: "It's okay, nothing special" -> Neutral
 Text: "{user_input}" ->
-```
+[]()```
 
 ## RAG 检索增强生成
 

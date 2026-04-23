@@ -178,7 +178,7 @@ export default defineConfig({
       },
       {
         text: '高并发系统设计',
-        collapsed: true,
+        collapsed: false,
         items: [
           { text: '学习路线', link: '/high-concurrency/' },
           { text: 'L1: 基础认知与架构演进', link: '/high-concurrency/lecture-1' },
