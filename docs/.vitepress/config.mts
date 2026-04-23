@@ -36,7 +36,7 @@ export default defineConfig({
       },
       {
         text: '数据库',
-        collapsed: true,
+        collapsed: false,
         items: [
           { text: 'MySQL', link: '/database/mysql' },
           {

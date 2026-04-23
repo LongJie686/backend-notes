@@ -11,17 +11,10 @@
             "id": "d5b2f03d05ed0037",
             "type": "leaf",
             "state": {
-              "type": "canvas",
-              "state": {
-                "file": "未命名.canvas",
-                "viewState": {
-                  "x": 0,
-                  "y": 0,
-                  "zoom": 0
-                }
-              },
-              "icon": "lucide-layout-dashboard",
-              "title": "未命名"
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "关系图谱"
             }
           }
         ]
@@ -167,13 +160,23 @@
               "icon": "lucide-list",
               "title": "mysql-notes 的大纲"
             }
+          },
+          {
+            "id": "328b9d5cb10a4d01",
+            "type": "leaf",
+            "state": {
+              "type": "git-view",
+              "state": {},
+              "icon": "git-pull-request",
+              "title": "Source Control"
+            }
           }
-        ]
+        ],
+        "currentTab": 5
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -189,8 +192,8 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
-    "ai-app/llm.md",
     "未命名.canvas",
+    "ai-app/llm.md",
     "database/mysql-notes/lecture-10.md",
     "high-concurrency/lecture-7.md",
     "high-concurrency/lecture-6.md",
@@ -215,7 +218,6 @@
     "microservice/lecture-2.md",
     "architecture/lecture-2.md",
     "high-concurrency/lecture-2.md",
-    "database/mysql-notes/lecture-8.md",
     "data-analysis",
     "ai-app/skills",
     "big-data",
