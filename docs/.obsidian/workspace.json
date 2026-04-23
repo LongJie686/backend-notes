@@ -11,14 +11,17 @@
             "id": "d5b2f03d05ed0037",
             "type": "leaf",
             "state": {
-              "type": "markdown",
+              "type": "canvas",
               "state": {
-                "file": "ai-app/llm.md",
-                "mode": "source",
-                "source": false
+                "file": "未命名.canvas",
+                "viewState": {
+                  "x": 0,
+                  "y": 0,
+                  "zoom": 0
+                }
               },
-              "icon": "lucide-file",
-              "title": "llm"
+              "icon": "lucide-layout-dashboard",
+              "title": "未命名"
             }
           }
         ]
@@ -184,8 +187,10 @@
       "bases:新建数据库": false
     }
   },
-  "active": "6cf2868e7b37dec0",
+  "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "ai-app/llm.md",
+    "未命名.canvas",
     "database/mysql-notes/lecture-10.md",
     "high-concurrency/lecture-7.md",
     "high-concurrency/lecture-6.md",
@@ -211,7 +216,6 @@
     "architecture/lecture-2.md",
     "high-concurrency/lecture-2.md",
     "database/mysql-notes/lecture-8.md",
-    "backend/jwt.md",
     "data-analysis",
     "ai-app/skills",
     "big-data",
