@@ -10,7 +10,7 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
-      { text: '首页', link: '/' },
+      { text: '首页', link: '/ai-app/llm-dev/' },
       { text: '后端', link: '/backend/python' },
       { text: '数据库', link: '/database/mysql' },
       { text: 'AI', link: '/ai-app/llm' },
@@ -41,7 +41,7 @@ export default defineConfig({
           { text: 'MySQL', link: '/database/mysql' },
           {
             text: 'MySQL 学习笔记',
-            collapsed: true,
+            collapsed: false,
             items: [
               { text: 'L1: 表设计', link: '/database/mysql-notes/lecture-1' },
               { text: 'L2: 索引', link: '/database/mysql-notes/lecture-2' },
@@ -52,7 +52,10 @@ export default defineConfig({
               { text: 'L7: 慢查询优化', link: '/database/mysql-notes/lecture-7' },
               { text: 'L8: 主从复制与读写分离', link: '/database/mysql-notes/lecture-8' },
               { text: 'L9: 分库分表', link: '/database/mysql-notes/lecture-9' },
-              { text: 'L10: 高可用与备份恢复', link: '/database/mysql-notes/lecture-10' }
+              { text: 'L10: 高可用与备份恢复', link: '/database/mysql-notes/lecture-10' },
+              { text: 'L11: 面试题-基础/索引/事务', link: '/database/mysql-notes/lecture-11' },
+              { text: 'L12: 面试题-锁与并发/调优', link: '/database/mysql-notes/lecture-12' },
+              { text: 'L13: 面试题-主从复制/分库分表', link: '/database/mysql-notes/lecture-13' }
             ]
           },
           { text: 'Redis', link: '/database/redis' },
@@ -105,7 +108,7 @@ export default defineConfig({
           },
           {
             text: '多智能体设计实战',
-            collapsed: true,
+            collapsed: false,
             items: [
               { text: '学习路线', link: '/ai-app/multi-agent/' },
               { text: 'L1: 多智能体基础认知', link: '/ai-app/multi-agent/lecture-1' },
@@ -123,7 +126,7 @@ export default defineConfig({
           },
           {
             text: '大模型应用开发',
-            collapsed: true,
+            collapsed: false,
             items: [
               { text: '学习路线', link: '/ai-app/llm-dev/' },
               { text: 'L1: 大模型基础与 API', link: '/ai-app/llm-dev/lecture-1' },
@@ -143,7 +146,7 @@ export default defineConfig({
       },
       {
         text: '微服务',
-        collapsed: true,
+        collapsed: false,
         items: [
           { text: '学习路线', link: '/microservice/' },
           { text: 'L1: 微服务架构认知', link: '/microservice/lecture-1' },
@@ -160,7 +163,7 @@ export default defineConfig({
       },
       {
         text: '架构设计',
-        collapsed: true,
+        collapsed: false,
         items: [
           { text: '学习路线', link: '/architecture/' },
           { text: 'L1: 架构定义与复杂度', link: '/architecture/lecture-1' },
