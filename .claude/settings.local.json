@@ -10,7 +10,8 @@
       "mcp__github__create_repository",
       "Bash(gh auth:*)",
       "Bash(gh repo:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "mcp__filesystem__list_directory"
     ]
   }
 }

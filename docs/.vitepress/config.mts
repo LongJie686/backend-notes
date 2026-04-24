@@ -170,7 +170,7 @@ export default defineConfig({
           { text: 'L2: 架构设计三原则与四步法', link: '/architecture/lecture-2' },
           { text: 'L3: 高性能架构模式', link: '/architecture/lecture-3' },
           { text: 'L4: 高可用架构模式', link: '/architecture/lecture-4' },
-          { text: 'L5: 可扩展架构模式', link: '/architecture/lecture-5' },
+          { text: 'L5: 高可用架构模式（上）', link: '/architecture/lecture-5' },
           { text: 'L6: 架构实战与案例分析', link: '/architecture/lecture-6' },
           { text: 'L7: 面试题总结', link: '/architecture/lecture-7' },
           { text: 'L8: 练习题库', link: '/architecture/lecture-8' }
