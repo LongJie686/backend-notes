@@ -190,8 +190,9 @@
       "bases:新建数据库": false
     }
   },
-  "active": "6cf2868e7b37dec0",
+  "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "ai-app/agent-analysis/hermes-agent.md",
     "architecture/lecture-5.md.tmp.31232.1777026128190",
     "未命名.canvas",
     "ai-app/llm.md",
@@ -227,7 +228,6 @@
     "ai-app/mcp",
     "ai-app/text-to-sql",
     "database/mysql-notes/lecture-6.md.tmp.27708.1775718821387",
-    "high-concurrency",
-    "ai-app/llm-dev"
+    "high-concurrency"
   ]
 }
