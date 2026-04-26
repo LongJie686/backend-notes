@@ -119,8 +119,9 @@ onMounted(async () => {
     .attr('width', width)
     .attr('height', height)
 
-  // Zoom
-  const g = svg.append('g')
+  // Zoom - outer group for zoom/pan, inner group for rotation
+  const g = svg.append('g') // zoom container
+  const gInner = g.append('g') // rotation container
   const zoom = d3.zoom<SVGSVGElement, unknown>()
     .scaleExtent([0.2, 4])
     .on('zoom', (event) => {
@@ -131,38 +132,70 @@ onMounted(async () => {
   // Initial transform to center
   svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(0.8))
 
-  // Arrow marker
-  svg.append('defs').append('marker')
-    .attr('id', 'arrowhead')
-    .attr('viewBox', '0 -5 10 10')
-    .attr('refX', 20)
-    .attr('refY', 0)
-    .attr('markerWidth', 6)
-    .attr('markerHeight', 6)
-    .attr('orient', 'auto')
-    .append('path')
-    .attr('d', 'M0,-5L10,0L0,5')
-    .attr('fill', '#999')
+  // SVG Defs: gradients, shadows for 3D effect
+  const defs = svg.append('defs')
 
-  // Force simulation
+  // Drop shadow filter
+  const shadowFilter = defs.append('filter')
+    .attr('id', 'node-shadow')
+    .attr('x', '-50%').attr('y', '-50%')
+    .attr('width', '200%').attr('height', '200%')
+  shadowFilter.append('feDropShadow')
+    .attr('dx', 0).attr('dy', 2)
+    .attr('stdDeviation', 3)
+    .attr('flood-color', 'rgba(0,0,0,0.3)')
+
+  // Glow filter for category nodes
+  const glowFilter = defs.append('filter')
+    .attr('id', 'node-glow')
+    .attr('x', '-50%').attr('y', '-50%')
+    .attr('width', '200%').attr('height', '200%')
+  glowFilter.append('feGaussianBlur')
+    .attr('stdDeviation', 4)
+    .attr('result', 'blur')
+  glowFilter.append('feComposite')
+    .attr('in', 'SourceGraphic')
+    .attr('in2', 'blur')
+    .attr('operator', 'over')
+
+  // Create radial gradients for each category color (3D sphere effect)
+  Object.entries(categoryColors).forEach(([name, color]) => {
+    const gradId = `grad-${name}`
+    const grad = defs.append('radialGradient')
+      .attr('id', gradId)
+      .attr('cx', '35%').attr('cy', '35%')
+      .attr('r', '65%')
+    const baseColor = d3.color(color)!
+    grad.append('stop')
+      .attr('offset', '0%')
+      .attr('stop-color', baseColor.brighter(1.2).toString())
+    grad.append('stop')
+      .attr('offset', '50%')
+      .attr('stop-color', color)
+    grad.append('stop')
+      .attr('offset', '100%')
+      .attr('stop-color', baseColor.darker(1.0).toString())
+  })
+
+  // Force simulation (adjusted for larger nodes)
   simulation = d3.forceSimulation<GraphNode>(nodes)
     .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
       .id(d => d.id)
-      .distance(d => d.type === 'cross-ref' ? 150 : 80)
+      .distance(d => d.type === 'cross-ref' ? 180 : 100)
       .strength(d => d.type === 'cross-ref' ? 0.3 : 0.8)
     )
     .force('charge', d3.forceManyBody<GraphNode>().strength(d =>
-      d.type === 'category' ? -400 : -80
+      d.type === 'category' ? -600 : -120
     ))
     .force('center', d3.forceCenter(0, 0).strength(0.05))
     .force('collision', d3.forceCollide<GraphNode>().radius(d =>
-      d.type === 'category' ? 40 : 18
+      d.type === 'category' ? 55 : 30
     ))
     .force('x', d3.forceX(0).strength(0.02))
     .force('y', d3.forceY(0).strength(0.02))
 
   // Draw edges
-  const link = g.append('g')
+  const link = gInner.append('g')
     .selectAll('line')
     .data(edges)
     .join('line')
@@ -172,34 +205,70 @@ onMounted(async () => {
     .attr('stroke-dasharray', d => d.type === 'cross-ref' ? '4,4' : 'none')
 
   // Draw node groups
-  const nodeGroup = g.append('g')
+  const nodeGroup = gInner.append('g')
     .selectAll<SVGGElement, GraphNode>('g')
     .data(nodes)
     .join('g')
     .attr('class', 'kg-node')
     .style('cursor', 'pointer')
 
-  // Node circles
+  // Node circles - 3D sphere effect with radial gradients
   nodeGroup.append('circle')
-    .attr('r', d => d.type === 'category' ? 22 : 8)
+    .attr('r', d => d.type === 'category' ? 32 : 14)
     .attr('fill', d => {
-      if (d.type === 'category') return d.color
+      if (d.type === 'category') {
+        return `url(#grad-${d.label})`
+      }
+      // Article nodes: use parent category gradient or solid
+      const parentCat = nodes.find(n => n.id === d.parent)
+      if (parentCat) {
+        return `url(#grad-${parentCat.label})`
+      }
       return d3.color(d.color)?.darker(0.5)?.toString() || d.color
     })
-    .attr('stroke', d => d.type === 'category' ? d.color : 'none')
-    .attr('stroke-width', d => d.type === 'category' ? 3 : 0)
-    .attr('fill-opacity', d => d.type === 'category' ? 0.9 : 0.7)
-    .attr('stroke-opacity', 0.3)
+    .attr('fill-opacity', d => d.type === 'category' ? 1 : 0.85)
+    .attr('stroke', d => d.type === 'category' ? d3.color(d.color)!.brighter(0.5).toString() : d.color)
+    .attr('stroke-width', d => d.type === 'category' ? 2 : 1)
+    .attr('stroke-opacity', d => d.type === 'category' ? 0.6 : 0.4)
+    .attr('filter', d => d.type === 'category' ? 'url(#node-glow)' : 'url(#node-shadow)')
+
+  // 3D highlight spot on category nodes (white specular)
+  nodeGroup.filter(d => d.type === 'category')
+    .append('circle')
+    .attr('r', 10)
+    .attr('cx', -8)
+    .attr('cy', -8)
+    .attr('fill', 'rgba(255,255,255,0.35)')
+    .style('pointer-events', 'none')
+
+  // 3D highlight spot on article nodes
+  nodeGroup.filter(d => d.type === 'article')
+    .append('circle')
+    .attr('r', 4)
+    .attr('cx', -4)
+    .attr('cy', -4)
+    .attr('fill', 'rgba(255,255,255,0.3)')
+    .style('pointer-events', 'none')
 
   // Category labels
   nodeGroup.filter(d => d.type === 'category')
     .append('text')
     .text(d => d.label)
-    .attr('dy', 35)
+    .attr('dy', 45)
     .attr('text-anchor', 'middle')
     .attr('fill', 'var(--vp-c-text-1)')
-    .attr('font-size', '13px')
-    .attr('font-weight', '600')
+    .attr('font-size', '14px')
+    .attr('font-weight', '700')
+    .style('pointer-events', 'none')
+
+  // Article labels (always visible)
+  nodeGroup.filter(d => d.type === 'article')
+    .append('text')
+    .text(d => d.label.length > 8 ? d.label.slice(0, 8) + '..' : d.label)
+    .attr('dy', -20)
+    .attr('text-anchor', 'middle')
+    .attr('fill', 'var(--vp-c-text-2)')
+    .attr('font-size', '10px')
     .style('pointer-events', 'none')
 
   // Drag behavior
@@ -243,19 +312,6 @@ onMounted(async () => {
         const t = typeof e.target === 'string' ? e.target : e.target.id
         return (s === d.id || t === d.id) ? 1 : 0.05
       })
-
-      // Show article label on hover
-      if (d.type === 'article') {
-        d3.select(event.currentTarget as SVGGElement)
-          .append('text')
-          .attr('class', 'hover-label')
-          .text(d.label)
-          .attr('dy', -15)
-          .attr('text-anchor', 'middle')
-          .attr('fill', 'var(--vp-c-text-1)')
-          .attr('font-size', '11px')
-          .style('pointer-events', 'none')
-      }
     })
     .on('mousemove', (event: MouseEvent) => {
       tooltipPos.value = { x: event.clientX + 15, y: event.clientY - 10 }
@@ -264,9 +320,6 @@ onMounted(async () => {
       tooltip.value = null
       nodeGroup.attr('opacity', 1)
       link.attr('opacity', 1)
-      d3.select(event.currentTarget as SVGGElement)
-        .selectAll('.hover-label')
-        .remove()
     })
 
   // Click to navigate
@@ -288,6 +341,19 @@ onMounted(async () => {
     nodeGroup.attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`)
   })
 
+  // Slow rotation animation on inner group
+  let rotationAngle = 0
+  let rotationTimer: ReturnType<typeof setInterval> | null = null
+
+  // Start rotation after simulation settles (5s delay)
+  setTimeout(() => {
+    if (rotationTimer) return
+    rotationTimer = setInterval(() => {
+      rotationAngle += 0.02
+      gInner.attr('transform', `rotate(${rotationAngle})`)
+    }, 50)
+  }, 5000)
+
   // Handle resize
   const resizeObserver = new ResizeObserver(() => {
     if (!wrapperRef.value) return
@@ -300,6 +366,7 @@ onMounted(async () => {
   onUnmounted(() => {
     simulation?.stop()
     resizeObserver.disconnect()
+    if (rotationTimer) clearInterval(rotationTimer)
   })
 })
 
