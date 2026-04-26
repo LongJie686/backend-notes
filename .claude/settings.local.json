@@ -24,7 +24,8 @@
       "Bash(npx vitepress *)",
       "Bash(node *)",
       "Bash(git check-ignore *)",
-      "Bash(cat .gitignore)"
+      "Bash(cat .gitignore)",
+      "Bash(curl *)"
     ]
   }
 }
