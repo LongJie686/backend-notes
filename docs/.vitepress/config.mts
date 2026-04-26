@@ -1,6 +1,27 @@
-import { defineConfig } from 'vitepress'
+import { defineConfig, type Plugin } from 'vitepress'
+import { execSync } from 'child_process'
+import path from 'path'
+import fs from 'fs'
+
+function graphDataPlugin(): Plugin {
+  return {
+    name: 'generate-graph-data',
+    buildStart() {
+      const scriptPath = path.resolve(__dirname, 'scripts/generate-graph-data.mts')
+      const outputFile = path.resolve(__dirname, 'graph-data.json')
+      if (!fs.existsSync(outputFile) || process.env.NODE_ENV === 'production') {
+        try {
+          execSync(`npx tsx "${scriptPath}"`, { stdio: 'pipe', cwd: path.resolve(__dirname, '../..') })
+        } catch {}
+      }
+    }
+  }
+}
 
 export default defineConfig({
+  vite: {
+    plugins: [graphDataPlugin()]
+  },
   title: "LongJie 的知识库",
   description: '后端 / 推荐系统 / AI',
   lang: 'zh-CN',
