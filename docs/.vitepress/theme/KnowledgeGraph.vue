@@ -271,21 +271,28 @@ onMounted(async () => {
     .attr('font-size', '10px')
     .style('pointer-events', 'none')
 
-  // Drag behavior
+  // Drag behavior (orbit-aware: only category nodes draggable after orbits start)
+  let orbitStarted = false
   const drag = d3.drag<SVGGElement, GraphNode>()
     .on('start', (event, d) => {
-      if (!event.active) simulation?.alphaTarget(0.3).restart()
+      if (orbitStarted && d.type === 'article') return
+      if (!orbitStarted && !event.active) simulation?.alphaTarget(0.3).restart()
       d.fx = d.x
       d.fy = d.y
     })
     .on('drag', (event, d) => {
+      if (orbitStarted && d.type === 'article') return
       d.fx = event.x
       d.fy = event.y
+      d.x = event.x
+      d.y = event.y
     })
     .on('end', (event, d) => {
-      if (!event.active) simulation?.alphaTarget(0)
-      d.fx = null
-      d.fy = null
+      if (!orbitStarted && !event.active) simulation?.alphaTarget(0)
+      if (!orbitStarted || d.type === 'article') {
+        d.fx = null
+        d.fy = null
+      }
     })
 
   nodeGroup.call(drag)
@@ -341,18 +348,93 @@ onMounted(async () => {
     nodeGroup.attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`)
   })
 
-  // Slow rotation animation on inner group
-  let rotationAngle = 0
-  let rotationTimer: ReturnType<typeof setInterval> | null = null
+  // Orbit animation - article nodes orbit around their parent category node
+  let animFrameId: number | null = null
+  let mouseGraphX = Infinity
+  let mouseGraphY = Infinity
 
-  // Start rotation after simulation settles (5s delay)
-  setTimeout(() => {
-    if (rotationTimer) return
-    rotationTimer = setInterval(() => {
-      rotationAngle += 0.02
-      gInner.attr('transform', `rotate(${rotationAngle})`)
-    }, 50)
-  }, 5000)
+  // Track mouse position converted to graph coordinates
+  svg.on('mousemove.orbit', (event: MouseEvent) => {
+    const transform = d3.zoomTransform(svgRef.value!)
+    const rect = svgRef.value!.getBoundingClientRect()
+    mouseGraphX = (event.clientX - rect.left - transform.x) / transform.k
+    mouseGraphY = (event.clientY - rect.top - transform.y) / transform.k
+  })
+  svg.on('mouseleave.orbit', () => {
+    mouseGraphX = Infinity
+    mouseGraphY = Infinity
+  })
+
+  function startOrbits() {
+    if (orbitStarted) return
+    orbitStarted = true
+
+    // Build orbit parameters from current node positions
+    const orbitData: { node: GraphNode; parent: GraphNode; radius: number; angle: number; speed: number }[] = []
+    nodes.forEach(node => {
+      if (node.type === 'article' && node.parent) {
+        const parent = nodes.find(n => n.id === node.parent)
+        if (parent && parent.x != null && parent.y != null && node.x != null && node.y != null) {
+          const dx = node.x - parent.x
+          const dy = node.y - parent.y
+          orbitData.push({
+            node,
+            parent,
+            radius: Math.max(Math.sqrt(dx * dx + dy * dy), 50),
+            angle: Math.atan2(dy, dx),
+            speed: (0.0008 + Math.random() * 0.002) * (Math.random() > 0.5 ? 1 : -1)
+          })
+        }
+      }
+    })
+
+    // Fix category node positions
+    nodes.forEach(n => {
+      if (n.type === 'category') {
+        n.fx = n.x
+        n.fy = n.y
+      }
+    })
+
+    simulation?.stop()
+
+    const PAUSE_DIST = 150
+
+    function animate() {
+      orbitData.forEach(o => {
+        // Check mouse proximity to parent (category) node
+        const mdx = mouseGraphX - (o.parent.x ?? 0)
+        const mdy = mouseGraphY - (o.parent.y ?? 0)
+        const mouseDist = Math.sqrt(mdx * mdx + mdy * mdy)
+
+        if (mouseDist > PAUSE_DIST) {
+          o.angle += o.speed
+        }
+
+        o.node.x = (o.parent.x ?? 0) + o.radius * Math.cos(o.angle)
+        o.node.y = (o.parent.y ?? 0) + o.radius * Math.sin(o.angle)
+      })
+
+      // Update SVG positions
+      link
+        .attr('x1', d => (d.source as GraphNode).x ?? 0)
+        .attr('y1', d => (d.source as GraphNode).y ?? 0)
+        .attr('x2', d => (d.target as GraphNode).x ?? 0)
+        .attr('y2', d => (d.target as GraphNode).y ?? 0)
+
+      nodeGroup.attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`)
+
+      animFrameId = requestAnimationFrame(animate)
+    }
+
+    animFrameId = requestAnimationFrame(animate)
+  }
+
+  // Start orbits when force simulation naturally cools down
+  simulation.on('end', startOrbits)
+
+  // Fallback: start after 6 seconds even if simulation is slow
+  setTimeout(() => { if (!orbitStarted) startOrbits() }, 6000)
 
   // Handle resize
   const resizeObserver = new ResizeObserver(() => {
@@ -366,7 +448,7 @@ onMounted(async () => {
   onUnmounted(() => {
     simulation?.stop()
     resizeObserver.disconnect()
-    if (rotationTimer) clearInterval(rotationTimer)
+    if (animFrameId) cancelAnimationFrame(animFrameId)
   })
 })
 
