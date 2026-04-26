@@ -377,8 +377,16 @@ function scanMarkdownLinks(nodes, docsDir) {
   return edges
 }
 
-// Main
-const graphData = parseSidebarForGraph()
-fs.writeFileSync(OUTPUT_FILE, JSON.stringify(graphData, null, 2))
-console.log(`Generated graph data: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges`)
-console.log(`Output: ${OUTPUT_FILE}`)
+// Export for direct import by config.mts
+export function generateGraphData(outputPath: string) {
+  const graphData = parseSidebarForGraph()
+  fs.writeFileSync(outputPath, JSON.stringify(graphData, null, 2))
+  console.log(`Generated graph data: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges`)
+  return graphData
+}
+
+// Also allow standalone execution: npx tsx scripts/generate-graph-data.mts
+if (process.argv[1]?.endsWith('generate-graph-data.mts')) {
+  generateGraphData(OUTPUT_FILE)
+  console.log(`Output: ${OUTPUT_FILE}`)
+}
