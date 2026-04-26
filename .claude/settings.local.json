@@ -14,7 +14,11 @@
       "mcp__filesystem__list_directory",
       "Bash(python3 -c \" import sys, json data = sys.stdin.read\\(\\) lines = data.strip\\(\\).split\\('\\\\n'\\) for line in reversed\\(lines\\): try: obj = json.loads\\(line\\) msg = obj.get\\('message', {}\\) if isinstance\\(msg, dict\\): role = msg.get\\('role', ''\\) content_list = msg.get\\('content', []\\) if role == 'user' and isinstance\\(content_list, list\\): for item in content_list: if isinstance\\(item, dict\\) and item.get\\('type'\\) == 'text': text = item.get\\('text', ''\\) if len\\(text\\) > 2000 and '第 5 讲' in text: print\\(text[:100]\\) print\\('===FULL==='\\) print\\(text\\) sys.exit\\(0\\) except: pass \")",
       "Bash(npm install *)",
-      "Bash(npx tsx *)"
+      "Bash(npx tsx *)",
+      "Bash(mkdir *)",
+      "Bash(npm run *)",
+      "mcp__playwright__playwright_navigate",
+      "mcp__puppeteer__puppeteer_navigate"
     ]
   }
 }

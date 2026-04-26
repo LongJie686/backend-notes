@@ -8,7 +8,7 @@ function graphDataPlugin(): Plugin {
     name: 'generate-graph-data',
     buildStart() {
       const scriptPath = path.resolve(__dirname, 'scripts/generate-graph-data.mts')
-      const outputFile = path.resolve(__dirname, 'graph-data.json')
+      const outputFile = path.resolve(__dirname, '../public/graph-data.json')
       if (!fs.existsSync(outputFile) || process.env.NODE_ENV === 'production') {
         try {
           execSync(`npx tsx "${scriptPath}"`, { stdio: 'pipe', cwd: path.resolve(__dirname, '../..') })

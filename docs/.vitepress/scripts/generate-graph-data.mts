@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DOCS_DIR = path.resolve(__dirname, '../..')
-const OUTPUT_FILE = path.resolve(__dirname, '../graph-data.json')
+const OUTPUT_FILE = path.resolve(__dirname, '../../public/graph-data.json')
 
 const CATEGORY_COLORS = {
   '后端': '#42A5F5',

@@ -192,6 +192,8 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "public/graph-data.json",
+    "public",
     "ai-app/agent-analysis/hermes-agent.md",
     "architecture/lecture-5.md.tmp.31232.1777026128190",
     "未命名.canvas",
@@ -219,7 +221,6 @@
     "database/mysql-notes/lecture-9.md",
     "microservice/lecture-2.md",
     "architecture/lecture-2.md",
-    "high-concurrency/lecture-2.md",
     "data-analysis",
     "ai-app/skills",
     "big-data",
@@ -227,7 +228,6 @@
     "ai-app/voice-interaction",
     "ai-app/mcp",
     "ai-app/text-to-sql",
-    "database/mysql-notes/lecture-6.md.tmp.27708.1775718821387",
-    "high-concurrency"
+    "database/mysql-notes/lecture-6.md.tmp.27708.1775718821387"
   ]
 }
