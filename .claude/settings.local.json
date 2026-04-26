@@ -25,7 +25,8 @@
       "Bash(node *)",
       "Bash(git check-ignore *)",
       "Bash(cat .gitignore)",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(gh run *)"
     ]
   }
 }
