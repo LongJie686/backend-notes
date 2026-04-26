@@ -380,6 +380,7 @@ function scanMarkdownLinks(nodes, docsDir) {
 // Export for direct import by config.mts
 export function generateGraphData(outputPath: string) {
   const graphData = parseSidebarForGraph()
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
   fs.writeFileSync(outputPath, JSON.stringify(graphData, null, 2))
   console.log(`Generated graph data: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges`)
   return graphData
