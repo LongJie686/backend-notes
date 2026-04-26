@@ -126,7 +126,7 @@ onMounted(async () => {
       g.attr('transform', event.transform)
     })
   svg.call(zoom)
-  svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(0.25))
+  svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(0.45))
 
   // SVG Defs
   const defs = svg.append('defs')
@@ -157,15 +157,15 @@ onMounted(async () => {
   simulation = d3.forceSimulation<GraphNode>(nodes)
     .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
       .id(d => d.id)
-      .distance(d => d.type === 'cross-ref' ? 250 : 140)
-      .strength(d => d.type === 'cross-ref' ? 0.1 : 0.5)
+      .distance(d => d.type === 'cross-ref' ? 180 : 100)
+      .strength(d => d.type === 'cross-ref' ? 0.1 : 0.4)
     )
     .force('charge', d3.forceManyBody<GraphNode>().strength(d =>
-      d.type === 'category' ? -2500 : -100
+      d.type === 'category' ? -800 : -80
     ))
-    .force('center', d3.forceCenter(0, 0).strength(0.015))
+    .force('center', d3.forceCenter(0, 0).strength(0.02))
     .force('collision', d3.forceCollide<GraphNode>().radius(d =>
-      d.type === 'category' ? 150 : 25
+      d.type === 'category' ? 80 : 20
     ))
     .force('x', d3.forceX(0).strength(0.008))
     .force('y', d3.forceY(0).strength(0.008))
@@ -353,7 +353,7 @@ onMounted(async () => {
         // Fibonacci sphere distribution
         const theta = Math.acos(1 - 2 * (i + 0.5) / count)
         const phi = goldenAngle * i
-        const radius = 55 + count * 4 + Math.random() * 10
+        const radius = 45 + count * 3 + Math.random() * 8
         orbitData.push({
           node: art,
           parent,
