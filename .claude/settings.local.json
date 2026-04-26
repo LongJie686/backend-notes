@@ -20,7 +20,8 @@
       "mcp__playwright__playwright_navigate",
       "mcp__puppeteer__puppeteer_navigate",
       "mcp__puppeteer__puppeteer_screenshot",
-      "mcp__puppeteer__puppeteer_evaluate"
+      "mcp__puppeteer__puppeteer_evaluate",
+      "Bash(npx vitepress *)"
     ]
   }
 }
