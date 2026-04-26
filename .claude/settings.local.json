@@ -26,7 +26,8 @@
       "Bash(git check-ignore *)",
       "Bash(cat .gitignore)",
       "Bash(curl *)",
-      "Bash(gh run *)"
+      "Bash(gh run *)",
+      "mcp__github__get_file_contents"
     ]
   }
 }
