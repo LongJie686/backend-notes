@@ -51,6 +51,7 @@ interface GraphNode extends d3.SimulationNodeDatum {
   link: string | null
   parent: string | null
   color: string
+  z?: number
 }
 
 interface GraphEdge extends d3.SimulationLinkDatum<GraphNode> {
@@ -93,13 +94,11 @@ onMounted(async () => {
 
   const base = site.value.base
 
-  // Load graph data
   let graphData: { nodes: GraphNode[]; edges: GraphEdge[] }
   try {
     const res = await fetch(`${base}graph-data.json`)
     graphData = await res.json()
   } catch {
-    // Fallback: try direct import
     return
   }
 
@@ -119,112 +118,97 @@ onMounted(async () => {
     .attr('width', width)
     .attr('height', height)
 
-  // Zoom - outer group for zoom/pan, inner group for rotation
-  const g = svg.append('g') // zoom container
-  const gInner = g.append('g') // rotation container
+  // Single zoom group (no nesting - fixes drag coordinate issues)
+  const g = svg.append('g')
   const zoom = d3.zoom<SVGSVGElement, unknown>()
-    .scaleExtent([0.2, 4])
+    .scaleExtent([0.1, 5])
     .on('zoom', (event) => {
       g.attr('transform', event.transform)
     })
   svg.call(zoom)
+  svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(0.25))
 
-  // Initial transform - fit whole graph in viewport
-  svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(0.35))
-
-  // SVG Defs: gradients, shadows for 3D effect
+  // SVG Defs
   const defs = svg.append('defs')
 
-  // Drop shadow filter
-  const shadowFilter = defs.append('filter')
-    .attr('id', 'node-shadow')
-    .attr('x', '-50%').attr('y', '-50%')
-    .attr('width', '200%').attr('height', '200%')
-  shadowFilter.append('feDropShadow')
-    .attr('dx', 0).attr('dy', 2)
-    .attr('stdDeviation', 3)
+  // Shadow filter
+  defs.append('filter').attr('id', 'node-shadow')
+    .attr('x', '-50%').attr('y', '-50%').attr('width', '200%').attr('height', '200%')
+    .append('feDropShadow').attr('dx', 0).attr('dy', 2).attr('stdDeviation', 3)
     .attr('flood-color', 'rgba(0,0,0,0.3)')
 
-  // Glow filter for category nodes
-  const glowFilter = defs.append('filter')
-    .attr('id', 'node-glow')
-    .attr('x', '-50%').attr('y', '-50%')
-    .attr('width', '200%').attr('height', '200%')
-  glowFilter.append('feGaussianBlur')
-    .attr('stdDeviation', 4)
-    .attr('result', 'blur')
-  glowFilter.append('feComposite')
-    .attr('in', 'SourceGraphic')
-    .attr('in2', 'blur')
-    .attr('operator', 'over')
+  // Glow filter for category
+  const glow = defs.append('filter').attr('id', 'node-glow')
+    .attr('x', '-50%').attr('y', '-50%').attr('width', '200%').attr('height', '200%')
+  glow.append('feGaussianBlur').attr('stdDeviation', 5).attr('result', 'blur')
+  glow.append('feComposite').attr('in', 'SourceGraphic').attr('in2', 'blur').attr('operator', 'over')
 
-  // Create radial gradients for each category color (3D sphere effect)
+  // Radial gradients per category
   Object.entries(categoryColors).forEach(([name, color]) => {
-    const gradId = `grad-${name}`
-    const grad = defs.append('radialGradient')
-      .attr('id', gradId)
-      .attr('cx', '35%').attr('cy', '35%')
-      .attr('r', '65%')
-    const baseColor = d3.color(color)!
-    grad.append('stop')
-      .attr('offset', '0%')
-      .attr('stop-color', baseColor.brighter(1.2).toString())
-    grad.append('stop')
-      .attr('offset', '50%')
-      .attr('stop-color', color)
-    grad.append('stop')
-      .attr('offset', '100%')
-      .attr('stop-color', baseColor.darker(1.0).toString())
+    const c = d3.color(color)!
+    const grad = defs.append('radialGradient').attr('id', `grad-${name}`)
+      .attr('cx', '35%').attr('cy', '35%').attr('r', '65%')
+    grad.append('stop').attr('offset', '0%').attr('stop-color', c.brighter(1.2).toString())
+    grad.append('stop').attr('offset', '50%').attr('stop-color', color)
+    grad.append('stop').attr('offset', '100%').attr('stop-color', c.darker(1.0).toString())
   })
 
-  // Force simulation - strong repulsion to spread category nodes apart
+  // Force simulation
   simulation = d3.forceSimulation<GraphNode>(nodes)
     .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
       .id(d => d.id)
-      .distance(d => d.type === 'cross-ref' ? 200 : 120)
-      .strength(d => d.type === 'cross-ref' ? 0.2 : 0.6)
+      .distance(d => d.type === 'cross-ref' ? 250 : 140)
+      .strength(d => d.type === 'cross-ref' ? 0.1 : 0.5)
     )
     .force('charge', d3.forceManyBody<GraphNode>().strength(d =>
-      d.type === 'category' ? -2000 : -150
+      d.type === 'category' ? -2500 : -100
     ))
-    .force('center', d3.forceCenter(0, 0).strength(0.02))
+    .force('center', d3.forceCenter(0, 0).strength(0.015))
     .force('collision', d3.forceCollide<GraphNode>().radius(d =>
-      d.type === 'category' ? 120 : 35
+      d.type === 'category' ? 150 : 25
     ))
-    .force('x', d3.forceX(0).strength(0.01))
-    .force('y', d3.forceY(0).strength(0.01))
+    .force('x', d3.forceX(0).strength(0.008))
+    .force('y', d3.forceY(0).strength(0.008))
 
-  // Draw edges
-  const link = gInner.append('g')
+  // Draw edges (cross-ref only; parent-child will become spike lines)
+  const link = g.append('g')
     .selectAll('line')
-    .data(edges)
+    .data(edges.filter(e => e.type === 'cross-ref'))
     .join('line')
-    .attr('class', d => `kg-edge kg-edge-${d.type}`)
-    .attr('stroke', d => d.type === 'cross-ref' ? 'rgba(255,152,0,0.25)' : 'rgba(128,128,128,0.15)')
-    .attr('stroke-width', d => d.type === 'cross-ref' ? 1 : 0.8)
-    .attr('stroke-dasharray', d => d.type === 'cross-ref' ? '4,4' : 'none')
+    .attr('stroke', 'rgba(255,152,0,0.15)')
+    .attr('stroke-width', 0.8)
+    .attr('stroke-dasharray', '4,4')
 
-  // Draw node groups
-  const nodeGroup = gInner.append('g')
+  // Spike lines (parent-child) - drawn behind nodes
+  const parentChildEdges = edges.filter(e => e.type === 'parent-child')
+  const spikes = g.append('g')
+    .selectAll('line')
+    .data(parentChildEdges)
+    .join('line')
+    .attr('stroke', d => {
+      const src = typeof d.source === 'string' ? d.source : (d.source as GraphNode).id
+      const node = nodes.find(n => n.id === src)
+      return node ? node.color : '#999'
+    })
+    .attr('stroke-width', 1.2)
+    .attr('stroke-opacity', 0.25)
+
+  // Node groups
+  const nodeGroup = g.append('g')
     .selectAll<SVGGElement, GraphNode>('g')
     .data(nodes)
     .join('g')
     .attr('class', 'kg-node')
     .style('cursor', 'pointer')
 
-  // Node circles - 3D sphere effect with radial gradients
+  // Main circles
   nodeGroup.append('circle')
-    .attr('r', d => d.type === 'category' ? 32 : 14)
+    .attr('class', 'main-circle')
+    .attr('r', d => d.type === 'category' ? 36 : 12)
     .attr('fill', d => {
-      if (d.type === 'category') {
-        return `url(#grad-${d.label})`
-      }
-      // Article nodes: use parent category gradient or solid
-      const parentCat = nodes.find(n => n.id === d.parent)
-      if (parentCat) {
-        return `url(#grad-${parentCat.label})`
-      }
-      return d3.color(d.color)?.darker(0.5)?.toString() || d.color
+      if (d.type === 'category') return `url(#grad-${d.label})`
+      const p = nodes.find(n => n.id === d.parent)
+      return p ? `url(#grad-${p.label})` : d.color
     })
     .attr('fill-opacity', d => d.type === 'category' ? 1 : 0.85)
     .attr('stroke', d => d.type === 'category' ? d3.color(d.color)!.brighter(0.5).toString() : d.color)
@@ -232,78 +216,53 @@ onMounted(async () => {
     .attr('stroke-opacity', d => d.type === 'category' ? 0.6 : 0.4)
     .attr('filter', d => d.type === 'category' ? 'url(#node-glow)' : 'url(#node-shadow)')
 
-  // 3D highlight spot on category nodes (white specular)
+  // Highlight spots
   nodeGroup.filter(d => d.type === 'category')
-    .append('circle')
-    .attr('r', 10)
-    .attr('cx', -8)
-    .attr('cy', -8)
-    .attr('fill', 'rgba(255,255,255,0.35)')
-    .style('pointer-events', 'none')
+    .append('circle').attr('r', 10).attr('cx', -9).attr('cy', -9)
+    .attr('fill', 'rgba(255,255,255,0.35)').style('pointer-events', 'none')
 
-  // 3D highlight spot on article nodes
   nodeGroup.filter(d => d.type === 'article')
-    .append('circle')
-    .attr('r', 4)
-    .attr('cx', -4)
-    .attr('cy', -4)
-    .attr('fill', 'rgba(255,255,255,0.3)')
-    .style('pointer-events', 'none')
+    .append('circle').attr('r', 3).attr('cx', -3).attr('cy', -3)
+    .attr('fill', 'rgba(255,255,255,0.3)').style('pointer-events', 'none')
 
   // Category labels
   nodeGroup.filter(d => d.type === 'category')
     .append('text')
     .text(d => d.label)
-    .attr('dy', 45)
-    .attr('text-anchor', 'middle')
-    .attr('fill', 'var(--vp-c-text-1)')
-    .attr('font-size', '14px')
-    .attr('font-weight', '700')
+    .attr('dy', 50).attr('text-anchor', 'middle')
+    .attr('fill', 'var(--vp-c-text-1)').attr('font-size', '14px').attr('font-weight', '700')
     .style('pointer-events', 'none')
 
-  // Article labels (always visible)
+  // Article labels
   nodeGroup.filter(d => d.type === 'article')
     .append('text')
-    .text(d => d.label.length > 8 ? d.label.slice(0, 8) + '..' : d.label)
-    .attr('dy', -20)
-    .attr('text-anchor', 'middle')
-    .attr('fill', 'var(--vp-c-text-2)')
-    .attr('font-size', '10px')
+    .attr('class', 'art-label')
+    .text(d => d.label.length > 6 ? d.label.slice(0, 6) + '..' : d.label)
+    .attr('dy', -18).attr('text-anchor', 'middle')
+    .attr('fill', 'var(--vp-c-text-2)').attr('font-size', '9px')
     .style('pointer-events', 'none')
 
-  // Drag behavior (orbit-aware: only category nodes draggable after orbits start)
+  // Drag - works on all nodes, orbit mode preserves category positions
   let orbitStarted = false
   const drag = d3.drag<SVGGElement, GraphNode>()
     .on('start', (event, d) => {
-      if (orbitStarted && d.type === 'article') return
       if (!orbitStarted && !event.active) simulation?.alphaTarget(0.3).restart()
-      d.fx = d.x
-      d.fy = d.y
+      d.fx = d.x; d.fy = d.y
     })
     .on('drag', (event, d) => {
-      if (orbitStarted && d.type === 'article') return
-      d.fx = event.x
-      d.fy = event.y
-      d.x = event.x
-      d.y = event.y
+      d.fx = event.x; d.fy = event.y; d.x = event.x; d.y = event.y
     })
     .on('end', (event, d) => {
       if (!orbitStarted && !event.active) simulation?.alphaTarget(0)
-      if (!orbitStarted || d.type === 'article') {
-        d.fx = null
-        d.fy = null
-      }
+      if (!orbitStarted) { d.fx = null; d.fy = null }
     })
-
   nodeGroup.call(drag)
 
-  // Hover interactions
+  // Hover
   nodeGroup
     .on('mouseover', (event: MouseEvent, d: GraphNode) => {
       tooltip.value = { label: d.label, type: d.type }
       tooltipPos.value = { x: event.clientX + 15, y: event.clientY - 10 }
-
-      // Highlight connected
       const connectedIds = new Set<string>()
       connectedIds.add(d.id)
       edges.forEach((e: any) => {
@@ -312,117 +271,160 @@ onMounted(async () => {
         if (s === d.id) connectedIds.add(t)
         if (t === d.id) connectedIds.add(s)
       })
-
       nodeGroup.attr('opacity', n => connectedIds.has(n.id) ? 1 : 0.15)
-      link.attr('opacity', (e: any) => {
+      spikes.attr('opacity', (e: any) => {
         const s = typeof e.source === 'string' ? e.source : e.source.id
         const t = typeof e.target === 'string' ? e.target : e.target.id
-        return (s === d.id || t === d.id) ? 1 : 0.05
+        return (s === d.id || t === d.id) ? 0.6 : 0.03
       })
     })
     .on('mousemove', (event: MouseEvent) => {
       tooltipPos.value = { x: event.clientX + 15, y: event.clientY - 10 }
     })
-    .on('mouseout', (event: MouseEvent, d: GraphNode) => {
+    .on('mouseout', () => {
       tooltip.value = null
       nodeGroup.attr('opacity', 1)
-      link.attr('opacity', 1)
+      spikes.attr('opacity', 1)
     })
 
   // Click to navigate
   nodeGroup.on('click', (event: MouseEvent, d: GraphNode) => {
-    if (d.link) {
-      const href = base + d.link.replace(/^\//, '')
-      window.location.href = href
-    }
+    if (d.link) window.location.href = base + d.link.replace(/^\//, '')
   })
 
-  // Tick
+  // Tick during force simulation
   simulation.on('tick', () => {
+    spikes
+      .attr('x1', d => (d.source as GraphNode).x ?? 0)
+      .attr('y1', d => (d.source as GraphNode).y ?? 0)
+      .attr('x2', d => (d.target as GraphNode).x ?? 0)
+      .attr('y2', d => (d.target as GraphNode).y ?? 0)
     link
       .attr('x1', d => (d.source as GraphNode).x ?? 0)
       .attr('y1', d => (d.source as GraphNode).y ?? 0)
       .attr('x2', d => (d.target as GraphNode).x ?? 0)
       .attr('y2', d => (d.target as GraphNode).y ?? 0)
-
     nodeGroup.attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`)
   })
 
-  // Orbit animation - article nodes orbit around their parent category node
+  // === 3D Hedgehog Orbit Animation ===
   let animFrameId: number | null = null
   let mouseGraphX = Infinity
   let mouseGraphY = Infinity
 
-  // Track mouse position converted to graph coordinates
   svg.on('mousemove.orbit', (event: MouseEvent) => {
-    const transform = d3.zoomTransform(svgRef.value!)
+    const t = d3.zoomTransform(svgRef.value!)
     const rect = svgRef.value!.getBoundingClientRect()
-    mouseGraphX = (event.clientX - rect.left - transform.x) / transform.k
-    mouseGraphY = (event.clientY - rect.top - transform.y) / transform.k
+    mouseGraphX = (event.clientX - rect.left - t.x) / t.k
+    mouseGraphY = (event.clientY - rect.top - t.y) / t.k
   })
-  svg.on('mouseleave.orbit', () => {
-    mouseGraphX = Infinity
-    mouseGraphY = Infinity
-  })
+  svg.on('mouseleave.orbit', () => { mouseGraphX = Infinity; mouseGraphY = Infinity })
 
   function startOrbits() {
     if (orbitStarted) return
     orbitStarted = true
 
-    // Build orbit parameters from current node positions
-    const orbitData: { node: GraphNode; parent: GraphNode; radius: number; angle: number; speed: number }[] = []
-    nodes.forEach(node => {
-      if (node.type === 'article' && node.parent) {
-        const parent = nodes.find(n => n.id === node.parent)
-        if (parent && parent.x != null && parent.y != null && node.x != null && node.y != null) {
-          const dx = node.x - parent.x
-          const dy = node.y - parent.y
-          orbitData.push({
-            node,
-            parent,
-            radius: Math.max(Math.sqrt(dx * dx + dy * dy), 60),
-            angle: Math.atan2(dy, dx),
-            speed: (0.0008 + Math.random() * 0.002) * (Math.random() > 0.5 ? 1 : -1)
-          })
-        }
-      }
-    })
-
-    // Fix category node positions
+    // Group articles by parent for Fibonacci sphere distribution
+    const catArticles = new Map<string, GraphNode[]>()
     nodes.forEach(n => {
-      if (n.type === 'category') {
-        n.fx = n.x
-        n.fy = n.y
+      if (n.type === 'category') catArticles.set(n.id, [])
+    })
+    nodes.forEach(n => {
+      if (n.type === 'article' && n.parent && catArticles.has(n.parent)) {
+        catArticles.get(n.parent)!.push(n)
       }
     })
 
+    // Build 3D orbit data: distribute each parent's articles on a sphere
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5))
+    const orbitData: {
+      node: GraphNode
+      parent: GraphNode
+      radius: number
+      theta: number
+      phi: number
+      speed: number
+    }[] = []
+
+    catArticles.forEach((articles, parentId) => {
+      const parent = nodes.find(n => n.id === parentId)!
+      const count = articles.length
+      articles.forEach((art, i) => {
+        // Fibonacci sphere distribution
+        const theta = Math.acos(1 - 2 * (i + 0.5) / count)
+        const phi = goldenAngle * i
+        const radius = 55 + count * 4 + Math.random() * 10
+        orbitData.push({
+          node: art,
+          parent,
+          radius,
+          theta,
+          phi,
+          speed: 0.0015 + Math.random() * 0.002
+        })
+      })
+    })
+
+    // Fix category positions
+    nodes.forEach(n => {
+      if (n.type === 'category') { n.fx = n.x; n.fy = n.y }
+    })
     simulation?.stop()
 
-    const PAUSE_DIST = 150
+    // Hide cross-ref links during orbit mode
+    link.attr('stroke-opacity', 0.05)
+
+    const PAUSE_DIST = 180
 
     function animate() {
       orbitData.forEach(o => {
-        // Check mouse proximity to parent (category) node
+        // Mouse proximity check
         const mdx = mouseGraphX - (o.parent.x ?? 0)
         const mdy = mouseGraphY - (o.parent.y ?? 0)
         const mouseDist = Math.sqrt(mdx * mdx + mdy * mdy)
 
         if (mouseDist > PAUSE_DIST) {
-          o.angle += o.speed
+          o.phi += o.speed
         }
 
-        o.node.x = (o.parent.x ?? 0) + o.radius * Math.cos(o.angle)
-        o.node.y = (o.parent.y ?? 0) + o.radius * Math.sin(o.angle)
+        // 3D sphere -> 2D projection
+        const x3d = o.radius * Math.sin(o.theta) * Math.cos(o.phi)
+        const y3d = o.radius * Math.sin(o.theta) * Math.sin(o.phi)
+        const z3d = o.radius * Math.cos(o.theta)
+
+        o.node.x = (o.parent.x ?? 0) + x3d
+        o.node.y = (o.parent.y ?? 0) + y3d
+        o.node.z = z3d
       })
 
-      // Update SVG positions
+      // Update spike lines
+      spikes
+        .attr('x1', d => (d.source as GraphNode).x ?? 0)
+        .attr('y1', d => (d.source as GraphNode).y ?? 0)
+        .attr('x2', d => (d.target as GraphNode).x ?? 0)
+        .attr('y2', d => (d.target as GraphNode).y ?? 0)
+
+      // Update cross-ref links
       link
         .attr('x1', d => (d.source as GraphNode).x ?? 0)
         .attr('y1', d => (d.source as GraphNode).y ?? 0)
         .attr('x2', d => (d.target as GraphNode).x ?? 0)
         .attr('y2', d => (d.target as GraphNode).y ?? 0)
 
+      // Update node positions + depth-based rendering
       nodeGroup.attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`)
+
+      // Depth effect: front nodes bigger/brighter, back nodes smaller/dimmer
+      nodeGroup.select('.main-circle')
+        .attr('r', d => {
+          if (d.type === 'category') return 36
+          const depthFactor = 0.55 + 0.45 * ((d.z ?? 0) + 100) / 200
+          return Math.max(6, 12 * depthFactor)
+        })
+        .attr('fill-opacity', d => {
+          if (d.type === 'category') return 1
+          return 0.35 + 0.65 * ((d.z ?? 0) + 100) / 200
+        })
 
       animFrameId = requestAnimationFrame(animate)
     }
@@ -430,18 +432,13 @@ onMounted(async () => {
     animFrameId = requestAnimationFrame(animate)
   }
 
-  // Start orbits when force simulation naturally cools down
   simulation.on('end', startOrbits)
+  setTimeout(() => { if (!orbitStarted) startOrbits() }, 7000)
 
-  // Fallback: start after 6 seconds even if simulation is slow
-  setTimeout(() => { if (!orbitStarted) startOrbits() }, 6000)
-
-  // Handle resize
+  // Resize
   const resizeObserver = new ResizeObserver(() => {
     if (!wrapperRef.value) return
-    const w = wrapperRef.value.clientWidth
-    const h = wrapperRef.value.clientHeight
-    svg.attr('width', w).attr('height', h)
+    svg.attr('width', wrapperRef.value.clientWidth).attr('height', wrapperRef.value.clientHeight)
   })
   resizeObserver.observe(wrapperRef.value)
 
@@ -452,9 +449,7 @@ onMounted(async () => {
   })
 })
 
-onUnmounted(() => {
-  simulation?.stop()
-})
+onUnmounted(() => { simulation?.stop() })
 </script>
 
 <style scoped>
