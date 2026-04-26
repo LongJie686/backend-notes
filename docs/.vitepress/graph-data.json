@@ -1,0 +1,1417 @@
+{
+  "nodes": [
+    {
+      "id": "cat-后端",
+      "label": "后端",
+      "type": "category",
+      "link": null,
+      "parent": null,
+      "color": "#42A5F5"
+    },
+    {
+      "id": "/backend/python",
+      "label": "Python",
+      "type": "article",
+      "link": "/backend/python",
+      "parent": "cat-后端",
+      "color": "#42A5F5"
+    },
+    {
+      "id": "/backend/fastapi",
+      "label": "FastAPI",
+      "type": "article",
+      "link": "/backend/fastapi",
+      "parent": "cat-后端",
+      "color": "#42A5F5"
+    },
+    {
+      "id": "/backend/django",
+      "label": "Django",
+      "type": "article",
+      "link": "/backend/django",
+      "parent": "cat-后端",
+      "color": "#42A5F5"
+    },
+    {
+      "id": "/backend/flask",
+      "label": "Flask",
+      "type": "article",
+      "link": "/backend/flask",
+      "parent": "cat-后端",
+      "color": "#42A5F5"
+    },
+    {
+      "id": "/backend/websocket",
+      "label": "WebSocket",
+      "type": "article",
+      "link": "/backend/websocket",
+      "parent": "cat-后端",
+      "color": "#42A5F5"
+    },
+    {
+      "id": "/backend/network",
+      "label": "网络基础",
+      "type": "article",
+      "link": "/backend/network",
+      "parent": "cat-后端",
+      "color": "#42A5F5"
+    },
+    {
+      "id": "/backend/rbac",
+      "label": "RBAC 权限系统",
+      "type": "article",
+      "link": "/backend/rbac",
+      "parent": "cat-后端",
+      "color": "#42A5F5"
+    },
+    {
+      "id": "/backend/jwt",
+      "label": "JWT 权限管理",
+      "type": "article",
+      "link": "/backend/jwt",
+      "parent": "cat-后端",
+      "color": "#42A5F5"
+    },
+    {
+      "id": "cat-数据库",
+      "label": "数据库",
+      "type": "category",
+      "link": null,
+      "parent": null,
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql",
+      "label": "MySQL",
+      "type": "article",
+      "link": "/database/mysql",
+      "parent": "cat-数据库",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/",
+      "label": "MySQL 学习笔记",
+      "type": "category",
+      "link": "/database/mysql-notes/",
+      "parent": "cat-数据库",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-1",
+      "label": "表设计",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-1",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-2",
+      "label": "索引",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-2",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-3",
+      "label": "事务",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-3",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-4",
+      "label": "隔离级别",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-4",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-5",
+      "label": "MVCC",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-5",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-6",
+      "label": "锁机制",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-6",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-7",
+      "label": "慢查询优化",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-7",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-8",
+      "label": "主从复制",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-8",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-9",
+      "label": "分库分表",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-9",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-10",
+      "label": "高可用",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-10",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-11",
+      "label": "面试题-基础",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-11",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-12",
+      "label": "面试题-锁",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-12",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/mysql-notes/lecture-13",
+      "label": "面试题-主从",
+      "type": "article",
+      "link": "/database/mysql-notes/lecture-13",
+      "parent": "/database/mysql-notes/",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/redis",
+      "label": "Redis",
+      "type": "article",
+      "link": "/database/redis",
+      "parent": "cat-数据库",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/postgres",
+      "label": "PostgreSQL",
+      "type": "article",
+      "link": "/database/postgres",
+      "parent": "cat-数据库",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/sqlite",
+      "label": "SQLite",
+      "type": "article",
+      "link": "/database/sqlite",
+      "parent": "cat-数据库",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "/database/pgvector",
+      "label": "pgvector",
+      "type": "article",
+      "link": "/database/pgvector",
+      "parent": "cat-数据库",
+      "color": "#66BB6A"
+    },
+    {
+      "id": "cat-AI-应用",
+      "label": "AI 应用",
+      "type": "category",
+      "link": null,
+      "parent": null,
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm",
+      "label": "LLM 概述",
+      "type": "article",
+      "link": "/ai-app/llm",
+      "parent": "cat-AI-应用",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "cat-Agent-架构分析",
+      "label": "Agent 架构分析",
+      "type": "category",
+      "link": null,
+      "parent": "cat-AI-应用",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/agent-analysis/learn-claude-code",
+      "label": "Claude Code 学习",
+      "type": "article",
+      "link": "/ai-app/agent-analysis/learn-claude-code",
+      "parent": "cat-Agent-架构分析",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/agent-analysis/nanoclaw",
+      "label": "NanoClaw 项目",
+      "type": "article",
+      "link": "/ai-app/agent-analysis/nanoclaw",
+      "parent": "cat-Agent-架构分析",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/agent-analysis/hermes-agent",
+      "label": "Hermes Agent",
+      "type": "article",
+      "link": "/ai-app/agent-analysis/hermes-agent",
+      "parent": "cat-Agent-架构分析",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/text-to-sql/",
+      "label": "Text-to-SQL",
+      "type": "article",
+      "link": "/ai-app/text-to-sql/",
+      "parent": "cat-AI-应用",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/mcp/",
+      "label": "MCP 协议",
+      "type": "article",
+      "link": "/ai-app/mcp/",
+      "parent": "cat-AI-应用",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/voice-interaction/",
+      "label": "语音交互",
+      "type": "article",
+      "link": "/ai-app/voice-interaction/",
+      "parent": "cat-AI-应用",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/skills/",
+      "label": "Skills 技能系统",
+      "type": "article",
+      "link": "/ai-app/skills/",
+      "parent": "cat-AI-应用",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/multi-agent/",
+      "label": "多智能体设计实战",
+      "type": "category",
+      "link": "/ai-app/multi-agent/",
+      "parent": "cat-AI-应用",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/multi-agent/lecture-1",
+      "label": "多智能体基础",
+      "type": "article",
+      "link": "/ai-app/multi-agent/lecture-1",
+      "parent": "/ai-app/multi-agent/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/multi-agent/lecture-2",
+      "label": "角色设计",
+      "type": "article",
+      "link": "/ai-app/multi-agent/lecture-2",
+      "parent": "/ai-app/multi-agent/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/multi-agent/lecture-3",
+      "label": "RAG 知识管理",
+      "type": "article",
+      "link": "/ai-app/multi-agent/lecture-3",
+      "parent": "/ai-app/multi-agent/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/multi-agent/lecture-4",
+      "label": "工具调用",
+      "type": "article",
+      "link": "/ai-app/multi-agent/lecture-4",
+      "parent": "/ai-app/multi-agent/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/multi-agent/lecture-5",
+      "label": "Prompt 精调",
+      "type": "article",
+      "link": "/ai-app/multi-agent/lecture-5",
+      "parent": "/ai-app/multi-agent/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/multi-agent/lecture-6",
+      "label": "可观测性",
+      "type": "article",
+      "link": "/ai-app/multi-agent/lecture-6",
+      "parent": "/ai-app/multi-agent/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/multi-agent/lecture-7",
+      "label": "安全护栏",
+      "type": "article",
+      "link": "/ai-app/multi-agent/lecture-7",
+      "parent": "/ai-app/multi-agent/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/multi-agent/lecture-8",
+      "label": "生产部署",
+      "type": "article",
+      "link": "/ai-app/multi-agent/lecture-8",
+      "parent": "/ai-app/multi-agent/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/multi-agent/lecture-9",
+      "label": "数据飞轮",
+      "type": "article",
+      "link": "/ai-app/multi-agent/lecture-9",
+      "parent": "/ai-app/multi-agent/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/multi-agent/pitfalls",
+      "label": "常见坑点",
+      "type": "article",
+      "link": "/ai-app/multi-agent/pitfalls",
+      "parent": "/ai-app/multi-agent/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/multi-agent/interview",
+      "label": "面试高频",
+      "type": "article",
+      "link": "/ai-app/multi-agent/interview",
+      "parent": "/ai-app/multi-agent/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm-dev/",
+      "label": "大模型应用开发",
+      "type": "category",
+      "link": "/ai-app/llm-dev/",
+      "parent": "cat-AI-应用",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm-dev/lecture-1",
+      "label": "大模型基础",
+      "type": "article",
+      "link": "/ai-app/llm-dev/lecture-1",
+      "parent": "/ai-app/llm-dev/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm-dev/lecture-2",
+      "label": "Prompt 工程",
+      "type": "article",
+      "link": "/ai-app/llm-dev/lecture-2",
+      "parent": "/ai-app/llm-dev/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm-dev/lecture-3",
+      "label": "RAG 系统",
+      "type": "article",
+      "link": "/ai-app/llm-dev/lecture-3",
+      "parent": "/ai-app/llm-dev/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm-dev/lecture-4",
+      "label": "Agent 工具",
+      "type": "article",
+      "link": "/ai-app/llm-dev/lecture-4",
+      "parent": "/ai-app/llm-dev/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm-dev/lecture-5",
+      "label": "多轮对话",
+      "type": "article",
+      "link": "/ai-app/llm-dev/lecture-5",
+      "parent": "/ai-app/llm-dev/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm-dev/lecture-6",
+      "label": "模型微调",
+      "type": "article",
+      "link": "/ai-app/llm-dev/lecture-6",
+      "parent": "/ai-app/llm-dev/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm-dev/lecture-7",
+      "label": "部署运维",
+      "type": "article",
+      "link": "/ai-app/llm-dev/lecture-7",
+      "parent": "/ai-app/llm-dev/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm-dev/lecture-8",
+      "label": "安全进阶",
+      "type": "article",
+      "link": "/ai-app/llm-dev/lecture-8",
+      "parent": "/ai-app/llm-dev/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm-dev/pitfalls",
+      "label": "常见坑点",
+      "type": "article",
+      "link": "/ai-app/llm-dev/pitfalls",
+      "parent": "/ai-app/llm-dev/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm-dev/interview",
+      "label": "面试高频",
+      "type": "article",
+      "link": "/ai-app/llm-dev/interview",
+      "parent": "/ai-app/llm-dev/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "/ai-app/llm-dev/exercises",
+      "label": "练习题",
+      "type": "article",
+      "link": "/ai-app/llm-dev/exercises",
+      "parent": "/ai-app/llm-dev/",
+      "color": "#AB47BC"
+    },
+    {
+      "id": "cat-微服务",
+      "label": "微服务",
+      "type": "category",
+      "link": null,
+      "parent": null,
+      "color": "#FF7043"
+    },
+    {
+      "id": "/microservice/",
+      "label": "学习路线",
+      "type": "article",
+      "link": "/microservice/",
+      "parent": "cat-微服务",
+      "color": "#FF7043"
+    },
+    {
+      "id": "/microservice/lecture-1",
+      "label": "架构认知",
+      "type": "article",
+      "link": "/microservice/lecture-1",
+      "parent": "cat-微服务",
+      "color": "#FF7043"
+    },
+    {
+      "id": "/microservice/lecture-2",
+      "label": "服务通信",
+      "type": "article",
+      "link": "/microservice/lecture-2",
+      "parent": "cat-微服务",
+      "color": "#FF7043"
+    },
+    {
+      "id": "/microservice/lecture-3",
+      "label": "注册发现",
+      "type": "article",
+      "link": "/microservice/lecture-3",
+      "parent": "cat-微服务",
+      "color": "#FF7043"
+    },
+    {
+      "id": "/microservice/lecture-4",
+      "label": "服务治理",
+      "type": "article",
+      "link": "/microservice/lecture-4",
+      "parent": "cat-微服务",
+      "color": "#FF7043"
+    },
+    {
+      "id": "/microservice/lecture-5",
+      "label": "API网关",
+      "type": "article",
+      "link": "/microservice/lecture-5",
+      "parent": "cat-微服务",
+      "color": "#FF7043"
+    },
+    {
+      "id": "/microservice/lecture-6",
+      "label": "数据一致性",
+      "type": "article",
+      "link": "/microservice/lecture-6",
+      "parent": "cat-微服务",
+      "color": "#FF7043"
+    },
+    {
+      "id": "/microservice/lecture-7",
+      "label": "可观测性",
+      "type": "article",
+      "link": "/microservice/lecture-7",
+      "parent": "cat-微服务",
+      "color": "#FF7043"
+    },
+    {
+      "id": "/microservice/lecture-8",
+      "label": "容器化",
+      "type": "article",
+      "link": "/microservice/lecture-8",
+      "parent": "cat-微服务",
+      "color": "#FF7043"
+    },
+    {
+      "id": "/microservice/lecture-9",
+      "label": "Service Mesh",
+      "type": "article",
+      "link": "/microservice/lecture-9",
+      "parent": "cat-微服务",
+      "color": "#FF7043"
+    },
+    {
+      "id": "/microservice/lecture-10",
+      "label": "面试实战",
+      "type": "article",
+      "link": "/microservice/lecture-10",
+      "parent": "cat-微服务",
+      "color": "#FF7043"
+    },
+    {
+      "id": "cat-架构设计",
+      "label": "架构设计",
+      "type": "category",
+      "link": null,
+      "parent": null,
+      "color": "#26A69A"
+    },
+    {
+      "id": "/architecture/",
+      "label": "学习路线",
+      "type": "article",
+      "link": "/architecture/",
+      "parent": "cat-架构设计",
+      "color": "#26A69A"
+    },
+    {
+      "id": "/architecture/lecture-1",
+      "label": "架构定义",
+      "type": "article",
+      "link": "/architecture/lecture-1",
+      "parent": "cat-架构设计",
+      "color": "#26A69A"
+    },
+    {
+      "id": "/architecture/lecture-2",
+      "label": "设计原则",
+      "type": "article",
+      "link": "/architecture/lecture-2",
+      "parent": "cat-架构设计",
+      "color": "#26A69A"
+    },
+    {
+      "id": "/architecture/lecture-3",
+      "label": "高性能架构",
+      "type": "article",
+      "link": "/architecture/lecture-3",
+      "parent": "cat-架构设计",
+      "color": "#26A69A"
+    },
+    {
+      "id": "/architecture/lecture-4",
+      "label": "高可用架构",
+      "type": "article",
+      "link": "/architecture/lecture-4",
+      "parent": "cat-架构设计",
+      "color": "#26A69A"
+    },
+    {
+      "id": "/architecture/lecture-5",
+      "label": "高可用（上）",
+      "type": "article",
+      "link": "/architecture/lecture-5",
+      "parent": "cat-架构设计",
+      "color": "#26A69A"
+    },
+    {
+      "id": "/architecture/lecture-6",
+      "label": "架构实战",
+      "type": "article",
+      "link": "/architecture/lecture-6",
+      "parent": "cat-架构设计",
+      "color": "#26A69A"
+    },
+    {
+      "id": "/architecture/lecture-7",
+      "label": "面试题",
+      "type": "article",
+      "link": "/architecture/lecture-7",
+      "parent": "cat-架构设计",
+      "color": "#26A69A"
+    },
+    {
+      "id": "/architecture/lecture-8",
+      "label": "练习题",
+      "type": "article",
+      "link": "/architecture/lecture-8",
+      "parent": "cat-架构设计",
+      "color": "#26A69A"
+    },
+    {
+      "id": "cat-高并发系统设计",
+      "label": "高并发系统设计",
+      "type": "category",
+      "link": null,
+      "parent": null,
+      "color": "#EF5350"
+    },
+    {
+      "id": "/high-concurrency/",
+      "label": "学习路线",
+      "type": "article",
+      "link": "/high-concurrency/",
+      "parent": "cat-高并发系统设计",
+      "color": "#EF5350"
+    },
+    {
+      "id": "/high-concurrency/lecture-1",
+      "label": "基础认知",
+      "type": "article",
+      "link": "/high-concurrency/lecture-1",
+      "parent": "cat-高并发系统设计",
+      "color": "#EF5350"
+    },
+    {
+      "id": "/high-concurrency/lecture-2",
+      "label": "缓存设计",
+      "type": "article",
+      "link": "/high-concurrency/lecture-2",
+      "parent": "cat-高并发系统设计",
+      "color": "#EF5350"
+    },
+    {
+      "id": "/high-concurrency/lecture-3",
+      "label": "消息队列",
+      "type": "article",
+      "link": "/high-concurrency/lecture-3",
+      "parent": "cat-高并发系统设计",
+      "color": "#EF5350"
+    },
+    {
+      "id": "/high-concurrency/lecture-4",
+      "label": "分库分表",
+      "type": "article",
+      "link": "/high-concurrency/lecture-4",
+      "parent": "cat-高并发系统设计",
+      "color": "#EF5350"
+    },
+    {
+      "id": "/high-concurrency/lecture-5",
+      "label": "高可用",
+      "type": "article",
+      "link": "/high-concurrency/lecture-5",
+      "parent": "cat-高并发系统设计",
+      "color": "#EF5350"
+    },
+    {
+      "id": "/high-concurrency/lecture-6",
+      "label": "服务治理",
+      "type": "article",
+      "link": "/high-concurrency/lecture-6",
+      "parent": "cat-高并发系统设计",
+      "color": "#EF5350"
+    },
+    {
+      "id": "/high-concurrency/lecture-7",
+      "label": "场景实战",
+      "type": "article",
+      "link": "/high-concurrency/lecture-7",
+      "parent": "cat-高并发系统设计",
+      "color": "#EF5350"
+    },
+    {
+      "id": "cat-工程化",
+      "label": "工程化",
+      "type": "category",
+      "link": null,
+      "parent": null,
+      "color": "#78909C"
+    },
+    {
+      "id": "/engineering/docker",
+      "label": "Docker",
+      "type": "article",
+      "link": "/engineering/docker",
+      "parent": "cat-工程化",
+      "color": "#78909C"
+    },
+    {
+      "id": "/engineering/git",
+      "label": "Git",
+      "type": "article",
+      "link": "/engineering/git",
+      "parent": "cat-工程化",
+      "color": "#78909C"
+    },
+    {
+      "id": "/engineering/monitoring",
+      "label": "监控告警",
+      "type": "article",
+      "link": "/engineering/monitoring",
+      "parent": "cat-工程化",
+      "color": "#78909C"
+    },
+    {
+      "id": "/engineering/snmp-iperf",
+      "label": "SNMP",
+      "type": "article",
+      "link": "/engineering/snmp-iperf",
+      "parent": "cat-工程化",
+      "color": "#78909C"
+    },
+    {
+      "id": "/engineering/osgb-3dtiles",
+      "label": "OSGB",
+      "type": "article",
+      "link": "/engineering/osgb-3dtiles",
+      "parent": "cat-工程化",
+      "color": "#78909C"
+    },
+    {
+      "id": "cat-大数据",
+      "label": "大数据",
+      "type": "category",
+      "link": null,
+      "parent": null,
+      "color": "#FFA726"
+    },
+    {
+      "id": "/big-data/hadoop",
+      "label": "Hadoop",
+      "type": "article",
+      "link": "/big-data/hadoop",
+      "parent": "cat-大数据",
+      "color": "#FFA726"
+    },
+    {
+      "id": "/big-data/kafka",
+      "label": "Kafka",
+      "type": "article",
+      "link": "/big-data/kafka",
+      "parent": "cat-大数据",
+      "color": "#FFA726"
+    },
+    {
+      "id": "/big-data/flume",
+      "label": "Flume",
+      "type": "article",
+      "link": "/big-data/flume",
+      "parent": "cat-大数据",
+      "color": "#FFA726"
+    },
+    {
+      "id": "/big-data/spark",
+      "label": "Spark",
+      "type": "article",
+      "link": "/big-data/spark",
+      "parent": "cat-大数据",
+      "color": "#FFA726"
+    },
+    {
+      "id": "/big-data/mapreduce",
+      "label": "MapReduce",
+      "type": "article",
+      "link": "/big-data/mapreduce",
+      "parent": "cat-大数据",
+      "color": "#FFA726"
+    },
+    {
+      "id": "cat-数据分析",
+      "label": "数据分析",
+      "type": "category",
+      "link": null,
+      "parent": null,
+      "color": "#5C6BC0"
+    },
+    {
+      "id": "/data-analysis/",
+      "label": "学习路线",
+      "type": "article",
+      "link": "/data-analysis/",
+      "parent": "cat-数据分析",
+      "color": "#5C6BC0"
+    },
+    {
+      "id": "/data-analysis/data-acquisition",
+      "label": "数据获取",
+      "type": "article",
+      "link": "/data-analysis/data-acquisition",
+      "parent": "cat-数据分析",
+      "color": "#5C6BC0"
+    },
+    {
+      "id": "/data-analysis/preprocessing",
+      "label": "数据预处理",
+      "type": "article",
+      "link": "/data-analysis/preprocessing",
+      "parent": "cat-数据分析",
+      "color": "#5C6BC0"
+    },
+    {
+      "id": "/data-analysis/visualization",
+      "label": "数据可视化",
+      "type": "article",
+      "link": "/data-analysis/visualization",
+      "parent": "cat-数据分析",
+      "color": "#5C6BC0"
+    },
+    {
+      "id": "/data-analysis/image-processing",
+      "label": "图像处理",
+      "type": "article",
+      "link": "/data-analysis/image-processing",
+      "parent": "cat-数据分析",
+      "color": "#5C6BC0"
+    }
+  ],
+  "edges": [
+    {
+      "source": "cat-后端",
+      "target": "/backend/python",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-后端",
+      "target": "/backend/fastapi",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-后端",
+      "target": "/backend/django",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-后端",
+      "target": "/backend/flask",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-后端",
+      "target": "/backend/websocket",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-后端",
+      "target": "/backend/network",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-后端",
+      "target": "/backend/rbac",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-后端",
+      "target": "/backend/jwt",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-数据库",
+      "target": "/database/mysql",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-数据库",
+      "target": "/database/mysql-notes/",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-1",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-2",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-3",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-4",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-5",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-6",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-7",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-8",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-9",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-10",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-11",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-12",
+      "type": "parent-child"
+    },
+    {
+      "source": "/database/mysql-notes/",
+      "target": "/database/mysql-notes/lecture-13",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-数据库",
+      "target": "/database/redis",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-数据库",
+      "target": "/database/postgres",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-数据库",
+      "target": "/database/sqlite",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-数据库",
+      "target": "/database/pgvector",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-AI-应用",
+      "target": "/ai-app/llm",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-AI-应用",
+      "target": "cat-Agent-架构分析",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-Agent-架构分析",
+      "target": "/ai-app/agent-analysis/learn-claude-code",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-Agent-架构分析",
+      "target": "/ai-app/agent-analysis/nanoclaw",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-Agent-架构分析",
+      "target": "/ai-app/agent-analysis/hermes-agent",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-AI-应用",
+      "target": "/ai-app/text-to-sql/",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-AI-应用",
+      "target": "/ai-app/mcp/",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-AI-应用",
+      "target": "/ai-app/voice-interaction/",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-AI-应用",
+      "target": "/ai-app/skills/",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-AI-应用",
+      "target": "/ai-app/multi-agent/",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/multi-agent/",
+      "target": "/ai-app/multi-agent/lecture-1",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/multi-agent/",
+      "target": "/ai-app/multi-agent/lecture-2",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/multi-agent/",
+      "target": "/ai-app/multi-agent/lecture-3",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/multi-agent/",
+      "target": "/ai-app/multi-agent/lecture-4",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/multi-agent/",
+      "target": "/ai-app/multi-agent/lecture-5",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/multi-agent/",
+      "target": "/ai-app/multi-agent/lecture-6",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/multi-agent/",
+      "target": "/ai-app/multi-agent/lecture-7",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/multi-agent/",
+      "target": "/ai-app/multi-agent/lecture-8",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/multi-agent/",
+      "target": "/ai-app/multi-agent/lecture-9",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/multi-agent/",
+      "target": "/ai-app/multi-agent/pitfalls",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/multi-agent/",
+      "target": "/ai-app/multi-agent/interview",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-AI-应用",
+      "target": "/ai-app/llm-dev/",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/llm-dev/",
+      "target": "/ai-app/llm-dev/lecture-1",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/llm-dev/",
+      "target": "/ai-app/llm-dev/lecture-2",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/llm-dev/",
+      "target": "/ai-app/llm-dev/lecture-3",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/llm-dev/",
+      "target": "/ai-app/llm-dev/lecture-4",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/llm-dev/",
+      "target": "/ai-app/llm-dev/lecture-5",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/llm-dev/",
+      "target": "/ai-app/llm-dev/lecture-6",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/llm-dev/",
+      "target": "/ai-app/llm-dev/lecture-7",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/llm-dev/",
+      "target": "/ai-app/llm-dev/lecture-8",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/llm-dev/",
+      "target": "/ai-app/llm-dev/pitfalls",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/llm-dev/",
+      "target": "/ai-app/llm-dev/interview",
+      "type": "parent-child"
+    },
+    {
+      "source": "/ai-app/llm-dev/",
+      "target": "/ai-app/llm-dev/exercises",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-微服务",
+      "target": "/microservice/",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-微服务",
+      "target": "/microservice/lecture-1",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-微服务",
+      "target": "/microservice/lecture-2",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-微服务",
+      "target": "/microservice/lecture-3",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-微服务",
+      "target": "/microservice/lecture-4",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-微服务",
+      "target": "/microservice/lecture-5",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-微服务",
+      "target": "/microservice/lecture-6",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-微服务",
+      "target": "/microservice/lecture-7",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-微服务",
+      "target": "/microservice/lecture-8",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-微服务",
+      "target": "/microservice/lecture-9",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-微服务",
+      "target": "/microservice/lecture-10",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-架构设计",
+      "target": "/architecture/",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-架构设计",
+      "target": "/architecture/lecture-1",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-架构设计",
+      "target": "/architecture/lecture-2",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-架构设计",
+      "target": "/architecture/lecture-3",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-架构设计",
+      "target": "/architecture/lecture-4",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-架构设计",
+      "target": "/architecture/lecture-5",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-架构设计",
+      "target": "/architecture/lecture-6",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-架构设计",
+      "target": "/architecture/lecture-7",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-架构设计",
+      "target": "/architecture/lecture-8",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-高并发系统设计",
+      "target": "/high-concurrency/",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-高并发系统设计",
+      "target": "/high-concurrency/lecture-1",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-高并发系统设计",
+      "target": "/high-concurrency/lecture-2",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-高并发系统设计",
+      "target": "/high-concurrency/lecture-3",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-高并发系统设计",
+      "target": "/high-concurrency/lecture-4",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-高并发系统设计",
+      "target": "/high-concurrency/lecture-5",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-高并发系统设计",
+      "target": "/high-concurrency/lecture-6",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-高并发系统设计",
+      "target": "/high-concurrency/lecture-7",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-工程化",
+      "target": "/engineering/docker",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-工程化",
+      "target": "/engineering/git",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-工程化",
+      "target": "/engineering/monitoring",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-工程化",
+      "target": "/engineering/snmp-iperf",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-工程化",
+      "target": "/engineering/osgb-3dtiles",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-大数据",
+      "target": "/big-data/hadoop",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-大数据",
+      "target": "/big-data/kafka",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-大数据",
+      "target": "/big-data/flume",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-大数据",
+      "target": "/big-data/spark",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-大数据",
+      "target": "/big-data/mapreduce",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-数据分析",
+      "target": "/data-analysis/",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-数据分析",
+      "target": "/data-analysis/data-acquisition",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-数据分析",
+      "target": "/data-analysis/preprocessing",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-数据分析",
+      "target": "/data-analysis/visualization",
+      "type": "parent-child"
+    },
+    {
+      "source": "cat-数据分析",
+      "target": "/data-analysis/image-processing",
+      "type": "parent-child"
+    }
+  ]
+}
