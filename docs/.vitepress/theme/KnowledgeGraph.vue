@@ -126,22 +126,40 @@ onMounted(async () => {
   svg.call(zoom)
   svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(0.5))
 
-  // Force simulation
+  // Calculate circular target positions for category nodes
+  const catNodes = nodes.filter(n => n.type === 'category')
+  const circleRadius = 380
+  const catTargets = new Map<string, { x: number; y: number }>()
+  catNodes.forEach((cat, i) => {
+    const angle = (2 * Math.PI * i) / catNodes.length - Math.PI / 2
+    catTargets.set(cat.id, {
+      x: circleRadius * Math.cos(angle),
+      y: circleRadius * Math.sin(angle),
+    })
+  })
+
+  // Force simulation - radial layout
   simulation = d3.forceSimulation<GraphNode>(nodes)
     .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
       .id(d => d.id)
-      .distance(d => d.type === 'cross-ref' ? 150 : 80)
-      .strength(d => d.type === 'cross-ref' ? 0.15 : 0.6)
+      .distance(d => d.type === 'cross-ref' ? 150 : 60)
+      .strength(d => d.type === 'cross-ref' ? 0.08 : 0.7)
     )
     .force('charge', d3.forceManyBody<GraphNode>().strength(d =>
-      d.type === 'category' ? -600 : -60
+      d.type === 'category' ? -150 : -30
     ))
-    .force('center', d3.forceCenter(0, 0).strength(0.03))
+    .force('center', d3.forceCenter(0, 0).strength(0.01))
     .force('collision', d3.forceCollide<GraphNode>().radius(d =>
-      d.type === 'category' ? 50 : 18
+      d.type === 'category' ? 40 : 16
     ))
-    .force('x', d3.forceX(0).strength(0.01))
-    .force('y', d3.forceY(0).strength(0.01))
+    .force('x', d3.forceX<GraphNode>(d => {
+      const t = catTargets.get(d.type === 'article' ? d.parent! : d.id)
+      return t ? t.x : 0
+    }).strength(d => d.type === 'category' ? 0.3 : 0.04))
+    .force('y', d3.forceY<GraphNode>(d => {
+      const t = catTargets.get(d.type === 'article' ? d.parent! : d.id)
+      return t ? t.y : 0
+    }).strength(d => d.type === 'category' ? 0.3 : 0.04))
 
   // Edges
   const link = g.append('g')
