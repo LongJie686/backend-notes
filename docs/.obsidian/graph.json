@@ -5,18 +5,55 @@
   "showAttachments": false,
   "hideUnresolved": false,
   "showOrphans": true,
-  "collapse-color-groups": true,
-  "colorGroups": [],
-  "collapse-display": true,
-  "showArrow": false,
+  "collapse-color-groups": false,
+  "colorGroups": [
+    {
+      "query": "path:backend",
+      "color": { "a": 1, "r": 76, "g": 175, "b": 80 }
+    },
+    {
+      "query": "path:database",
+      "color": { "a": 1, "r": 66, "g": 133, "b": 244 }
+    },
+    {
+      "query": "path:ai-app",
+      "color": { "a": 1, "r": 156, "g": 39, "b": 176 }
+    },
+    {
+      "query": "path:architecture",
+      "color": { "a": 1, "r": 255, "g": 152, "b": 0 }
+    },
+    {
+      "query": "path:microservice",
+      "color": { "a": 1, "r": 244, "g": 67, "b": 54 }
+    },
+    {
+      "query": "path:high-concurrency",
+      "color": { "a": 1, "r": 0, "g": 188, "b": 212 }
+    },
+    {
+      "query": "path:big-data",
+      "color": { "a": 1, "r": 255, "g": 193, "b": 7 }
+    },
+    {
+      "query": "path:engineering",
+      "color": { "a": 1, "r": 158, "g": 158, "b": 158 }
+    },
+    {
+      "query": "path:data-analysis",
+      "color": { "a": 1, "r": 233, "g": 30, "b": 99 }
+    }
+  ],
+  "collapse-display": false,
+  "showArrow": true,
   "textFadeMultiplier": 0,
-  "nodeSizeMultiplier": 1,
-  "lineSizeMultiplier": 1,
-  "collapse-forces": true,
-  "centerStrength": 0.518713248970312,
-  "repelStrength": 10,
-  "linkStrength": 1,
-  "linkDistance": 250,
-  "scale": 0.16495756216581542,
+  "nodeSizeMultiplier": 1.2,
+  "lineSizeMultiplier": 1.3,
+  "collapse-forces": false,
+  "centerStrength": 0.3,
+  "repelStrength": 15,
+  "linkStrength": 0.8,
+  "linkDistance": 300,
+  "scale": 0.40614967950967934,
   "close": true
 }
