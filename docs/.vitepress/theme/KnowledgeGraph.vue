@@ -251,12 +251,15 @@ onMounted(async () => {
     .style('pointer-events', 'none')
 
   // Drag
+  let dragged = false
   const drag = d3.drag<SVGGElement, GraphNode>()
     .on('start', (event, d) => {
+      dragged = false
       if (!event.active) simulation?.alphaTarget(0.3).restart()
       d.fx = d.x; d.fy = d.y
     })
     .on('drag', (event, d) => {
+      dragged = true
       d.fx = event.x; d.fy = event.y; d.x = event.x; d.y = event.y
     })
     .on('end', (event, d) => {
@@ -317,8 +320,9 @@ onMounted(async () => {
         .attr('r', (n: any) => n.type === 'category' ? 22 : 8)
     })
 
-  // Click to navigate
+  // Click to navigate (only if not a drag)
   nodeGroup.on('click', (event: MouseEvent, d: GraphNode) => {
+    if (dragged) return
     if (d.link) window.location.href = base + d.link.replace(/^\//, '')
   })
 
