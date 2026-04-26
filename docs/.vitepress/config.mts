@@ -1,18 +1,15 @@
 import { defineConfig, type Plugin } from 'vitepress'
-import { execSync } from 'child_process'
 import path from 'path'
 import fs from 'fs'
+import { generateGraphData } from './scripts/generate-graph-data.mts'
 
 function graphDataPlugin(): Plugin {
   return {
     name: 'generate-graph-data',
     buildStart() {
-      const scriptPath = path.resolve(__dirname, 'scripts/generate-graph-data.mts')
       const outputFile = path.resolve(__dirname, '../public/graph-data.json')
       if (!fs.existsSync(outputFile) || process.env.NODE_ENV === 'production') {
-        try {
-          execSync(`npx tsx "${scriptPath}"`, { stdio: 'pipe', cwd: path.resolve(__dirname, '../..') })
-        } catch {}
+        generateGraphData(outputFile)
       }
     }
   }

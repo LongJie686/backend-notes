@@ -22,7 +22,9 @@
       "mcp__puppeteer__puppeteer_screenshot",
       "mcp__puppeteer__puppeteer_evaluate",
       "Bash(npx vitepress *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(git check-ignore *)",
+      "Bash(cat .gitignore)"
     ]
   }
 }
