@@ -129,8 +129,8 @@ onMounted(async () => {
     })
   svg.call(zoom)
 
-  // Initial transform to center
-  svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(0.8))
+  // Initial transform - fit whole graph in viewport
+  svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(0.35))
 
   // SVG Defs: gradients, shadows for 3D effect
   const defs = svg.append('defs')
@@ -177,22 +177,22 @@ onMounted(async () => {
       .attr('stop-color', baseColor.darker(1.0).toString())
   })
 
-  // Force simulation (adjusted for larger nodes)
+  // Force simulation - strong repulsion to spread category nodes apart
   simulation = d3.forceSimulation<GraphNode>(nodes)
     .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
       .id(d => d.id)
-      .distance(d => d.type === 'cross-ref' ? 180 : 100)
-      .strength(d => d.type === 'cross-ref' ? 0.3 : 0.8)
+      .distance(d => d.type === 'cross-ref' ? 200 : 120)
+      .strength(d => d.type === 'cross-ref' ? 0.2 : 0.6)
     )
     .force('charge', d3.forceManyBody<GraphNode>().strength(d =>
-      d.type === 'category' ? -600 : -120
+      d.type === 'category' ? -2000 : -150
     ))
-    .force('center', d3.forceCenter(0, 0).strength(0.05))
+    .force('center', d3.forceCenter(0, 0).strength(0.02))
     .force('collision', d3.forceCollide<GraphNode>().radius(d =>
-      d.type === 'category' ? 55 : 30
+      d.type === 'category' ? 120 : 35
     ))
-    .force('x', d3.forceX(0).strength(0.02))
-    .force('y', d3.forceY(0).strength(0.02))
+    .force('x', d3.forceX(0).strength(0.01))
+    .force('y', d3.forceY(0).strength(0.01))
 
   // Draw edges
   const link = gInner.append('g')
@@ -380,7 +380,7 @@ onMounted(async () => {
           orbitData.push({
             node,
             parent,
-            radius: Math.max(Math.sqrt(dx * dx + dy * dy), 50),
+            radius: Math.max(Math.sqrt(dx * dx + dy * dy), 60),
             angle: Math.atan2(dy, dx),
             speed: (0.0008 + Math.random() * 0.002) * (Math.random() > 0.5 ? 1 : -1)
           })
