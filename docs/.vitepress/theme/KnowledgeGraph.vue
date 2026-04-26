@@ -1,14 +1,13 @@
 <template>
   <div class="kg-wrapper" ref="wrapperRef">
-    <!-- Header -->
     <div class="kg-header">
       <div class="kg-title">
         <span class="kg-title-name">LongJie's Notes</span>
-        <span class="kg-title-sub">Backend / Recommend System / AI</span>
+        <span class="kg-title-sub">Backend / Database / AI / Architecture</span>
       </div>
       <div class="kg-actions">
         <button class="kg-btn" @click="toggleTheme">
-          {{ isDark ? '浅色' : '深色' }}
+          {{ isDark ? 'Light' : 'Dark' }}
         </button>
         <a class="kg-btn kg-btn-primary" href="/backend-notes/backend/python">
           进入文档
@@ -16,26 +15,22 @@
       </div>
     </div>
 
-    <!-- SVG Canvas -->
     <svg ref="svgRef" class="kg-svg"></svg>
 
-    <!-- Legend -->
     <div class="kg-legend">
       <div class="kg-legend-item" v-for="(color, name) in categoryColors" :key="name">
-        <span class="kg-legend-dot" :style="{ background: color }"></span>
+        <span class="kg-legend-dot" :style="{ background: color, boxShadow: `0 0 6px ${color}` }"></span>
         <span class="kg-legend-text">{{ name }}</span>
       </div>
     </div>
 
-    <!-- Tooltip -->
     <div class="kg-tooltip" v-if="tooltip" :style="tooltipStyle">
       <div class="kg-tooltip-label">{{ tooltip.label }}</div>
-      <div class="kg-tooltip-type" v-if="tooltip.type === 'category'">[分类]</div>
-      <div class="kg-tooltip-hint">点击进入</div>
+      <div class="kg-tooltip-type" v-if="tooltip.type === 'category'">[ 分类 ]</div>
+      <div class="kg-tooltip-hint">click to open</div>
     </div>
 
-    <!-- Node count -->
-    <div class="kg-stats">{{ nodeCount }} 个节点</div>
+    <div class="kg-stats">{{ nodeCount }} nodes</div>
   </div>
 </template>
 
@@ -66,15 +61,15 @@ const tooltipPos = ref({ x: 0, y: 0 })
 const nodeCount = ref(0)
 
 const categoryColors: Record<string, string> = {
-  '后端': '#42A5F5',
-  '数据库': '#66BB6A',
-  'AI 应用': '#AB47BC',
-  '微服务': '#FF7043',
-  '架构设计': '#26A69A',
-  '高并发': '#EF5350',
-  '工程化': '#78909C',
-  '大数据': '#FFA726',
-  '数据分析': '#5C6BC0',
+  '后端': '#4FC3F7',
+  '数据库': '#81C784',
+  'AI 应用': '#CE93D8',
+  '微服务': '#FF8A65',
+  '架构设计': '#4DB6AC',
+  '高并发': '#E57373',
+  '工程化': '#90A4AE',
+  '大数据': '#FFB74D',
+  '数据分析': '#7986CB',
 }
 
 const tooltipStyle = computed(() => ({
@@ -119,16 +114,42 @@ onMounted(async () => {
 
   const g = svg.append('g')
   const zoom = d3.zoom<SVGSVGElement, unknown>()
-    .scaleExtent([0.15, 4])
+    .scaleExtent([0.1, 5])
     .on('zoom', (event) => {
       g.attr('transform', event.transform)
     })
   svg.call(zoom)
-  svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(0.5))
+  svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(0.65))
 
-  // Calculate circular target positions for category nodes
+  // SVG Defs
+  const defs = svg.append('defs')
+
+  // Glow filter for category nodes
+  const glow = defs.append('filter').attr('id', 'glow')
+    .attr('x', '-80%').attr('y', '-80%').attr('width', '260%').attr('height', '260%')
+  glow.append('feGaussianBlur').attr('stdDeviation', '6').attr('result', 'blur')
+  const glowMerge = glow.append('feMerge')
+  glowMerge.append('feMergeNode').attr('in', 'blur')
+  glowMerge.append('feMergeNode').attr('in', 'SourceGraphic')
+
+  // Subtle shadow for article nodes
+  const shadow = defs.append('filter').attr('id', 'shadow')
+    .attr('x', '-50%').attr('y', '-50%').attr('width', '200%').attr('height', '200%')
+  shadow.append('feDropShadow').attr('dx', 0).attr('dy', 1).attr('stdDeviation', 2)
+    .attr('flood-color', 'rgba(0,0,0,0.25)')
+
+  // Per-category radial gradients
+  Object.entries(categoryColors).forEach(([name, color]) => {
+    const c = d3.color(color)!
+    const grad = defs.append('radialGradient').attr('id', `g-${name}`)
+      .attr('cx', '40%').attr('cy', '35%').attr('r', '60%')
+    grad.append('stop').attr('offset', '0%').attr('stop-color', c.brighter(0.8).toString())
+    grad.append('stop').attr('offset', '100%').attr('stop-color', c.darker(0.4).toString())
+  })
+
+  // Circular target positions for categories
   const catNodes = nodes.filter(n => n.type === 'category')
-  const circleRadius = 380
+  const circleRadius = 260
   const catTargets = new Map<string, { x: number; y: number }>()
   catNodes.forEach((cat, i) => {
     const angle = (2 * Math.PI * i) / catNodes.length - Math.PI / 2
@@ -138,68 +159,95 @@ onMounted(async () => {
     })
   })
 
-  // Force simulation - radial layout
+  // Force simulation
   simulation = d3.forceSimulation<GraphNode>(nodes)
     .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
       .id(d => d.id)
-      .distance(d => d.type === 'cross-ref' ? 150 : 60)
-      .strength(d => d.type === 'cross-ref' ? 0.08 : 0.7)
+      .distance(d => d.type === 'cross-ref' ? 160 : 55)
+      .strength(d => d.type === 'cross-ref' ? 0.06 : 0.8)
     )
     .force('charge', d3.forceManyBody<GraphNode>().strength(d =>
-      d.type === 'category' ? -150 : -30
+      d.type === 'category' ? -200 : -25
     ))
-    .force('center', d3.forceCenter(0, 0).strength(0.01))
+    .force('center', d3.forceCenter(0, 0).strength(0.005))
     .force('collision', d3.forceCollide<GraphNode>().radius(d =>
-      d.type === 'category' ? 40 : 16
+      d.type === 'category' ? 45 : 15
     ))
     .force('x', d3.forceX<GraphNode>(d => {
       const t = catTargets.get(d.type === 'article' ? d.parent! : d.id)
       return t ? t.x : 0
-    }).strength(d => d.type === 'category' ? 0.3 : 0.04))
+    }).strength(d => d.type === 'category' ? 0.35 : 0.05))
     .force('y', d3.forceY<GraphNode>(d => {
       const t = catTargets.get(d.type === 'article' ? d.parent! : d.id)
       return t ? t.y : 0
-    }).strength(d => d.type === 'category' ? 0.3 : 0.04))
+    }).strength(d => d.type === 'category' ? 0.35 : 0.05))
 
-  // Edges
-  const link = g.append('g')
-    .selectAll('line')
+  // Curved edge paths
+  const linkPath = g.append('g')
+    .selectAll('path')
     .data(edges)
-    .join('line')
-    .attr('stroke', d => d.type === 'cross-ref' ? 'rgba(255,152,0,0.2)' : 'rgba(128,128,128,0.12)')
-    .attr('stroke-width', d => d.type === 'cross-ref' ? 0.8 : 0.6)
-    .attr('stroke-dasharray', d => d.type === 'cross-ref' ? '4,4' : 'none')
+    .join('path')
+    .attr('class', d => `kg-edge kg-edge-${d.type}`)
+    .attr('fill', 'none')
+    .attr('stroke', d => {
+      if (d.type === 'cross-ref') return 'rgba(255,200,100,0.12)'
+      const src = typeof d.source === 'string' ? d.source : (d.source as GraphNode)
+      return (src as GraphNode).color || '#999'
+    })
+    .attr('stroke-width', d => d.type === 'cross-ref' ? 0.6 : 1)
+    .attr('stroke-opacity', d => d.type === 'cross-ref' ? 0.15 : 0.18)
+    .attr('stroke-dasharray', d => d.type === 'cross-ref' ? '3,3' : 'none')
 
   // Node groups
   const nodeGroup = g.append('g')
     .selectAll<SVGGElement, GraphNode>('g')
     .data(nodes)
     .join('g')
-    .attr('class', 'kg-node')
+    .attr('class', d => `kg-node kg-node-${d.type}`)
     .style('cursor', 'pointer')
 
-  // Flat circles
+  // Category nodes: outer glow ring
+  nodeGroup.filter(d => d.type === 'category')
+    .append('circle')
+    .attr('r', 28)
+    .attr('fill', 'none')
+    .attr('stroke', d => d.color)
+    .attr('stroke-width', 1)
+    .attr('stroke-opacity', 0.2)
+    .style('pointer-events', 'none')
+
+  // Main circles
   nodeGroup.append('circle')
-    .attr('r', d => d.type === 'category' ? 24 : 10)
-    .attr('fill', d => d.type === 'category' ? d.color : d3.color(d.color)!.darker(0.3).toString())
-    .attr('fill-opacity', d => d.type === 'category' ? 0.85 : 0.7)
-    .attr('stroke', d => d.type === 'category' ? d.color : 'none')
-    .attr('stroke-width', d => d.type === 'category' ? 2 : 0)
+    .attr('class', 'node-circle')
+    .attr('r', d => d.type === 'category' ? 22 : 8)
+    .attr('fill', d => {
+      if (d.type === 'category') return `url(#g-${d.label})`
+      return d3.color(d.color)!.darker(0.2).toString()
+    })
+    .attr('fill-opacity', d => d.type === 'category' ? 0.95 : 0.75)
+    .attr('stroke', d => d.type === 'category' ? d3.color(d.color)!.brighter(0.3).toString() : d.color)
+    .attr('stroke-width', d => d.type === 'category' ? 1.5 : 0.5)
+    .attr('stroke-opacity', d => d.type === 'category' ? 0.8 : 0.3)
+    .attr('filter', d => d.type === 'category' ? 'url(#glow)' : 'url(#shadow)')
 
   // Category labels
   nodeGroup.filter(d => d.type === 'category')
     .append('text')
     .text(d => d.label)
-    .attr('dy', 36).attr('text-anchor', 'middle')
-    .attr('fill', 'var(--vp-c-text-1)').attr('font-size', '13px').attr('font-weight', '700')
+    .attr('dy', 38).attr('text-anchor', 'middle')
+    .attr('fill', 'var(--vp-c-text-1)')
+    .attr('font-size', '12px').attr('font-weight', '600')
+    .attr('letter-spacing', '0.5px')
     .style('pointer-events', 'none')
+    .style('text-shadow', '0 1px 3px rgba(0,0,0,0.3)')
 
   // Article labels
   nodeGroup.filter(d => d.type === 'article')
     .append('text')
     .text(d => d.label.length > 8 ? d.label.slice(0, 8) + '..' : d.label)
-    .attr('dy', -15).attr('text-anchor', 'middle')
-    .attr('fill', 'var(--vp-c-text-2)').attr('font-size', '10px')
+    .attr('dy', -13).attr('text-anchor', 'middle')
+    .attr('fill', 'var(--vp-c-text-3)')
+    .attr('font-size', '9px')
     .style('pointer-events', 'none')
 
   // Drag
@@ -232,20 +280,41 @@ onMounted(async () => {
         if (t === d.id) connectedIds.add(s)
       })
 
-      nodeGroup.attr('opacity', n => connectedIds.has(n.id) ? 1 : 0.15)
-      link.attr('opacity', (e: any) => {
-        const s = typeof e.source === 'string' ? e.source : e.source.id
-        const t = typeof e.target === 'string' ? e.target : e.target.id
-        return (s === d.id || t === d.id) ? 1 : 0.05
-      })
+      nodeGroup.transition().duration(200)
+        .attr('opacity', n => connectedIds.has(n.id) ? 1 : 0.08)
+
+      linkPath.transition().duration(200)
+        .attr('stroke-opacity', (e: any) => {
+          const s = typeof e.source === 'string' ? e.source : e.source.id
+          const t = typeof e.target === 'string' ? e.target : e.target.id
+          return (s === d.id || t === d.id) ? 0.7 : 0.02
+        })
+        .attr('stroke-width', (e: any) => {
+          const s = typeof e.source === 'string' ? e.source : e.source.id
+          const t = typeof e.target === 'string' ? e.target : e.target.id
+          return (s === d.id || t === d.id) ? 2 : 0.6
+        })
+
+      // Highlight connected node circles
+      d3.selectAll('.node-circle')
+        .transition().duration(200)
+        .attr('r', function(this: SVGCircleElement, n: any) {
+          if (!connectedIds.has(n.id)) return n.type === 'category' ? 22 : 8
+          return n.type === 'category' ? 26 : 11
+        })
     })
     .on('mousemove', (event: MouseEvent) => {
       tooltipPos.value = { x: event.clientX + 15, y: event.clientY - 10 }
     })
     .on('mouseout', () => {
       tooltip.value = null
-      nodeGroup.attr('opacity', 1)
-      link.attr('opacity', 1)
+      nodeGroup.transition().duration(300).attr('opacity', 1)
+      linkPath.transition().duration(300)
+        .attr('stroke-opacity', d => (d as GraphEdge).type === 'cross-ref' ? 0.15 : 0.18)
+        .attr('stroke-width', d => (d as GraphEdge).type === 'cross-ref' ? 0.6 : 1)
+      d3.selectAll('.node-circle')
+        .transition().duration(300)
+        .attr('r', (n: any) => n.type === 'category' ? 22 : 8)
     })
 
   // Click to navigate
@@ -253,13 +322,19 @@ onMounted(async () => {
     if (d.link) window.location.href = base + d.link.replace(/^\//, '')
   })
 
-  // Tick
+  // Tick - curved edges + node positions
   simulation.on('tick', () => {
-    link
-      .attr('x1', d => (d.source as GraphNode).x ?? 0)
-      .attr('y1', d => (d.source as GraphNode).y ?? 0)
-      .attr('x2', d => (d.target as GraphNode).x ?? 0)
-      .attr('y2', d => (d.target as GraphNode).y ?? 0)
+    linkPath.attr('d', d => {
+      const sx = (d.source as GraphNode).x ?? 0
+      const sy = (d.source as GraphNode).y ?? 0
+      const tx = (d.target as GraphNode).x ?? 0
+      const ty = (d.target as GraphNode).y ?? 0
+      const dx = tx - sx
+      const dy = ty - sy
+      const dr = Math.sqrt(dx * dx + dy * dy) * 1.2
+      return `M${sx},${sy}A${dr},${dr} 0 0,1 ${tx},${ty}`
+    })
+
     nodeGroup.attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`)
   })
 
@@ -290,6 +365,7 @@ onUnmounted(() => { simulation?.stop() })
   background: var(--vp-c-bg);
   overflow: hidden;
   font-family: var(--vp-font-family-base);
+  transition: background 0.3s;
 }
 
 .kg-svg {
@@ -305,9 +381,10 @@ onUnmounted(() => { simulation?.stop() })
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 24px;
+  padding: 20px 28px;
   z-index: 10;
   pointer-events: none;
+  background: linear-gradient(to bottom, var(--vp-c-bg) 0%, transparent 100%);
 }
 
 .kg-header > * {
@@ -317,18 +394,20 @@ onUnmounted(() => { simulation?.stop() })
 .kg-title {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .kg-title-name {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 1px;
   color: var(--vp-c-text-1);
 }
 
 .kg-title-sub {
-  font-size: 13px;
-  color: var(--vp-c-text-2);
+  font-size: 12px;
+  color: var(--vp-c-text-3);
+  letter-spacing: 0.5px;
 }
 
 .kg-actions {
@@ -337,31 +416,35 @@ onUnmounted(() => { simulation?.stop() })
 }
 
 .kg-btn {
-  padding: 6px 16px;
+  padding: 7px 18px;
   border: 1px solid var(--vp-c-divider);
-  border-radius: 6px;
+  border-radius: 20px;
   background: var(--vp-c-bg-soft);
-  color: var(--vp-c-text-1);
-  font-size: 13px;
+  color: var(--vp-c-text-2);
+  font-size: 12px;
   cursor: pointer;
   text-decoration: none;
-  transition: all 0.2s;
+  transition: all 0.25s;
+  letter-spacing: 0.3px;
 }
 
 .kg-btn:hover {
   border-color: var(--vp-c-brand);
   color: var(--vp-c-brand);
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.08);
 }
 
 .kg-btn-primary {
   background: var(--vp-c-brand);
   color: #fff;
   border-color: var(--vp-c-brand);
+  font-weight: 500;
 }
 
 .kg-btn-primary:hover {
-  opacity: 0.9;
+  opacity: 0.85;
   color: #fff;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--vp-c-brand) 40%, transparent);
 }
 
 .kg-legend {
@@ -370,24 +453,25 @@ onUnmounted(() => { simulation?.stop() })
   left: 20px;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px 14px;
   z-index: 10;
-  padding: 10px 14px;
+  padding: 12px 16px;
   background: var(--vp-c-bg-soft);
   border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
-  max-width: 500px;
+  border-radius: 12px;
+  max-width: 520px;
+  backdrop-filter: blur(8px);
 }
 
 .kg-legend-item {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
 }
 
 .kg-legend-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -401,12 +485,13 @@ onUnmounted(() => { simulation?.stop() })
 .kg-tooltip {
   position: fixed;
   z-index: 100;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: var(--vp-c-bg-elv);
   border: 1px solid var(--vp-c-divider);
-  border-radius: 6px;
+  border-radius: 10px;
   pointer-events: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(8px);
 }
 
 .kg-tooltip-label {
@@ -416,42 +501,44 @@ onUnmounted(() => { simulation?.stop() })
 }
 
 .kg-tooltip-type {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--vp-c-text-3);
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 .kg-tooltip-hint {
   font-size: 10px;
   color: var(--vp-c-brand);
   margin-top: 4px;
+  letter-spacing: 0.3px;
 }
 
 .kg-stats {
   position: absolute;
   bottom: 20px;
-  right: 20px;
+  right: 24px;
   font-size: 11px;
   color: var(--vp-c-text-3);
   z-index: 10;
+  letter-spacing: 0.5px;
 }
 
 @media (max-width: 768px) {
   .kg-legend {
     bottom: 10px;
     left: 10px;
-    padding: 8px 10px;
-    gap: 8px;
-    max-width: 300px;
+    padding: 8px 12px;
+    gap: 8px 10px;
+    max-width: 280px;
   }
   .kg-legend-text {
     font-size: 10px;
   }
   .kg-header {
-    padding: 10px 16px;
+    padding: 14px 16px;
   }
   .kg-title-name {
-    font-size: 16px;
+    font-size: 18px;
   }
 }
 </style>
