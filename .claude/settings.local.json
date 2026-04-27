@@ -28,7 +28,8 @@
       "Bash(curl *)",
       "Bash(gh run *)",
       "mcp__github__get_file_contents",
-      "Bash(pip show *)"
+      "Bash(pip show *)",
+      "Bash(git *)"
     ]
   }
 }
