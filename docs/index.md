@@ -110,6 +110,4 @@ layout: page
 
 </div>
 
-<KnowledgeGraph />
-
 </div>
