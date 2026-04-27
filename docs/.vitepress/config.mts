@@ -205,7 +205,7 @@ export default defineConfig({
           { text: 'L4: 分库分表', link: '/high-concurrency/lecture-4' },
           { text: 'L5: 高可用设计（限流/熔断/降级）', link: '/high-concurrency/lecture-5' },
           { text: 'L6: 服务治理（注册发现/配置中心/分布式锁）', link: '/high-concurrency/lecture-6' },
-          { text: 'L7: 场景实战（秒杀/Feed流/计数）', link: '/high-concurrency/lecture-7' }
+          { text: 'L7: 秒杀系统全链路设计', link: '/high-concurrency/lecture-7' }
         ]
       },
       {
