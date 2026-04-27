@@ -28,7 +28,6 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
-      { text: '首页', link: '/ai-app/llm-dev/' },
       { text: '后端', link: '/backend/python' },
       { text: '数据库', link: '/database/mysql' },
       { text: 'AI', link: '/ai-app/llm-dev/lecture-1' },
