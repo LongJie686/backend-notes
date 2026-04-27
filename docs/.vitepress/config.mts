@@ -28,12 +28,12 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
-      { text: '后端', link: '/backend/python' },
-      { text: '数据库', link: '/database/mysql' },
-      { text: 'AI', link: '/ai-app/llm-dev/lecture-1' },
-      { text: '微服务', link: '/microservice/' },
-      { text: '架构设计', link: '/architecture/' },
-      { text: '高并发', link: '/high-concurrency/' }
+      { text: 'MySQL 学习笔记', link: '/database/mysql-notes/lecture-1' },
+      { text: '多智能体设计实战', link: '/ai-app/multi-agent/lecture-1' },
+      { text: '大模型应用开发', link: '/ai-app/llm-dev/lecture-1' },
+      { text: '架构设计', link: '/architecture/lecture-1' },
+      { text: '高并发', link: '/high-concurrency/lecture-1' },
+      { text: '微服务', link: '/microservice/lecture-1' }
     ],
 
     sidebar: [
@@ -83,7 +83,7 @@ export default defineConfig({
       },
       {
         text: 'AI 应用',
-        collapsed: true,
+        collapsed: false,
         items: [
           { text: 'LLM 概述', link: '/ai-app/llm' },
           {
