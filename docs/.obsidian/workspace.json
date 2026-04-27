@@ -192,6 +192,7 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "ai-app/llm-dev/lecture-6.md.tmp.33744.1777303504660",
     "microservice/lecture-6.md.tmp.33744.1777302782068",
     "high-concurrency/lecture-7.md.tmp.32756.1777288488607",
     "public/graph-data.json",
@@ -227,7 +228,6 @@
     "ai-app/skills",
     "big-data",
     "engineering",
-    "ai-app/voice-interaction",
-    "ai-app/mcp"
+    "ai-app/voice-interaction"
   ]
 }
