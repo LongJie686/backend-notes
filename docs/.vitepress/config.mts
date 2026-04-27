@@ -31,7 +31,7 @@ export default defineConfig({
       { text: '首页', link: '/ai-app/llm-dev/' },
       { text: '后端', link: '/backend/python' },
       { text: '数据库', link: '/database/mysql' },
-      { text: 'AI', link: '/ai-app/llm' },
+      { text: 'AI', link: '/ai-app/llm-dev/lecture-1' },
       { text: '微服务', link: '/microservice/' },
       { text: '架构设计', link: '/architecture/' },
       { text: '高并发', link: '/high-concurrency/' }
@@ -204,8 +204,7 @@ export default defineConfig({
           { text: 'L3: 消息队列（Kafka/RocketMQ）', link: '/high-concurrency/lecture-3' },
           { text: 'L4: 分库分表', link: '/high-concurrency/lecture-4' },
           { text: 'L5: 高可用设计（限流/熔断/降级）', link: '/high-concurrency/lecture-5' },
-          { text: 'L6: 服务治理（注册发现/配置中心/分布式锁）', link: '/high-concurrency/lecture-6' },
-          { text: 'L7: 秒杀系统全链路设计', link: '/high-concurrency/lecture-7' }
+          { text: 'L6: 秒杀系统全链路设计', link: '/high-concurrency/lecture-6' }
         ]
       },
       {
