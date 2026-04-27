@@ -9,7 +9,7 @@
         <button class="kg-btn" @click="toggleTheme">
           {{ isDark ? 'Light' : 'Dark' }}
         </button>
-        <a class="kg-btn kg-btn-primary" href="/backend-notes/backend/python">
+        <a class="kg-btn kg-btn-primary" href="/backend-notes/notes">
           进入文档
         </a>
       </div>

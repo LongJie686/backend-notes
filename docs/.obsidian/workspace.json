@@ -192,6 +192,8 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "notes.md",
+    "notes.md.tmp.29752.1777306301683",
     "index.md.tmp.29752.1777306064906",
     "architecture/lecture-6.md.tmp.33744.1777304784829",
     "index.md.tmp.33744.1777304358646",
@@ -202,7 +204,6 @@
     "public/graph-data.json",
     "public",
     "ai-app/agent-analysis/hermes-agent.md",
-    "architecture/lecture-5.md.tmp.31232.1777026128190",
     "未命名.canvas",
     "ai-app/llm.md",
     "database/mysql-notes/lecture-10.md",
@@ -227,7 +228,6 @@
     "microservice/lecture-3.md",
     "database/mysql-notes/lecture-9.md",
     "microservice/lecture-2.md",
-    "architecture/lecture-2.md",
-    "data-analysis"
+    "architecture/lecture-2.md"
   ]
 }
