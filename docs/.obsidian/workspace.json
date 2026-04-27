@@ -192,6 +192,7 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "index.md.tmp.33744.1777304358646",
     "high-concurrency/lecture-6.md.tmp.33744.1777304016038",
     "ai-app/llm-dev/lecture-6.md.tmp.33744.1777303504660",
     "microservice/lecture-6.md.tmp.33744.1777302782068",
@@ -227,7 +228,6 @@
     "architecture/lecture-2.md",
     "data-analysis",
     "ai-app/skills",
-    "big-data",
-    "engineering"
+    "big-data"
   ]
 }
