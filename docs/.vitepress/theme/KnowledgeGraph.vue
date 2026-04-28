@@ -147,62 +147,96 @@ onMounted(async () => {
     grad.append('stop').attr('offset', '100%').attr('stop-color', c.darker(0.4).toString())
   })
 
-  // === Step 1: Top categories form a circle, children near parent ===
+  // === Geometric Layout: center ring + fan children ===
   const topCats = nodes.filter(n => n.type === 'category' && !n.parent)
+  const subCats = nodes.filter(n => n.type === 'category' && n.parent)
+  const allArticles = nodes.filter(n => n.type === 'article')
+
+  const R = 100           // top category ring radius (gap ≈ half node size)
+  const BASE = 80         // child base distance from parent
+  const STEP = 60         // distance increment per layer
+  const CAPACITY = 5      // max nodes per layer
+  const FAN_HALF = Math.PI / 6  // ±30° fan half-angle
 
   const nodeTargets = new Map<string, { x: number; y: number }>()
 
-  // Top categories evenly on a circle
-  const R = 200
+  // 1. Top categories evenly on R=500 circle
   topCats.forEach((cat, i) => {
-    const a = (2 * Math.PI * i) / topCats.length - Math.PI / 2
-    nodeTargets.set(cat.id, { x: R * Math.cos(a), y: R * Math.sin(a) })
+    const theta = (2 * Math.PI * i) / topCats.length - Math.PI / 2
+    nodeTargets.set(cat.id, { x: R * Math.cos(theta), y: R * Math.sin(theta) })
   })
 
-  // All other nodes: just put near their parent, let forces sort them out
-  nodes.forEach(n => {
-    if (nodeTargets.has(n.id)) return
-    if (n.parent) {
-      const parentTarget = nodeTargets.get(n.parent)
-      if (parentTarget) {
-        nodeTargets.set(n.id, { x: parentTarget.x, y: parentTarget.y })
-      }
+  // 2. Direct children of each top category: sub-cats first, then articles, fan outward
+  topCats.forEach(cat => {
+    const catPos = nodeTargets.get(cat.id)!
+    const dir = Math.atan2(catPos.y, catPos.x)
+    const catSubs = subCats.filter(s => s.parent === cat.id)
+    const catArts = allArticles.filter(a => a.parent === cat.id)
+    const children = [...catSubs, ...catArts]
+
+    // Split into layers of CAPACITY
+    const layers: typeof children[] = []
+    for (let i = 0; i < children.length; i += CAPACITY) {
+      layers.push(children.slice(i, i + CAPACITY))
     }
+
+    layers.forEach((layer, li) => {
+      const dist = BASE + li * STEP
+      layer.forEach((child, ci) => {
+        const t = layer.length <= 1 ? 0.5 : ci / (layer.length - 1)
+        const angle = dir - FAN_HALF + t * 2 * FAN_HALF
+        nodeTargets.set(child.id, {
+          x: catPos.x + dist * Math.cos(angle),
+          y: catPos.y + dist * Math.sin(angle)
+        })
+      })
+    })
   })
 
-  // Set initial positions
+  // 3. Sub-cat articles: fan out from sub-cat position
+  subCats.forEach(sub => {
+    const subPos = nodeTargets.get(sub.id)
+    if (!subPos) return
+    const dir = Math.atan2(subPos.y, subPos.x)
+    const subArts = allArticles.filter(a => a.parent === sub.id)
+
+    const layers: typeof subArts[] = []
+    for (let i = 0; i < subArts.length; i += CAPACITY) {
+      layers.push(subArts.slice(i, i + CAPACITY))
+    }
+
+    layers.forEach((layer, li) => {
+      const dist = BASE + li * STEP
+      layer.forEach((art, ci) => {
+        const t = layer.length <= 1 ? 0.5 : ci / (layer.length - 1)
+        const angle = dir - FAN_HALF + t * 2 * FAN_HALF
+        nodeTargets.set(art.id, {
+          x: subPos.x + dist * Math.cos(angle),
+          y: subPos.y + dist * Math.sin(angle)
+        })
+      })
+    })
+  })
+
+  // Set fixed positions (fx/fy lock nodes in place)
   nodes.forEach(n => {
     const t = nodeTargets.get(n.id)
     if (t) {
       n.x = t.x
       n.y = t.y
-      n.fx = undefined
-      n.fy = undefined
+      n.fx = t.x
+      n.fy = t.y
     }
   })
 
-  // Force simulation
+  // Minimal simulation — only used for tick rendering and drag, no layout forces
   simulation = d3.forceSimulation<GraphNode>(nodes)
     .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
-      .id(d => d.id)
-      .distance(60)
-      .strength(0.3)
+      .id(d => d.id).distance(60).strength(0)
     )
-    .force('charge', d3.forceManyBody<GraphNode>().strength(d =>
-      d.type === 'category' ? -80 : -5
-    ))
-    .force('center', d3.forceCenter(0, 0).strength(0.01))
-    .force('collision', d3.forceCollide<GraphNode>().radius(d =>
-      d.type === 'category' ? 35 : 14
-    ))
-    .force('x', d3.forceX<GraphNode>(d => {
-      const t = nodeTargets.get(d.id)
-      return t ? t.x : 0
-    }).strength(d => d.type === 'category' && !d.parent ? 0.8 : 0.05))
-    .force('y', d3.forceY<GraphNode>(d => {
-      const t = nodeTargets.get(d.id)
-      return t ? t.y : 0
-    }).strength(d => d.type === 'category' && !d.parent ? 0.8 : 0.05))
+    .force('charge', d3.forceManyBody<GraphNode>().strength(0))
+    .force('center', d3.forceCenter(0, 0).strength(0))
+    .alphaDecay(1)
 
   // Curved edge paths
   const linkPath = g.append('g')
@@ -288,15 +322,20 @@ onMounted(async () => {
     .on('start', (event, d) => {
       dragged = false
       if (!event.active) simulation?.alphaTarget(0.3).restart()
-      d.fx = d.x; d.fy = d.y
     })
     .on('drag', (event, d) => {
       dragged = true
-      d.fx = event.x; d.fy = event.y; d.x = event.x; d.y = event.y
+      d.x = event.x; d.y = event.y
+      d.fx = event.x; d.fy = event.y
     })
     .on('end', (event, d) => {
       if (!event.active) simulation?.alphaTarget(0)
-      d.fx = null; d.fy = null
+      // Restore to original calculated position
+      const t = nodeTargets.get(d.id)
+      if (t) {
+        d.fx = t.x; d.fy = t.y
+        d.x = t.x; d.y = t.y
+      }
     })
   nodeGroup.call(drag)
 
