@@ -155,33 +155,25 @@ onMounted(async () => {
   const R = 100           // top category ring radius
   const BASE = 80         // child base distance from parent
   const STEP = 60         // distance increment per layer
-  const NODE_R = 8        // article node radius
-  const NODE_GAP = 6      // gap between article nodes
-  const NODE_SPACE = NODE_R * 2 + NODE_GAP  // 22px per node
-  const FAN_HALF = Math.PI / 6  // ±30°
+  const FAN_HALF = Math.PI / 8  // ±22.5°, gap between fans with slight edge overlap
 
   const nodeTargets = new Map<string, { x: number; y: number }>()
 
-  // Calculate layer capacity: inner layers fewer, outer layers more (arc length grows)
-  function layerCapacity(layerIndex: number): number {
-    const dist = BASE + layerIndex * STEP
-    const arcLen = 2 * dist * Math.tan(FAN_HALF)
-    return Math.max(1, Math.floor(arcLen / NODE_SPACE))
-  }
+  // Layer capacity: layer 0 = 3, layer 1 = 5, layer 2 = 7, then keep 7
+  const LAYER_CAP = [3, 5, 7]
 
-  // Distribute nodes into layers: inner=less, outer=more
   function distributeLayers(count: number): number[] {
-    const caps: number[] = []
-    let idx = 0
+    const result: number[] = []
     let remaining = count
+    let idx = 0
     while (remaining > 0) {
-      const cap = layerCapacity(idx)
+      const cap = LAYER_CAP[Math.min(idx, LAYER_CAP.length - 1)]
       const take = Math.min(cap, remaining)
-      caps.push(take)
+      result.push(take)
       remaining -= take
       idx++
     }
-    return caps
+    return result
   }
 
   // 1. Top categories evenly on circle
