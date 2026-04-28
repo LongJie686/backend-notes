@@ -147,104 +147,81 @@ onMounted(async () => {
     grad.append('stop').attr('offset', '100%').attr('stop-color', c.darker(0.4).toString())
   })
 
-  // === Fan-shaped Circular Layout ===
+  // === Concentric Ring Layout (petal/flower style) ===
+  // Ring 1: top categories  Ring 2: sub-categories  Ring 3: articles
+  // Each ring is a full circle, nodes spread in their parent's angular sector
   const topCats = nodes.filter(n => n.type === 'category' && !n.parent)
   const subCats = nodes.filter(n => n.type === 'category' && n.parent)
   const allArticles = nodes.filter(n => n.type === 'article')
 
-  // Count all descendants (sub-cats + articles) for each top category
-  function countAll(nodeId: string): number {
-    const children = nodes.filter(n => n.parent === nodeId)
-    return children.reduce((sum, c) => sum + 1 + (c.type === 'category' ? countAll(c.id) : 0), 0)
-  }
-
-  // Sort by size descending — biggest gets widest fan sector
-  const sortedCats = [...topCats].sort((a, b) => countAll(b.id) - countAll(a.id))
-  const totalChildren = sortedCats.reduce((s, c) => s + countAll(c.id), 0)
-
   const nodeTargets = new Map<string, { x: number; y: number }>()
 
-  const innerR = 160   // top-level categories ring radius
-  const outerR = 420   // articles outer ring radius
+  // Each top category owns an angular sector proportional to its descendant count
+  function countAll(nodeId: string): number {
+    const children = nodes.filter(n => n.parent === nodeId)
+    return children.reduce((s, c) => s + 1 + (c.type === 'category' ? countAll(c.id) : 0), 0)
+  }
+  const totalCount = topCats.reduce((s, c) => s + countAll(c.id), 0)
 
-  // 1. Place each top category on the inner circle, proportional sector width
-  let angleCursor = 0
-  const catSectors = new Map<string, { center: number; start: number; end: number }>()
-
-  sortedCats.forEach(cat => {
+  // Assign sectors
+  let cursor = -Math.PI / 2  // start from top
+  const catSector = new Map<string, { center: number; start: number; end: number }>()
+  topCats.forEach(cat => {
     const count = countAll(cat.id)
-    const sectorWidth = (count / totalChildren) * 2 * Math.PI
-    const startAngle = angleCursor
-    const centerAngle = angleCursor + sectorWidth / 2
-    const endAngle = angleCursor + sectorWidth
-    catSectors.set(cat.id, { center: centerAngle, start: startAngle, end: endAngle })
-
+    const span = (count / totalCount) * 2 * Math.PI
+    catSector.set(cat.id, { start: cursor, center: cursor + span / 2, end: cursor + span })
+    // Place category node at its sector center on ring 1
     nodeTargets.set(cat.id, {
-      x: innerR * Math.cos(centerAngle),
-      y: innerR * Math.sin(centerAngle)
+      x: 150 * Math.cos(cursor + span / 2),
+      y: 150 * Math.sin(cursor + span / 2)
     })
-
-    angleCursor = endAngle
+    cursor += span
   })
 
-  // 2. For each top category, spread its children (sub-cats + articles) across its sector
-  sortedCats.forEach(cat => {
-    const sector = catSectors.get(cat.id)!
-    const catSubs = subCats.filter(s => s.parent === cat.id)
-    const catArts = allArticles.filter(a => a.parent === cat.id)
-
-    // Collect all leaf items to distribute: sub-cats (with their articles) + direct articles
-    // Build groups: each sub-cat is a group, direct articles form one group
-    const groups: { id: string; items: string[]; isSubCat: boolean }[] = []
-
-    catSubs.forEach(sub => {
-      const subArts = allArticles.filter(a => a.parent === sub.id).map(a => a.id)
-      groups.push({ id: sub.id, items: subArts, isSubCat: true })
+  // Ring 2: sub-categories, evenly spread within their parent's sector
+  const R2 = 300
+  topCats.forEach(cat => {
+    const s = catSector.get(cat.id)!
+    const catSubs = subCats.filter(sc => sc.parent === cat.id)
+    catSubs.forEach((sub, i) => {
+      const t = catSubs.length <= 1 ? 0.5 : i / (catSubs.length - 1)
+      const a = s.start + t * (s.end - s.start)
+      nodeTargets.set(sub.id, { x: R2 * Math.cos(a), y: R2 * Math.sin(a) })
     })
-    if (catArts.length > 0) {
-      groups.push({ id: '__direct__', items: catArts.map(a => a.id), isSubCat: false })
+  })
+
+  // Ring 3: articles — spread within parent's sector, on the outermost ring
+  const R3 = 480
+  // Collect all articles per top category (direct + under sub-cats)
+  topCats.forEach(cat => {
+    const s = catSector.get(cat.id)!
+    const catSubs = subCats.filter(sc => sc.parent === cat.id)
+    const directArts = allArticles.filter(a => a.parent === cat.id)
+
+    // Build a flat list: sub-cat groups + direct articles, allocate sub-sectors
+    const groups: { label: string; arts: string[] }[] = []
+    catSubs.forEach(sub => {
+      const sa = allArticles.filter(a => a.parent === sub.id).map(a => a.id)
+      groups.push({ label: sub.id, arts: sa })
+    })
+    if (directArts.length > 0) {
+      groups.push({ label: '__direct__', arts: directArts.map(a => a.id) })
     }
 
-    // Total items count for proportional angle allocation
-    const totalItems = groups.reduce((s, g) => s + 1 + g.items.length, 0)
-    const sectorSpan = sector.end - sector.start
+    const totalArts = groups.reduce((s2, g) => s2 + g.arts.length, 0)
+    if (totalArts === 0) return
 
-    let itemCursor = sector.start
+    let subCursor = s.start
+    const sectorSpan = s.end - s.start
 
-    groups.forEach(group => {
-      const groupSize = 1 + group.items.length
-      const groupSpan = (groupSize / totalItems) * sectorSpan
-      const groupCenter = itemCursor + groupSpan / 2
-
-      if (group.isSubCat) {
-        // Sub-cat on mid ring
-        const midR = (innerR + outerR) / 2
-        nodeTargets.set(group.id, {
-          x: midR * Math.cos(groupCenter),
-          y: midR * Math.sin(groupCenter)
-        })
-        // Its articles on outer ring, spread within sub-sector
-        group.items.forEach((artId, ai) => {
-          const t = group.items.length <= 1 ? 0.5 : ai / (group.items.length - 1)
-          const a = itemCursor + (1 / totalItems) * sectorSpan / 2 + t * (group.items.length / totalItems) * sectorSpan
-          nodeTargets.set(artId, {
-            x: outerR * Math.cos(a),
-            y: outerR * Math.sin(a)
-          })
-        })
-      } else {
-        // Direct articles on outer ring
-        group.items.forEach((artId, ai) => {
-          const t = group.items.length <= 1 ? 0.5 : ai / (group.items.length - 1)
-          const a = itemCursor + t * groupSpan
-          nodeTargets.set(artId, {
-            x: outerR * Math.cos(a),
-            y: outerR * Math.sin(a)
-          })
-        })
-      }
-
-      itemCursor += groupSpan
+    groups.forEach(g => {
+      const gSpan = (g.arts.length / totalArts) * sectorSpan
+      g.arts.forEach((artId, i) => {
+        const t = g.arts.length <= 1 ? 0.5 : i / (g.arts.length - 1)
+        const a = subCursor + t * gSpan
+        nodeTargets.set(artId, { x: R3 * Math.cos(a), y: R3 * Math.sin(a) })
+      })
+      subCursor += gSpan
     })
   })
 
@@ -259,15 +236,15 @@ onMounted(async () => {
     }
   })
 
-  // Force simulation — strong positional forces to maintain fan shape
+  // Force simulation — strong positional forces to maintain shape
   simulation = d3.forceSimulation<GraphNode>(nodes)
     .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
       .id(d => d.id)
-      .distance(d => d.type === 'cross-ref' ? 200 : 50)
+      .distance(d => d.type === 'cross-ref' ? 200 : 60)
       .strength(d => d.type === 'cross-ref' ? 0.01 : 0.05)
     )
     .force('charge', d3.forceManyBody<GraphNode>().strength(d =>
-      d.type === 'category' ? -150 : -10
+      d.type === 'category' ? -60 : -5
     ))
     .force('center', d3.forceCenter(0, 0).strength(0.005))
     .force('collision', d3.forceCollide<GraphNode>().radius(d =>
