@@ -149,7 +149,7 @@ onMounted(async () => {
 
   // Circular target positions for categories
   const catNodes = nodes.filter(n => n.type === 'category')
-  const circleRadius = 260
+  const circleRadius = 360
   const catTargets = new Map<string, { x: number; y: number }>()
   catNodes.forEach((cat, i) => {
     const angle = (2 * Math.PI * i) / catNodes.length - Math.PI / 2
@@ -163,11 +163,11 @@ onMounted(async () => {
   simulation = d3.forceSimulation<GraphNode>(nodes)
     .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
       .id(d => d.id)
-      .distance(d => d.type === 'cross-ref' ? 160 : 55)
+      .distance(d => d.type === 'cross-ref' ? 180 : 80)
       .strength(d => d.type === 'cross-ref' ? 0.06 : 0.8)
     )
     .force('charge', d3.forceManyBody<GraphNode>().strength(d =>
-      d.type === 'category' ? -200 : -25
+      d.type === 'category' ? -400 : -40
     ))
     .force('center', d3.forceCenter(0, 0).strength(0.005))
     .force('collision', d3.forceCollide<GraphNode>().radius(d =>
@@ -176,11 +176,11 @@ onMounted(async () => {
     .force('x', d3.forceX<GraphNode>(d => {
       const t = catTargets.get(d.type === 'article' ? d.parent! : d.id)
       return t ? t.x : 0
-    }).strength(d => d.type === 'category' ? 0.35 : 0.05))
+    }).strength(d => d.type === 'category' ? 0.45 : 0.12))
     .force('y', d3.forceY<GraphNode>(d => {
       const t = catTargets.get(d.type === 'article' ? d.parent! : d.id)
       return t ? t.y : 0
-    }).strength(d => d.type === 'category' ? 0.35 : 0.05))
+    }).strength(d => d.type === 'category' ? 0.45 : 0.12))
 
   // Curved edge paths
   const linkPath = g.append('g')
