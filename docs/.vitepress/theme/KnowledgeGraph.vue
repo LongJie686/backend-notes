@@ -147,15 +147,48 @@ onMounted(async () => {
     grad.append('stop').attr('offset', '100%').attr('stop-color', c.darker(0.4).toString())
   })
 
-  // Circular target positions for categories
-  const catNodes = nodes.filter(n => n.type === 'category')
-  const circleRadius = 360
+  // Position categories: biggest at center, others on circle
+  const topCats = nodes.filter(n => n.type === 'category' && !n.parent)
+  const subCats = nodes.filter(n => n.type === 'category' && n.parent)
+
+  function countDescendants(nodeId: string): number {
+    return nodes
+      .filter(n => n.parent === nodeId)
+      .reduce((sum, child) => sum + 1 + (child.type === 'category' ? countDescendants(child.id) : 0), 0)
+  }
+
+  function findTopAncestor(nodeId: string): string | null {
+    const node = nodes.find(n => n.id === nodeId)
+    if (!node) return null
+    if (!node.parent) return node.id
+    return findTopAncestor(node.parent)
+  }
+
+  const sortedTopCats = [...topCats].sort((a, b) => countDescendants(b.id) - countDescendants(a.id))
+
   const catTargets = new Map<string, { x: number; y: number }>()
-  catNodes.forEach((cat, i) => {
-    const angle = (2 * Math.PI * i) / catNodes.length - Math.PI / 2
+
+  // Biggest category at center
+  catTargets.set(sortedTopCats[0].id, { x: 0, y: 0 })
+
+  // Other top-level categories on surrounding circle
+  const circleRadius = 320
+  sortedTopCats.slice(1).forEach((cat, i) => {
+    const angle = (2 * Math.PI * i) / (sortedTopCats.length - 1) - Math.PI / 2
     catTargets.set(cat.id, {
       x: circleRadius * Math.cos(angle),
       y: circleRadius * Math.sin(angle),
+    })
+  })
+
+  // Sub-categories: position near their top-level ancestor
+  subCats.forEach((sub, idx) => {
+    const ancestorId = findTopAncestor(sub.id)
+    const baseTarget = catTargets.get(ancestorId!) || { x: 0, y: 0 }
+    const subAngle = (2 * Math.PI * idx) / subCats.length
+    catTargets.set(sub.id, {
+      x: baseTarget.x + 70 * Math.cos(subAngle),
+      y: baseTarget.y + 70 * Math.sin(subAngle),
     })
   })
 
@@ -174,11 +207,13 @@ onMounted(async () => {
       d.type === 'category' ? 45 : 15
     ))
     .force('x', d3.forceX<GraphNode>(d => {
-      const t = catTargets.get(d.type === 'article' ? d.parent! : d.id)
+      const key = d.type === 'article' ? d.parent! : d.id
+      const t = catTargets.get(key)
       return t ? t.x : 0
     }).strength(d => d.type === 'category' ? 0.45 : 0.12))
     .force('y', d3.forceY<GraphNode>(d => {
-      const t = catTargets.get(d.type === 'article' ? d.parent! : d.id)
+      const key = d.type === 'article' ? d.parent! : d.id
+      const t = catTargets.get(key)
       return t ? t.y : 0
     }).strength(d => d.type === 'category' ? 0.45 : 0.12))
 
