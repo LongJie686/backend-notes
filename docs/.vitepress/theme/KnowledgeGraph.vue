@@ -233,6 +233,9 @@ onMounted(async () => {
     .attr('stroke-opacity', d => d.type === 'cross-ref' ? 0.15 : 0.18)
     .attr('stroke-dasharray', d => d.type === 'cross-ref' ? '3,3' : 'none')
 
+  // Sort nodes: articles first, categories last (SVG render order)
+  nodes.sort((a, b) => (a.type === 'category' ? 1 : 0) - (b.type === 'category' ? 1 : 0))
+
   // Node groups
   const nodeGroup = g.append('g')
     .selectAll<SVGGElement, GraphNode>('g')
@@ -284,9 +287,6 @@ onMounted(async () => {
     .attr('fill', 'var(--vp-c-text-3)')
     .attr('font-size', '9px')
     .style('pointer-events', 'none')
-
-  // Bring category nodes to top layer (above articles)
-  nodeGroup.filter(d => d.type === 'category').raise()
 
   // Drag
   let dragged = false
