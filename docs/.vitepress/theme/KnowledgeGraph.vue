@@ -172,7 +172,7 @@ onMounted(async () => {
   catTargets.set(sortedTopCats[0].id, { x: 0, y: 0 })
 
   // Other top-level categories on surrounding circle
-  const circleRadius = 320
+  const circleRadius = 380
   sortedTopCats.slice(1).forEach((cat, i) => {
     const angle = (2 * Math.PI * i) / (sortedTopCats.length - 1) - Math.PI / 2
     catTargets.set(cat.id, {
@@ -187,8 +187,8 @@ onMounted(async () => {
     const baseTarget = catTargets.get(ancestorId!) || { x: 0, y: 0 }
     const subAngle = (2 * Math.PI * idx) / subCats.length
     catTargets.set(sub.id, {
-      x: baseTarget.x + 70 * Math.cos(subAngle),
-      y: baseTarget.y + 70 * Math.sin(subAngle),
+      x: baseTarget.x + 140 * Math.cos(subAngle),
+      y: baseTarget.y + 140 * Math.sin(subAngle),
     })
   })
 
@@ -243,6 +243,13 @@ onMounted(async () => {
     .join('g')
     .attr('class', d => `kg-node kg-node-${d.type}`)
     .style('cursor', 'pointer')
+
+  // Category nodes: transparent drag hit area
+  nodeGroup.filter(d => d.type === 'category')
+    .append('circle')
+    .attr('r', 35)
+    .attr('fill', 'transparent')
+    .style('pointer-events', 'all')
 
   // Category nodes: outer glow ring
   nodeGroup.filter(d => d.type === 'category')
