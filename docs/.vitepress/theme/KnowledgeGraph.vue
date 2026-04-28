@@ -147,9 +147,10 @@ onMounted(async () => {
     grad.append('stop').attr('offset', '100%').attr('stop-color', c.darker(0.4).toString())
   })
 
-  // Position categories: biggest at center, others on circle
+  // === Circular Radial Layout ===
   const topCats = nodes.filter(n => n.type === 'category' && !n.parent)
   const subCats = nodes.filter(n => n.type === 'category' && n.parent)
+  const allArticles = nodes.filter(n => n.type === 'article')
 
   function countDescendants(nodeId: string): number {
     return nodes
@@ -157,65 +158,117 @@ onMounted(async () => {
       .reduce((sum, child) => sum + 1 + (child.type === 'category' ? countDescendants(child.id) : 0), 0)
   }
 
-  function findTopAncestor(nodeId: string): string | null {
-    const node = nodes.find(n => n.id === nodeId)
-    if (!node) return null
-    if (!node.parent) return node.id
-    return findTopAncestor(node.parent)
-  }
-
   const sortedTopCats = [...topCats].sort((a, b) => countDescendants(b.id) - countDescendants(a.id))
+  const centerCat = sortedTopCats[0]
+  const otherTopCats = sortedTopCats.slice(1)
 
-  const catTargets = new Map<string, { x: number; y: number }>()
+  // Target positions for ALL nodes (not just categories)
+  const nodeTargets = new Map<string, { x: number; y: number }>()
 
-  // Biggest category at center
-  catTargets.set(sortedTopCats[0].id, { x: 0, y: 0 })
+  // 1. Center category at origin
+  nodeTargets.set(centerCat.id, { x: 0, y: 0 })
 
-  // Other top-level categories on surrounding circle
-  const circleRadius = 380
-  sortedTopCats.slice(1).forEach((cat, i) => {
-    const angle = (2 * Math.PI * i) / (sortedTopCats.length - 1) - Math.PI / 2
-    catTargets.set(cat.id, {
-      x: circleRadius * Math.cos(angle),
-      y: circleRadius * Math.sin(angle),
+  // 2. Center's direct articles on a small ring
+  const centerArts = allArticles.filter(a => a.parent === centerCat.id)
+  centerArts.forEach((art, i) => {
+    const a = (2 * Math.PI * i) / centerArts.length
+    nodeTargets.set(art.id, { x: 90 * Math.cos(a), y: 90 * Math.sin(a) })
+  })
+
+  // 3. Center's sub-cats on inner ring
+  const centerSubs = subCats.filter(s => s.parent === centerCat.id)
+  const innerR = 180
+  centerSubs.forEach((sub, i) => {
+    const a = (2 * Math.PI * i) / centerSubs.length - Math.PI / 2
+    nodeTargets.set(sub.id, { x: innerR * Math.cos(a), y: innerR * Math.sin(a) })
+  })
+
+  // 4. Center sub-cat articles: fan outward from each sub-cat
+  centerSubs.forEach(sub => {
+    const pos = nodeTargets.get(sub.id)!
+    const dir = Math.atan2(pos.y, pos.x)
+    const arts = allArticles.filter(a => a.parent === sub.id)
+    const spread = Math.min(Math.PI * 0.8, arts.length * 0.12 + 0.3)
+    arts.forEach((art, i) => {
+      const t = arts.length <= 1 ? 0.5 : i / (arts.length - 1)
+      const angle = dir - spread / 2 + spread * t
+      nodeTargets.set(art.id, {
+        x: pos.x + 100 * Math.cos(angle),
+        y: pos.y + 100 * Math.sin(angle)
+      })
     })
   })
 
-  // Sub-categories: position near their top-level ancestor
-  subCats.forEach((sub, idx) => {
-    const ancestorId = findTopAncestor(sub.id)
-    const baseTarget = catTargets.get(ancestorId!) || { x: 0, y: 0 }
-    const subAngle = (2 * Math.PI * idx) / subCats.length
-    catTargets.set(sub.id, {
-      x: baseTarget.x + 140 * Math.cos(subAngle),
-      y: baseTarget.y + 140 * Math.sin(subAngle),
+  // 5. Other top-level categories on outer ring
+  const outerR = 450
+  otherTopCats.forEach((cat, i) => {
+    const a = (2 * Math.PI * i) / otherTopCats.length
+    nodeTargets.set(cat.id, { x: outerR * Math.cos(a), y: outerR * Math.sin(a) })
+  })
+
+  // 6. Outer categories' sub-cats + articles
+  otherTopCats.forEach(cat => {
+    const catPos = nodeTargets.get(cat.id)!
+    const catDir = Math.atan2(catPos.y, catPos.x)
+    const catSubs = subCats.filter(s => s.parent === cat.id)
+    const catArts = allArticles.filter(a => a.parent === cat.id)
+
+    // Sub-cats: push outward from parent
+    catSubs.forEach((sub, si) => {
+      const offset = (si - (catSubs.length - 1) / 2) * 0.3
+      const subAngle = catDir + offset
+      nodeTargets.set(sub.id, {
+        x: catPos.x + 110 * Math.cos(subAngle),
+        y: catPos.y + 110 * Math.sin(subAngle)
+      })
+      // Sub-cat's articles: fan outward
+      const subArts = allArticles.filter(a => a.parent === sub.id)
+      const subPos = nodeTargets.get(sub.id)!
+      const artSpread = Math.min(Math.PI * 0.9, subArts.length * 0.1 + 0.3)
+      subArts.forEach((art, ai) => {
+        const t = subArts.length <= 1 ? 0.5 : ai / (subArts.length - 1)
+        const a = subAngle - artSpread / 2 + artSpread * t
+        nodeTargets.set(art.id, {
+          x: subPos.x + 90 * Math.cos(a),
+          y: subPos.y + 90 * Math.sin(a)
+        })
+      })
+    })
+
+    // Direct articles: fan outward from category
+    const artSpread = Math.min(Math.PI * 0.8, catArts.length * 0.1 + 0.2)
+    catArts.forEach((art, i) => {
+      const t = catArts.length <= 1 ? 0.5 : i / (catArts.length - 1)
+      const a = catDir - artSpread / 2 + artSpread * t
+      nodeTargets.set(art.id, {
+        x: catPos.x + 90 * Math.cos(a),
+        y: catPos.y + 90 * Math.sin(a)
+      })
     })
   })
 
-  // Force simulation
+  // Force simulation — lighter forces let the radial targets dominate
   simulation = d3.forceSimulation<GraphNode>(nodes)
     .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
       .id(d => d.id)
-      .distance(d => d.type === 'cross-ref' ? 180 : 110)
-      .strength(d => d.type === 'cross-ref' ? 0.06 : 0.8)
+      .distance(d => d.type === 'cross-ref' ? 200 : 50)
+      .strength(d => d.type === 'cross-ref' ? 0.03 : 0.4)
     )
     .force('charge', d3.forceManyBody<GraphNode>().strength(d =>
-      d.type === 'category' ? -400 : -60
+      d.type === 'category' ? -200 : -20
     ))
-    .force('center', d3.forceCenter(0, 0).strength(0.005))
+    .force('center', d3.forceCenter(0, 0).strength(0.008))
     .force('collision', d3.forceCollide<GraphNode>().radius(d =>
-      d.type === 'category' ? 50 : 20
+      d.type === 'category' ? 40 : 16
     ))
     .force('x', d3.forceX<GraphNode>(d => {
-      const key = d.type === 'article' ? d.parent! : d.id
-      const t = catTargets.get(key)
+      const t = nodeTargets.get(d.id)
       return t ? t.x : 0
-    }).strength(d => d.type === 'category' ? 0.15 : 0.12))
+    }).strength(0.1))
     .force('y', d3.forceY<GraphNode>(d => {
-      const key = d.type === 'article' ? d.parent! : d.id
-      const t = catTargets.get(key)
+      const t = nodeTargets.get(d.id)
       return t ? t.y : 0
-    }).strength(d => d.type === 'category' ? 0.15 : 0.12))
+    }).strength(0.1))
 
   // Curved edge paths
   const linkPath = g.append('g')
