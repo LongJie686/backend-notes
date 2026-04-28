@@ -196,15 +196,15 @@ onMounted(async () => {
   simulation = d3.forceSimulation<GraphNode>(nodes)
     .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
       .id(d => d.id)
-      .distance(d => d.type === 'cross-ref' ? 180 : 80)
+      .distance(d => d.type === 'cross-ref' ? 180 : 110)
       .strength(d => d.type === 'cross-ref' ? 0.06 : 0.8)
     )
     .force('charge', d3.forceManyBody<GraphNode>().strength(d =>
-      d.type === 'category' ? -400 : -40
+      d.type === 'category' ? -400 : -60
     ))
     .force('center', d3.forceCenter(0, 0).strength(0.005))
     .force('collision', d3.forceCollide<GraphNode>().radius(d =>
-      d.type === 'category' ? 45 : 15
+      d.type === 'category' ? 50 : 20
     ))
     .force('x', d3.forceX<GraphNode>(d => {
       const key = d.type === 'article' ? d.parent! : d.id
