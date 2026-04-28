@@ -210,12 +210,12 @@ onMounted(async () => {
       const key = d.type === 'article' ? d.parent! : d.id
       const t = catTargets.get(key)
       return t ? t.x : 0
-    }).strength(d => d.type === 'category' ? 0.45 : 0.12))
+    }).strength(d => d.type === 'category' ? 0.15 : 0.12))
     .force('y', d3.forceY<GraphNode>(d => {
       const key = d.type === 'article' ? d.parent! : d.id
       const t = catTargets.get(key)
       return t ? t.y : 0
-    }).strength(d => d.type === 'category' ? 0.45 : 0.12))
+    }).strength(d => d.type === 'category' ? 0.15 : 0.12))
 
   // Curved edge paths
   const linkPath = g.append('g')
@@ -284,6 +284,9 @@ onMounted(async () => {
     .attr('fill', 'var(--vp-c-text-3)')
     .attr('font-size', '9px')
     .style('pointer-events', 'none')
+
+  // Bring category nodes to top layer (above articles)
+  nodeGroup.filter(d => d.type === 'category').raise()
 
   // Drag
   let dragged = false
