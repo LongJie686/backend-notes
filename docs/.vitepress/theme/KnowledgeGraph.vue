@@ -190,12 +190,13 @@ onMounted(async () => {
     const catSubs = subCats.filter(s => s.parent === cat.id)
     const catArts = allArticles.filter(a => a.parent === cat.id)
 
-    // Sub-cats on layer 2 distance (dist = BASE + STEP = 140)
+    // Sub-cats on layer 3 distance (dist = BASE + 2*STEP = 200), narrower fan
+    const SUB_CAT_HALF = Math.PI / 12  // ±15° for sub-cats
     if (catSubs.length > 0) {
-      const subDist = BASE + STEP
+      const subDist = BASE + 2 * STEP
       catSubs.forEach((sub, si) => {
         const t = catSubs.length <= 1 ? 0.5 : si / (catSubs.length - 1)
-        const angle = dir - FAN_HALF + t * 2 * FAN_HALF
+        const angle = dir - SUB_CAT_HALF + t * 2 * SUB_CAT_HALF
         nodeTargets.set(sub.id, {
           x: catPos.x + subDist * Math.cos(angle),
           y: catPos.y + subDist * Math.sin(angle)
@@ -203,13 +204,13 @@ onMounted(async () => {
       })
     }
 
-    // Direct articles: start from layer 1, skip layer 2 (reserved for sub-cats)
+    // Direct articles: start from layer 1, skip layer 3 (reserved for sub-cats)
     if (catArts.length > 0) {
       const layers = distributeLayers(catArts.length)
       let offset = 0
       layers.forEach((count, li) => {
-        // layer 0 → dist BASE (layer 1), layer 1 → skip to layer 3, layer 2 → layer 4...
-        const layerIdx = li === 0 ? 0 : li + 1
+        // layer 0→li0, layer 1→li1, then skip li2, continue li3+
+        const layerIdx = li < 2 ? li : li + 1
         const dist = BASE + layerIdx * STEP
         const layerNodes = catArts.slice(offset, offset + count)
         layerNodes.forEach((art, ci) => {
@@ -226,15 +227,27 @@ onMounted(async () => {
   })
 
   // 3. Sub-cat articles: fan out from sub-cat position
+  const SUB_ART_CAP = [3, 3, 5]
   subCats.forEach(sub => {
     const subPos = nodeTargets.get(sub.id)
     if (!subPos) return
     const dir = Math.atan2(subPos.y, subPos.x)
     const subArts = allArticles.filter(a => a.parent === sub.id)
 
-    const layers = distributeLayers(subArts.length)
+    // Sub-cat children use smaller layer caps: 3-3-5
+    const caps: number[] = []
+    let rem = subArts.length
+    let ci = 0
+    while (rem > 0) {
+      const cap = SUB_ART_CAP[Math.min(ci, SUB_ART_CAP.length - 1)]
+      const take = Math.min(cap, rem)
+      caps.push(take)
+      rem -= take
+      ci++
+    }
+
     let offset = 0
-    layers.forEach((count, li) => {
+    caps.forEach((count, li) => {
       const dist = BASE + li * STEP
       const layerNodes = subArts.slice(offset, offset + count)
       layerNodes.forEach((art, ci) => {
