@@ -247,28 +247,39 @@ onMounted(async () => {
     })
   })
 
-  // Force simulation — lighter forces let the radial targets dominate
+  // Set initial positions from radial targets so simulation starts in correct layout
+  nodes.forEach(n => {
+    const t = nodeTargets.get(n.id)
+    if (t) {
+      n.x = t.x
+      n.y = t.y
+      n.fx = undefined
+      n.fy = undefined
+    }
+  })
+
+  // Force simulation — strong positional forces enforce circular layout
   simulation = d3.forceSimulation<GraphNode>(nodes)
     .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
       .id(d => d.id)
       .distance(d => d.type === 'cross-ref' ? 200 : 50)
-      .strength(d => d.type === 'cross-ref' ? 0.03 : 0.4)
+      .strength(d => d.type === 'cross-ref' ? 0.02 : 0.12)
     )
     .force('charge', d3.forceManyBody<GraphNode>().strength(d =>
-      d.type === 'category' ? -200 : -20
+      d.type === 'category' ? -150 : -10
     ))
-    .force('center', d3.forceCenter(0, 0).strength(0.008))
+    .force('center', d3.forceCenter(0, 0).strength(0.005))
     .force('collision', d3.forceCollide<GraphNode>().radius(d =>
-      d.type === 'category' ? 40 : 16
+      d.type === 'category' ? 35 : 14
     ))
     .force('x', d3.forceX<GraphNode>(d => {
       const t = nodeTargets.get(d.id)
       return t ? t.x : 0
-    }).strength(0.1))
+    }).strength(0.35))
     .force('y', d3.forceY<GraphNode>(d => {
       const t = nodeTargets.get(d.id)
       return t ? t.y : 0
-    }).strength(0.1))
+    }).strength(0.35))
 
   // Curved edge paths
   const linkPath = g.append('g')
