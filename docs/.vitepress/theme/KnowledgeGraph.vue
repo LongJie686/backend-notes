@@ -182,29 +182,47 @@ onMounted(async () => {
     nodeTargets.set(cat.id, { x: R * Math.cos(theta), y: R * Math.sin(theta) })
   })
 
-  // 2. Direct children of each top category: sub-cats first, then articles
+  // 2. Direct children of each top category
+  // Sub-cats go to layer 2 distance, direct articles start from layer 1
   topCats.forEach(cat => {
     const catPos = nodeTargets.get(cat.id)!
     const dir = Math.atan2(catPos.y, catPos.x)
     const catSubs = subCats.filter(s => s.parent === cat.id)
     const catArts = allArticles.filter(a => a.parent === cat.id)
-    const children = [...catSubs, ...catArts]
 
-    const layers = distributeLayers(children.length)
-    let offset = 0
-    layers.forEach((count, li) => {
-      const dist = BASE + li * STEP
-      const layerNodes = children.slice(offset, offset + count)
-      layerNodes.forEach((child, ci) => {
-        const t = count <= 1 ? 0.5 : ci / (count - 1)
+    // Sub-cats on layer 2 distance (dist = BASE + STEP = 140)
+    if (catSubs.length > 0) {
+      const subDist = BASE + STEP
+      catSubs.forEach((sub, si) => {
+        const t = catSubs.length <= 1 ? 0.5 : si / (catSubs.length - 1)
         const angle = dir - FAN_HALF + t * 2 * FAN_HALF
-        nodeTargets.set(child.id, {
-          x: catPos.x + dist * Math.cos(angle),
-          y: catPos.y + dist * Math.sin(angle)
+        nodeTargets.set(sub.id, {
+          x: catPos.x + subDist * Math.cos(angle),
+          y: catPos.y + subDist * Math.sin(angle)
         })
       })
-      offset += count
-    })
+    }
+
+    // Direct articles: start from layer 1, skip layer 2 (reserved for sub-cats)
+    if (catArts.length > 0) {
+      const layers = distributeLayers(catArts.length)
+      let offset = 0
+      layers.forEach((count, li) => {
+        // layer 0 → dist BASE (layer 1), layer 1 → skip to layer 3, layer 2 → layer 4...
+        const layerIdx = li === 0 ? 0 : li + 1
+        const dist = BASE + layerIdx * STEP
+        const layerNodes = catArts.slice(offset, offset + count)
+        layerNodes.forEach((art, ci) => {
+          const t = count <= 1 ? 0.5 : ci / (count - 1)
+          const angle = dir - FAN_HALF + t * 2 * FAN_HALF
+          nodeTargets.set(art.id, {
+            x: catPos.x + dist * Math.cos(angle),
+            y: catPos.y + dist * Math.sin(angle)
+          })
+        })
+        offset += count
+      })
+    }
   })
 
   // 3. Sub-cat articles: fan out from sub-cat position
