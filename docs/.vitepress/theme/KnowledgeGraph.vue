@@ -190,8 +190,8 @@ onMounted(async () => {
     const catSubs = subCats.filter(s => s.parent === cat.id)
     const catArts = allArticles.filter(a => a.parent === cat.id)
 
-    // Sub-cats on layer 3 distance (dist = BASE + 2*STEP = 200), narrower fan
-    const SUB_CAT_HALF = Math.PI / 12  // ±15° for sub-cats
+    // Sub-cats on layer 3 distance (dist = BASE + 2*STEP = 200), wider fan
+    const SUB_CAT_HALF = Math.PI / 9  // ±20° for sub-cats
     if (catSubs.length > 0) {
       const subDist = BASE + 2 * STEP
       catSubs.forEach((sub, si) => {
@@ -246,13 +246,15 @@ onMounted(async () => {
       ci++
     }
 
+    const SUB_ART_HALF = Math.PI / 14  // fan half-angle for sub-cat children
+    const ART_PAD = 0.02  // angular padding between adjacent nodes
     let offset = 0
     caps.forEach((count, li) => {
       const dist = BASE + li * STEP
       const layerNodes = subArts.slice(offset, offset + count)
       layerNodes.forEach((art, ci) => {
         const t = count <= 1 ? 0.5 : ci / (count - 1)
-        const angle = dir - FAN_HALF + t * 2 * FAN_HALF
+        const angle = dir - SUB_ART_HALF + ART_PAD + t * (2 * SUB_ART_HALF - 2 * ART_PAD)
         nodeTargets.set(art.id, {
           x: subPos.x + dist * Math.cos(angle),
           y: subPos.y + dist * Math.sin(angle)
