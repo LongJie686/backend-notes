@@ -152,21 +152,45 @@ onMounted(async () => {
   const subCats = nodes.filter(n => n.type === 'category' && n.parent)
   const allArticles = nodes.filter(n => n.type === 'article')
 
-  const R = 100           // top category ring radius (gap ≈ half node size)
+  const R = 100           // top category ring radius
   const BASE = 80         // child base distance from parent
   const STEP = 60         // distance increment per layer
-  const CAPACITY = 5      // max nodes per layer
-  const FAN_HALF = Math.PI / 6  // ±30° fan half-angle
+  const NODE_R = 8        // article node radius
+  const NODE_GAP = 6      // gap between article nodes
+  const NODE_SPACE = NODE_R * 2 + NODE_GAP  // 22px per node
+  const FAN_HALF = Math.PI / 6  // ±30°
 
   const nodeTargets = new Map<string, { x: number; y: number }>()
 
-  // 1. Top categories evenly on R=500 circle
+  // Calculate layer capacity: inner layers fewer, outer layers more (arc length grows)
+  function layerCapacity(layerIndex: number): number {
+    const dist = BASE + layerIndex * STEP
+    const arcLen = 2 * dist * Math.tan(FAN_HALF)
+    return Math.max(1, Math.floor(arcLen / NODE_SPACE))
+  }
+
+  // Distribute nodes into layers: inner=less, outer=more
+  function distributeLayers(count: number): number[] {
+    const caps: number[] = []
+    let idx = 0
+    let remaining = count
+    while (remaining > 0) {
+      const cap = layerCapacity(idx)
+      const take = Math.min(cap, remaining)
+      caps.push(take)
+      remaining -= take
+      idx++
+    }
+    return caps
+  }
+
+  // 1. Top categories evenly on circle
   topCats.forEach((cat, i) => {
     const theta = (2 * Math.PI * i) / topCats.length - Math.PI / 2
     nodeTargets.set(cat.id, { x: R * Math.cos(theta), y: R * Math.sin(theta) })
   })
 
-  // 2. Direct children of each top category: sub-cats first, then articles, fan outward
+  // 2. Direct children of each top category: sub-cats first, then articles
   topCats.forEach(cat => {
     const catPos = nodeTargets.get(cat.id)!
     const dir = Math.atan2(catPos.y, catPos.x)
@@ -174,22 +198,20 @@ onMounted(async () => {
     const catArts = allArticles.filter(a => a.parent === cat.id)
     const children = [...catSubs, ...catArts]
 
-    // Split into layers of CAPACITY
-    const layers: typeof children[] = []
-    for (let i = 0; i < children.length; i += CAPACITY) {
-      layers.push(children.slice(i, i + CAPACITY))
-    }
-
-    layers.forEach((layer, li) => {
+    const layers = distributeLayers(children.length)
+    let offset = 0
+    layers.forEach((count, li) => {
       const dist = BASE + li * STEP
-      layer.forEach((child, ci) => {
-        const t = layer.length <= 1 ? 0.5 : ci / (layer.length - 1)
+      const layerNodes = children.slice(offset, offset + count)
+      layerNodes.forEach((child, ci) => {
+        const t = count <= 1 ? 0.5 : ci / (count - 1)
         const angle = dir - FAN_HALF + t * 2 * FAN_HALF
         nodeTargets.set(child.id, {
           x: catPos.x + dist * Math.cos(angle),
           y: catPos.y + dist * Math.sin(angle)
         })
       })
+      offset += count
     })
   })
 
@@ -200,21 +222,20 @@ onMounted(async () => {
     const dir = Math.atan2(subPos.y, subPos.x)
     const subArts = allArticles.filter(a => a.parent === sub.id)
 
-    const layers: typeof subArts[] = []
-    for (let i = 0; i < subArts.length; i += CAPACITY) {
-      layers.push(subArts.slice(i, i + CAPACITY))
-    }
-
-    layers.forEach((layer, li) => {
+    const layers = distributeLayers(subArts.length)
+    let offset = 0
+    layers.forEach((count, li) => {
       const dist = BASE + li * STEP
-      layer.forEach((art, ci) => {
-        const t = layer.length <= 1 ? 0.5 : ci / (layer.length - 1)
+      const layerNodes = subArts.slice(offset, offset + count)
+      layerNodes.forEach((art, ci) => {
+        const t = count <= 1 ? 0.5 : ci / (count - 1)
         const angle = dir - FAN_HALF + t * 2 * FAN_HALF
         nodeTargets.set(art.id, {
           x: subPos.x + dist * Math.cos(angle),
           y: subPos.y + dist * Math.sin(angle)
         })
       })
+      offset += count
     })
   })
 
