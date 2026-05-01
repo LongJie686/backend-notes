@@ -192,6 +192,8 @@
   },
   "active": "d5b2f03d05ed0037",
   "lastOpenFiles": [
+    "high-concurrency/lecture-7.md",
+    "high-concurrency/lecture-7.md.tmp.16896.1777623892336",
     "high-concurrency/lecture-8.md",
     "high-concurrency/lecture-8.md.tmp.16896.1777623726368",
     "microservice/lecture-7.md.tmp.16896.1777623381351",
@@ -203,12 +205,10 @@
     "architecture/lecture-7.md.tmp.3568.1777391882057",
     "notes.md",
     "notes.md.tmp.29752.1777306301683",
-    "index.md.tmp.29752.1777306064906",
     "ai-app/agent-analysis/hermes-agent.md",
     "未命名.canvas",
     "ai-app/llm.md",
     "database/mysql-notes/lecture-10.md",
-    "high-concurrency/lecture-7.md",
     "high-concurrency/lecture-6.md",
     "high-concurrency/lecture-5.md",
     "high-concurrency/lecture-4.md",
@@ -227,7 +227,6 @@
     "microservice/lecture-5.md",
     "microservice/lecture-4.md",
     "microservice/lecture-3.md",
-    "database/mysql-notes/lecture-9.md",
-    "microservice/lecture-2.md"
+    "database/mysql-notes/lecture-9.md"
   ]
 }
