@@ -150,7 +150,7 @@ function parseSidebarForGraph() {
             { text: 'L5: Prompt 精调', link: '/ai-app/multi-agent/lecture-5' },
             { text: 'L6: 可观测性', link: '/ai-app/multi-agent/lecture-6' },
             { text: 'L7: 安全护栏', link: '/ai-app/multi-agent/lecture-7' },
-            { text: 'L8: 生产部署', link: '/ai-app/multi-agent/lecture-8' },
+            { text: 'L8: 安全合规进阶', link: '/ai-app/multi-agent/lecture-8' },
             { text: 'L9: 数据飞轮', link: '/ai-app/multi-agent/lecture-9' },
             { text: '常见坑点', link: '/ai-app/multi-agent/pitfalls' },
             { text: '面试高频', link: '/ai-app/multi-agent/interview' },
