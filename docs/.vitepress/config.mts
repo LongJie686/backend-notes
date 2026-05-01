@@ -203,7 +203,8 @@ export default defineConfig({
           { text: 'L3: 消息队列（Kafka/RocketMQ）', link: '/high-concurrency/lecture-3' },
           { text: 'L4: 分库分表', link: '/high-concurrency/lecture-4' },
           { text: 'L5: 高可用设计（限流/熔断/降级）', link: '/high-concurrency/lecture-5' },
-          { text: 'L6: 秒杀系统全链路设计', link: '/high-concurrency/lecture-6' }
+          { text: 'L6: 秒杀系统全链路设计', link: '/high-concurrency/lecture-6' },
+          { text: 'L8: 分布式服务治理', link: '/high-concurrency/lecture-8' }
         ]
       },
       {
