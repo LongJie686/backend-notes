@@ -84,7 +84,8 @@
       "Bash(.venv/Scripts/python.exe -m synapse_core.cli \"用Python写一个冒泡排序\" -a code-expert)",
       "Bash(pip install *)",
       "Bash(pip list *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(pkill -f \"uvicorn synapse_server\")"
     ]
   }
 }
