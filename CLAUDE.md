@@ -1,29 +1,10 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # backend-notes
 
-VitePress 静态知识库站点，部署在 GitHub Pages。
-
-## 项目结构
-
-```
-backend-notes/
-  docs/                        -- VitePress 文档根目录（也是 Obsidian vault）
-    .vitepress/config.mts      -- VitePress 配置（导航栏、侧边栏）
-    index.md                   -- 首页
-    backend/                   -- 后端笔记
-      python.md
-      network.md
-    database/                  -- 数据库笔记
-      mysql.md
-      mysql.md
-      mysql-notes/             -- MySQL 学习笔记（按讲拆分）
-        lecture-1.md
-        lecture-2.md
-        ...
-      redis.md
-    recommend-system/          -- 推荐系统笔记
-    ai-app/                    -- AI 应用笔记
-  .github/workflows/deploy.yml -- GitHub Actions 自动部署
-```
+VitePress 静态知识库站点，部署在 GitHub Pages。`docs/` 目录同时也是 Obsidian vault。
 
 ## 常用命令
 
@@ -31,51 +12,64 @@ backend-notes/
 # 本地开发预览
 npm run docs:dev
 
-# 构建
+# 构建（会自动生成 graph-data.json）
 npm run docs:build
 
 # 推送到 GitHub（需要代理）
 git -c http.proxy=http://127.0.0.1:7890 -c http.postBuffer=524288000 push origin main
 ```
 
-## 工作流
+## 架构
 
-1. 在 `docs/` 下编辑或新增 .md 文件
-2. 更新 `docs/.vitepress/config.mts` 的 sidebar（如有新文件）
-3. `git add -A && git commit -m "docs: 描述" && git push`
-4. GitHub Actions 自动构建部署，1-2 分钟后网站更新
+```
+docs/
+  .vitepress/
+    config.mts              -- VitePress 配置（导航栏 + 侧边栏）
+    theme/
+      index.ts              -- 注册 KnowledgeGraph 组件
+      KnowledgeGraph.vue    -- D3 知识图谱可视化（d3 依赖）
+    scripts/
+      generate-graph-data.mts -- 构建时解析 sidebar 生成 graph-data.json
+  public/
+    graph-data.json         -- 自动生成的知识图谱数据（勿手动编辑）
+  backend/                  -- 后端笔记
+  database/                 -- 数据库笔记（含 mysql-notes/ 按讲拆分）
+  ai-app/                   -- AI 应用笔记（multi-agent/, llm-dev/, agent-analysis/ 等）
+  microservice/             -- 微服务笔记
+  architecture/             -- 架构设计笔记
+  high-concurrency/         -- 高并发系统设计笔记
+  engineering/              -- 工程化（Docker, Git, 监控等）
+  big-data/                 -- 大数据笔记
+  data-analysis/            -- 数据分析笔记
+```
 
-## 笔记拆分规则
+## 关键约束
 
-当单个 .md 包含多个"第 N 讲"时，拆分为独立文件：
+- `base: '/backend-notes/'` 已在 config.mts 中配置，不要删除
+- Obsidian 自动同步到 git，通常不需要手动 commit/push
+- 推送需要代理 `http://127.0.0.1:7890`
+- graph-data.json 由 `generate-graph-data.mts` 从 sidebar 定义生成，不要手动编辑
 
-- 创建子目录：`docs/{category}/{topic}/lecture-N.md`
-- 原文件改为目录页，链接到各讲
-- sidebar 使用 `collapsed: true` 折叠分组
-- 命名：文件 `lecture-N.md`，侧边栏 `LN: Short Title`
+## 新增笔记流程
 
-## 同步笔记
+1. 在 `docs/` 对应目录下新增 `.md` 文件
+2. 在 `config.mts` 的 sidebar 中添加条目
+3. **如果修改了 sidebar 结构**，需要同步更新 `generate-graph-data.mts` 中的 sidebar 定义（该脚本内嵌了一份 sidebar 副本用于图谱生成）
+4. sidebar 命名规则：文件 `lecture-N.md`，侧边栏显示 `LN: Short Title`
+5. 多讲内容使用 `collapsed: true` 折叠分组
+
+## 笔记同步映射
 
 用户在 `E:\Project\Astudy\` 写笔记，需要复制到 `docs/` 对应目录：
 
 | 来源 | 目标目录 |
 |------|---------|
 | MySQL 笔记 | docs/database/ |
-| Python 笔记 | docs/backend/ |
-| 网络笔记 | docs/backend/ |
+| Python / 网络笔记 | docs/backend/ |
 | Redis 笔记 | docs/database/ |
-| 推荐系统笔记 | docs/recommend-system/ |
 | AI/LLM 笔记 | docs/ai-app/ |
 
 ## 关键链接
 
-- 网站地址：https://longjie686.github.io/backend-notes/
-- GitHub 仓库：https://github.com/LongJie686/backend-notes
-- GitHub 分支：main（push 到 main 触发自动部署）
-
-## 注意事项
-
-- base path 已设为 `/backend-notes/`，不要删除
-- Obsidian vault 就是 `docs/` 目录
-- 推送需要代理 `http://127.0.0.1:7890`
-- 不要把 token/密钥提交到仓库
+- 网站：https://longjie686.github.io/backend-notes/
+- 仓库：https://github.com/LongJie686/backend-notes

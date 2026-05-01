@@ -135,7 +135,7 @@ export default defineConfig({
               { text: 'L5: Prompt 精调与模型优化', link: '/ai-app/multi-agent/lecture-5' },
               { text: 'L6: 可观测性与调试', link: '/ai-app/multi-agent/lecture-6' },
               { text: 'L7: 安全护栏与治理', link: '/ai-app/multi-agent/lecture-7' },
-              { text: 'L8: 生产环境部署', link: '/ai-app/multi-agent/lecture-8' },
+              { text: 'L8: 安全合规与架构进阶', link: '/ai-app/multi-agent/lecture-8' },
               { text: 'L9: 数据飞轮与迭代', link: '/ai-app/multi-agent/lecture-9' },
               { text: '常见坑点', link: '/ai-app/multi-agent/pitfalls' },
               { text: '面试高频问题', link: '/ai-app/multi-agent/interview' }
