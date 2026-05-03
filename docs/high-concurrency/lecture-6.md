@@ -166,14 +166,14 @@ Redis库存扣了，但数据库订单没创建
 
 ### 2. 按钮防重 + 前端限流
 
+> 以下为前端 JavaScript 参考代码（仅标注逻辑，非本项目的 Python 实现）：
+
 ```javascript
 // 点击按钮后禁用，防止重复点击
 let isSubmitting = false;
 
 function seckill(activityId) {
-    if (isSubmitting) {
-        return;  // 防重复提交
-    }
+    if (isSubmitting) return;  // 防重复提交
 
     isSubmitting = true;
     document.getElementById('seckillBtn').disabled = true;
@@ -189,7 +189,6 @@ function seckill(activityId) {
             showResult('恭喜！抢购成功，订单号：' + data.orderNo);
         } else {
             showResult(data.message);
-            // 失败后恢复按钮
             isSubmitting = false;
             document.getElementById('seckillBtn').disabled = false;
         }
@@ -208,23 +207,19 @@ function seckill(activityId) {
 -> 把请求分散到几秒内（削峰）
 ```
 
-```java
-// 验证码校验
-public boolean validateCaptcha(String userId, String captcha) {
-    String key = "captcha:" + userId;
-    String correct = redis.get(key);
+```python
+def validate_captcha(user_id: str, captcha: str) -> bool:
+    """验证码校验"""
+    key = f"captcha:{user_id}"
+    correct = redis.get(key)
 
-    if (correct == null) {
-        return false;  // 验证码过期
-    }
+    if correct is None:
+        return False  # 验证码过期
+    if captcha.lower() != correct.decode().lower():
+        return False  # 验证码错误
 
-    if (!correct.equalsIgnoreCase(captcha)) {
-        return false;  // 验证码错误
-    }
-
-    redis.del(key);  // 用过即删
-    return true;
-}
+    redis.delete(key)  # 用过即删
+    return True
 ```
 
 ---
@@ -240,41 +235,37 @@ public boolean validateCaptcha(String userId, String captcha) {
 -> 提前过滤掉大部分请求
 ```
 
-```java
-// 发放令牌（秒杀开始前5秒）
-public void distributeTokens(Long activityId) {
-    Activity activity = activityDao.getById(activityId);
-    int tokenCount = activity.getStock() * 3;  // 库存的3倍令牌
+```python
+import uuid
 
-    // 存入Redis Set（令牌池）
-    for (int i = 0; i < tokenCount; i++) {
-        String token = generateToken(activityId, i);
-        redis.sadd("seckill:tokens:" + activityId, token);
-    }
+# 发放令牌（秒杀开始前5秒）
+def distribute_tokens(activity_id: int):
+    activity = activity_dao.get_by_id(activity_id)
+    token_count = activity["stock"] * 3  # 库存的3倍令牌
 
-    redis.expire("seckill:tokens:" + activityId, 3600);
-}
+    for i in range(token_count):
+        token = f"{activity_id}_{uuid.uuid4().hex[:8]}_{i}"
+        redis.sadd(f"seckill:tokens:{activity_id}", token)
 
-// 用户获取令牌
-public String getToken(Long activityId, Long userId) {
-    // 随机弹出一个令牌
-    String token = redis.spop("seckill:tokens:" + activityId);
+    redis.expire(f"seckill:tokens:{activity_id}", 3600)
 
-    if (token == null) {
-        return null;  // 没有令牌了
-    }
 
-    // 绑定到用户
-    redis.setex("seckill:user:token:" + userId + ":" + activityId, 300, token);
-    return token;
-}
+# 用户获取令牌
+def get_token(activity_id: int, user_id: int) -> str | None:
+    token = redis.spop(f"seckill:tokens:{activity_id}")
+    if token is None:
+        return None  # 没有令牌了
 
-// 秒杀时校验令牌
-public boolean validateToken(Long userId, Long activityId, String token) {
-    String key = "seckill:user:token:" + userId + ":" + activityId;
-    String validToken = redis.get(key);
-    return token.equals(validToken);
-}
+    # 绑定到用户
+    redis.setex(f"seckill:user:token:{user_id}:{activity_id}", 300, token)
+    return token
+
+
+# 秒杀时校验令牌
+def validate_token(user_id: int, activity_id: int, token: str) -> bool:
+    key = f"seckill:user:token:{user_id}:{activity_id}"
+    valid_token = redis.get(key)
+    return valid_token and valid_token.decode() == token
 ```
 
 ---
@@ -328,208 +319,164 @@ http {
 
 ## 五、网关层：鉴权 + 风控
 
-### 鉴权
+### 鉴权（FastAPI 中间件）
 
-```java
-@Component
-public class AuthFilter implements GlobalFilter {
+```python
+from fastapi import FastAPI, Request, HTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
 
-    @Override
-    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        ServerHttpRequest request = exchange.getRequest();
+class AuthMiddleware(BaseHTTPMiddleware):
+    """网关鉴权中间件"""
 
-        // 1. 获取Token
-        String token = request.getHeaders().getFirst("Authorization");
-        if (StringUtils.isEmpty(token)) {
-            return returnError(exchange, "未登录");
-        }
+    async def dispatch(self, request: Request, call_next):
+        # 1. 获取Token
+        token = request.headers.get("Authorization")
+        if not token:
+            return JSONResponse({"code": 401, "message": "未登录"}, status_code=401)
 
-        // 2. 验证Token（Redis中查）
-        String userId = redis.get("token:" + token);
-        if (userId == null) {
-            return returnError(exchange, "Token失效");
-        }
+        # 2. 验证Token（Redis中查）
+        user_id = redis.get(f"token:{token}")
+        if user_id is None:
+            return JSONResponse({"code": 401, "message": "Token失效"}, status_code=401)
 
-        // 3. 透传用户ID到下游
-        ServerHttpRequest mutated = request.mutate()
-            .header("X-User-Id", userId)
-            .build();
-
-        return chain.filter(exchange.mutate().request(mutated).build());
-    }
-}
+        # 3. 透传用户ID到下游（注入请求scope）
+        request.state.user_id = user_id.decode()
+        return await call_next(request)
 ```
 
 ---
 
 ### 风控（防刷）
 
-```java
-@Component
-public class RiskControlFilter implements GlobalFilter {
+```python
+class RiskControlMiddleware(BaseHTTPMiddleware):
+    """风控中间件"""
 
-    @Override
-    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        if (!isSeckillRequest(exchange)) {
-            return chain.filter(exchange);
-        }
+    async def dispatch(self, request: Request, call_next):
+        if not request.url.path.startswith("/api/seckill"):
+            return await call_next(request)
 
-        String userId = exchange.getRequest().getHeaders().getFirst("X-User-Id");
-        String ip = getClientIp(exchange);
+        user_id = request.state.user_id
+        ip = request.client.host
 
-        // 1. 黑名单检查
-        if (isBlacklisted(userId, ip)) {
-            return returnError(exchange, "账号异常");
-        }
+        # 1. 黑名单检查
+        if redis.sismember("risk:blacklist", user_id) or redis.sismember("risk:blacklist:ip", ip):
+            return JSONResponse({"code": 403, "message": "账号异常"}, status_code=403)
 
-        // 2. 用户行为检查（短时间内请求太多）
-        if (isAbnormalBehavior(userId)) {
-            markAsRisk(userId);
-            return returnError(exchange, "操作过于频繁");
-        }
+        # 2. 用户行为检查（短时间内请求太多）
+        count = redis.incr(f"risk:behavior:{user_id}")
+        redis.expire(f"risk:behavior:{user_id}", 60)  # 1分钟窗口
 
-        // 3. 设备指纹检查（同一设备多个账号）
-        String deviceId = exchange.getRequest().getHeaders().getFirst("X-Device-Id");
-        if (isSuspiciousDevice(deviceId)) {
-            return returnError(exchange, "设备异常");
-        }
+        if count > 20:  # 1分钟内超过20次请求
+            redis.sadd("risk:flagged", user_id)
+            return JSONResponse({"code": 429, "message": "操作过于频繁"}, status_code=429)
 
-        return chain.filter(exchange);
-    }
+        # 3. 设备指纹检查
+        device_id = request.headers.get("X-Device-Id")
+        if device_id and redis.get(f"risk:device:{device_id}") and \
+           redis.get(f"risk:device:{device_id}").decode() != user_id:
+            return JSONResponse({"code": 403, "message": "设备异常"}, status_code=403)
 
-    private boolean isAbnormalBehavior(String userId) {
-        String key = "risk:behavior:" + userId;
-        Long count = redis.incr(key);
-        redis.expire(key, 60);  // 1分钟窗口
-
-        return count > 20;  // 1分钟内超过20次请求
-    }
-}
+        return await call_next(request)
 ```
 
 ---
 
 ## 六、秒杀服务：核心逻辑
 
-### 整体流程
+### 整体流程（FastAPI）
 
-```java
-@RestController
-public class SeckillController {
+```python
+from fastapi import FastAPI, Request, HTTPException, Depends
 
-    @PostMapping("/api/seckill")
-    @SentinelResource(value = "seckill", blockHandler = "seckillBlock")
-    public Result seckill(@RequestBody SeckillRequest request,
-                          @RequestHeader("X-User-Id") Long userId) {
+app = FastAPI()
 
-        // 1. 参数校验
-        validateRequest(request, userId);
 
-        // 2. 用户资格校验
-        checkUserEligibility(userId, request.getActivityId());
+@app.post("/api/seckill")
+@rate_limit  # 限流装饰器
+async def seckill(request: SeckillRequest, user_id: int = Depends(get_user_id)):
+    """秒杀核心接口"""
 
-        // 3. 活动校验（时间、状态）
-        checkActivity(request.getActivityId());
+    # 1. 参数校验
+    validate_request(request, user_id)
 
-        // 4. Redis预扣库存（核心）
-        boolean deducted = preDeductStock(userId, request.getActivityId());
-        if (!deducted) {
-            return Result.fail("库存不足，手慢了");
-        }
+    # 2. 用户资格校验
+    check_user_eligibility(user_id, request.activity_id)
 
-        // 5. 发送消息到Kafka（异步下单）
-        sendOrderMessage(userId, request.getActivityId());
+    # 3. 活动校验（时间、状态）
+    check_activity(request.activity_id)
 
-        // 6. 返回排队中
-        return Result.success("正在为您抢购，请稍候查看结果");
-    }
+    # 4. Redis预扣库存（核心）
+    deducted = pre_deduct_stock(user_id, request.activity_id)
+    if not deducted:
+        return {"code": 400, "message": "库存不足，手慢了"}
 
-    // 限流后的处理
-    public Result seckillBlock(SeckillRequest request, Long userId, BlockException ex) {
-        return Result.fail("系统繁忙，请稍后再试");
-    }
-}
+    # 5. 发送消息到Kafka（异步下单）
+    send_order_message(user_id, request.activity_id)
+
+    # 6. 返回排队中
+    return {"code": 200, "message": "正在为您抢购，请稍候查看结果"}
 ```
 
 ---
 
 ### 步骤1：参数校验
 
-```java
-private void validateRequest(SeckillRequest request, Long userId) {
-    if (request == null) {
-        throw new BusinessException("参数不能为空");
-    }
-    if (request.getActivityId() == null || request.getActivityId() <= 0) {
-        throw new BusinessException("活动ID非法");
-    }
-    if (userId == null || userId <= 0) {
-        throw new BusinessException("用户ID非法");
-    }
-}
+```python
+def validate_request(request: SeckillRequest, user_id: int) -> None:
+    if not request:
+        raise HTTPException(400, "参数不能为空")
+    if not request.activity_id or request.activity_id <= 0:
+        raise HTTPException(400, "活动ID非法")
+    if not user_id or user_id <= 0:
+        raise HTTPException(400, "用户ID非法")
 ```
 
 ---
 
 ### 步骤2：用户资格校验
 
-```java
-private void checkUserEligibility(Long userId, Long activityId) {
-    // 1. 是否已经参与过这个活动（防止重复购买）
-    String boughtKey = "seckill:bought:" + activityId + ":" + userId;
-    if (redis.exists(boughtKey)) {
-        throw new BusinessException("您已参与过此活动");
-    }
+```python
+def check_user_eligibility(user_id: int, activity_id: int) -> None:
+    # 1. 是否已经参与过这个活动（防止重复购买）
+    if redis.exists(f"seckill:bought:{activity_id}:{user_id}"):
+        raise HTTPException(400, "您已参与过此活动")
 
-    // 2. 是否有令牌（如果开启了令牌机制）
-    // String tokenKey = "seckill:user:token:" + userId + ":" + activityId;
-    // if (!redis.exists(tokenKey)) {
-    //     throw new BusinessException("请先获取参与资格");
-    // }
-
-    // 3. 账号是否正常
-    if (isUserBlocked(userId)) {
-        throw new BusinessException("账号异常，无法参与");
-    }
-}
+    # 2. 账号是否正常
+    if redis.sismember("risk:blacklist", user_id):
+        raise HTTPException(400, "账号异常，无法参与")
 ```
 
 ---
 
 ### 步骤3：活动校验
 
-```java
-private void checkActivity(Long activityId) {
-    // 活动信息缓存在Redis（避免每次查DB）
-    String activityKey = "seckill:activity:" + activityId;
-    SeckillActivity activity = redis.getObject(activityKey, SeckillActivity.class);
+```python
+import time
 
-    if (activity == null) {
-        // 缓存未命中，查DB
-        activity = activityDao.getById(activityId);
-        if (activity != null) {
-            redis.setex(activityKey, 300, JSON.toJSONString(activity));
-        }
-    }
+def check_activity(activity_id: int) -> None:
+    # 活动信息缓存在Redis（避免每次查DB）
+    activity_key = f"seckill:activity:{activity_id}"
+    activity = redis.get(activity_key)
 
-    if (activity == null) {
-        throw new BusinessException("活动不存在");
-    }
+    if activity is None:
+        activity = activity_dao.get_by_id(activity_id)
+        if activity:
+            redis.setex(activity_key, 300, json.dumps(activity))
 
-    // 活动状态
-    if (activity.getStatus() != ActivityStatus.RUNNING) {
-        throw new BusinessException("活动未开始或已结束");
-    }
+    if activity is None:
+        raise HTTPException(400, "活动不存在")
 
-    // 活动时间（关键：服务器时间，不能用客户端时间）
-    long now = System.currentTimeMillis();
-    if (now < activity.getStartTime().getTime()) {
-        throw new BusinessException("活动尚未开始");
-    }
-    if (now > activity.getEndTime().getTime()) {
-        throw new BusinessException("活动已结束");
-    }
-}
+    activity = json.loads(activity) if isinstance(activity, bytes) else activity
+
+    if activity["status"] != "RUNNING":
+        raise HTTPException(400, "活动未开始或已结束")
+
+    now_ms = int(time.time() * 1000)
+    if now_ms < activity["start_time"]:
+        raise HTTPException(400, "活动尚未开始")
+    if now_ms > activity["end_time"]:
+        raise HTTPException(400, "活动已结束")
 ```
 
 ---
@@ -550,128 +497,123 @@ private void checkActivity(Long activityId) {
 Lua脚本：在Redis中原子执行，不会被其他命令打断
 ```
 
-```java
-private boolean preDeductStock(Long userId, Long activityId) {
-    String stockKey = "seckill:stock:" + activityId;
-    String boughtKey = "seckill:bought:" + activityId + ":" + userId;
+```python
+LUA_DEDUCT_STOCK = """
+-- 1. 检查用户是否已购买
+if redis.call('exists', KEYS[2]) == 1 then
+    return -1  -- 已购买
+end
 
-    // Lua脚本：原子执行 判断库存 + 扣减 + 标记用户已购
-    String script =
-        // 1. 检查用户是否已购买
-        "if redis.call('exists', KEYS[2]) == 1 then " +
-        "    return -1; " +  // 已购买
-        "end; " +
+-- 2. 获取当前库存
+local stock = tonumber(redis.call('get', KEYS[1]))
 
-        // 2. 获取当前库存
-        "local stock = tonumber(redis.call('get', KEYS[1])); " +
+-- 3. 判断库存
+if stock == nil or stock <= 0 then
+    return 0  -- 库存不足
+end
 
-        // 3. 判断库存
-        "if stock == nil or stock <= 0 then " +
-        "    return 0; " +  // 库存不足
-        "end; " +
+-- 4. 扣减库存
+redis.call('decrby', KEYS[1], 1)
 
-        // 4. 扣减库存
-        "redis.call('decrby', KEYS[1], 1); " +
+-- 5. 标记用户已购买（30分钟有效）
+redis.call('setex', KEYS[2], 1800, '1')
 
-        // 5. 标记用户已购买（5分钟有效，对应支付超时时间）
-        "redis.call('setex', KEYS[2], 1800, '1'); " +
+return 1  -- 扣减成功
+"""
 
-        "return 1; ";  // 扣减成功
 
-    Long result = redis.execute(
-        new DefaultRedisScript<>(script, Long.class),
-        Arrays.asList(stockKey, boughtKey)
-    );
+def pre_deduct_stock(user_id: int, activity_id: int) -> bool:
+    stock_key = f"seckill:stock:{activity_id}"
+    bought_key = f"seckill:bought:{activity_id}:{user_id}"
 
-    if (result == null) {
-        return false;
-    }
+    result = redis.eval(LUA_DEDUCT_STOCK, 2, stock_key, bought_key)
 
-    if (result == -1) {
-        throw new BusinessException("您已参与过此活动，请勿重复抢购");
-    }
+    if result == -1:
+        raise HTTPException(400, "您已参与过此活动，请勿重复抢购")
+    if result == 0:
+        return False
 
-    return result == 1;
-}
+    return True
 ```
 
 **Redis库存预热（活动开始前）：**
-```java
-@Scheduled(cron = "0 0/5 * * * ?")  // 每5分钟检查
-public void preloadSeckillStock() {
-    List<SeckillActivity> activities = activityDao.getUpcomingActivities();
 
-    for (SeckillActivity activity : activities) {
-        // 活动开始前10分钟预热
-        long startTime = activity.getStartTime().getTime();
-        long now = System.currentTimeMillis();
+```python
+from apscheduler.schedulers.background import BackgroundScheduler
 
-        if (startTime - now <= 10 * 60 * 1000) {
-            String stockKey = "seckill:stock:" + activity.getId();
 
-            // 只有Redis中没有才预热
-            if (!redis.exists(stockKey)) {
-                redis.set(stockKey, String.valueOf(activity.getStock()));
-                redis.expire(stockKey, 7200);  // 2小时过期
+def preload_seckill_stock() -> None:
+    """每5分钟检查，提前预热即将开始的秒杀库存"""
+    activities = activity_dao.get_upcoming_activities()
+    now_ms = int(time.time() * 1000)
 
-                log.info("预热秒杀库存: activityId={}, stock={",
-                    activity.getId(), activity.getStock());
-            }
-        }
-    }
-}
+    for activity in activities:
+        start_time = activity["start_time"]
+        if start_time - now_ms <= 10 * 60 * 1000:  # 10分钟内开始
+            stock_key = f"seckill:stock:{activity['id']}"
+
+            if not redis.exists(stock_key):
+                redis.set(stock_key, activity["stock"])
+                redis.expire(stock_key, 7200)  # 2小时过期
+                logger.info(f"预热秒杀库存: activityId={activity['id']}, stock={activity['stock']}")
+
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(preload_seckill_stock, 'interval', minutes=5)
+scheduler.start()
 ```
 
 ---
 
 ### 步骤5：发送消息到Kafka
 
-```java
-private void sendOrderMessage(Long userId, Long activityId) {
-    SeckillMessage message = new SeckillMessage();
-    message.setUserId(userId);
-    message.setActivityId(activityId);
-    message.setTimestamp(System.currentTimeMillis());
-    message.setMsgId(generateMsgId());  // 消息唯一ID（用于幂等）
+```python
+from kafka import KafkaProducer
 
-    // 发送到Kafka
-    // 用userId做Key，保证同一用户的消息有序
-    kafkaProducer.send(
-        new ProducerRecord<>(
+producer = KafkaProducer(
+    bootstrap_servers=['localhost:9092'],
+    acks='all',
+    retries=3,
+    value_serializer=lambda v: json.dumps(v).encode()
+)
+
+
+def send_order_message(user_id: int, activity_id: int) -> None:
+    message = {
+        "user_id": user_id,
+        "activity_id": activity_id,
+        "timestamp": int(time.time() * 1000),
+        "msg_id": generate_msg_id(),  # 消息唯一ID（用于幂等）
+    }
+
+    try:
+        # 用user_id做Key，保证同一用户的消息有序
+        future = producer.send(
             "seckill-order-topic",
-            userId.toString(),              // Key（路由到同一分区）
-            JSON.toJSONString(message)      // Value
-        ),
-        (metadata, exception) -> {
-            if (exception != null) {
-                // 发送失败处理
-                log.error("消息发送失败: userId={}", userId, exception);
+            key=str(user_id).encode(),
+            value=message
+        )
+        future.get(timeout=5)  # 同步等待确认
 
-                // 回滚Redis库存
-                rollbackStock(userId, activityId);
-            }
-        }
-    );
-}
+    except Exception as e:
+        logger.error(f"消息发送失败: userId={user_id}", exc_info=True)
+        # 回滚Redis库存
+        rollback_stock(user_id, activity_id)
+        raise HTTPException(500, "系统繁忙，请重试")
 
-// 库存回滚
-private void rollbackStock(Long userId, Long activityId) {
-    String stockKey = "seckill:stock:" + activityId;
-    String boughtKey = "seckill:bought:" + activityId + ":" + userId;
 
-    // Lua脚本原子回滚
-    String script =
-        "redis.call('incr', KEYS[1]); " +
-        "redis.call('del', KEYS[2]); " +
-        "return 1;";
+def rollback_stock(user_id: int, activity_id: int) -> None:
+    """库存回滚（Lua原子操作）"""
+    stock_key = f"seckill:stock:{activity_id}"
+    bought_key = f"seckill:bought:{activity_id}:{user_id}"
 
-    redis.execute(
-        new DefaultRedisScript<>(script, Long.class),
-        Arrays.asList(stockKey, boughtKey)
-    );
-
-    log.info("库存回滚成功: userId={}, activityId={}", userId, activityId);
-}
+    script = """
+    redis.call('incr', KEYS[1])
+    redis.call('del', KEYS[2])
+    return 1
+    """
+    redis.eval(script, 2, stock_key, bought_key)
+    logger.info(f"库存回滚成功: userId={user_id}, activityId={activity_id}")
 ```
 
 ---
@@ -680,244 +622,180 @@ private void rollbackStock(Long userId, Long activityId) {
 
 ### 消费者设计
 
-```java
-@Component
-public class SeckillOrderConsumer {
+```python
+from kafka import KafkaConsumer
 
-    @KafkaListener(
-        topics = "seckill-order-topic",
-        groupId = "seckill-order-group",
-        concurrency = "8"  // 8个并发消费者（对应8个分区）
-    )
-    public void consume(ConsumerRecord<String, String> record,
-                        Acknowledgment acknowledgment) {
-        SeckillMessage message = JSON.parseObject(record.value(), SeckillMessage.class);
 
-        try {
-            // 处理消息
-            processOrder(message);
+class SeckillOrderConsumer:
+    """秒杀订单消费者"""
 
-            // 手动提交offset（处理成功后才提交）
-            acknowledgment.acknowledge();
+    def __init__(self):
+        self.consumer = KafkaConsumer(
+            'seckill-order-topic',
+            bootstrap_servers=['localhost:9092'],
+            group_id='seckill-order-group',
+            enable_auto_commit=False,
+            max_poll_records=10,
+            value_deserializer=lambda v: json.loads(v)
+        )
 
-        } catch (BusinessException e) {
-            // 业务异常（如重复购买），不重试
-            log.warn("业务异常: {}", e.getMessage());
-            acknowledgment.acknowledge();  // 直接提交，不重试
+    def run(self) -> None:
+        for message in self.consumer:
+            try:
+                self.process_order(message.value)
+                self.consumer.commit()  # 手动提交
+            except BusinessException as e:
+                logger.warning(f"业务异常: {e}")
+                self.consumer.commit()  # 业务异常不重试
+            except Exception as e:
+                logger.error("处理失败，等待重试", exc_info=True)
+                # 不提交，Kafka会重试
 
-        } catch (Exception e) {
-            // 系统异常，抛出让Kafka重试
-            log.error("处理失败，等待重试", e);
-            throw e;
+    def process_order(self, message: dict) -> None:
+        user_id = message["user_id"]
+        activity_id = message["activity_id"]
+        msg_id = message["msg_id"]
+
+        # 1. 幂等检查
+        if message_dedup_dao.exists(msg_id):
+            logger.warning(f"消息已处理，跳过: msgId={msg_id}")
+            return
+
+        # 2. DB级别兜底检查
+        if order_dao.exists_by_user_and_activity(user_id, activity_id):
+            logger.warning(f"订单已存在: userId={user_id}, activityId={activity_id}")
+            return
+
+        # 3. 获取活动信息
+        activity = activity_dao.get_by_id(activity_id)
+
+        # 4. 扣减数据库库存（乐观锁）
+        affected = activity_dao.deduct_stock(activity_id, activity["version"])
+        if affected == 0:
+            raise RetryException("库存扣减冲突，重试")
+
+        # 5. 创建订单
+        order = self._create_order(user_id, activity)
+        order_dao.insert(order)
+
+        # 6. 标记消息已处理
+        message_dedup_dao.insert(msg_id)
+
+        # 7. 通知用户
+        notify_user(user_id, order)
+
+        logger.info(f"订单创建成功: userId={user_id}, orderNo={order['order_no']}")
+
+    def _create_order(self, user_id: int, activity: dict) -> dict:
+        return {
+            "id": snowflake_id_gen.next_id(),
+            "order_no": str(snowflake_id_gen.next_id()),
+            "user_id": user_id,
+            "activity_id": activity["id"],
+            "product_id": activity["product_id"],
+            "product_name": activity["product_name"],
+            "activity_price": activity["activity_price"],
+            "status": "CREATED",
+            "create_time": datetime.now(),
+            "expire_time": datetime.now() + timedelta(minutes=30),
         }
-    }
-
-    @Transactional
-    private void processOrder(SeckillMessage message) {
-        Long userId = message.getUserId();
-        Long activityId = message.getActivityId();
-
-        // 1. 幂等检查（防止重复处理）
-        if (isAlreadyProcessed(message.getMsgId())) {
-            log.warn("消息已处理，跳过: msgId={}", message.getMsgId());
-            return;
-        }
-
-        // 2. 再次检查用户是否已购买（数据库级别兜底）
-        if (orderDao.existsByUserAndActivity(userId, activityId)) {
-            log.warn("订单已存在: userId={}, activityId={}", userId, activityId);
-            return;
-        }
-
-        // 3. 获取活动信息
-        SeckillActivity activity = activityDao.getById(activityId);
-
-        // 4. 扣减数据库库存（乐观锁）
-        int affected = activityDao.deductStock(activityId, activity.getVersion());
-        if (affected == 0) {
-            // 乐观锁冲突，重试
-            throw new RetryException("库存扣减冲突，重试");
-        }
-
-        // 5. 创建订单
-        Order order = createOrder(userId, activity);
-        orderDao.insert(order);
-
-        // 6. 标记消息已处理
-        markAsProcessed(message.getMsgId());
-
-        // 7. 通知用户（异步）
-        notifyUser(userId, order);
-
-        log.info("订单创建成功: userId={}, orderNo={}", userId, order.getOrderNo());
-    }
-}
 ```
 
 ---
 
 ### 幂等处理
 
-```java
-// 幂等表
-@Mapper
-public interface MessageDedupMapper {
-    @Insert("INSERT IGNORE INTO message_dedup(msg_id, create_time) VALUES(#{msgId}, NOW())")
-    int insert(@Param("msgId") String msgId);
+```python
+def is_already_processed(msg_id: str) -> bool:
+    return message_dedup_dao.exists(msg_id)
 
-    @Select("SELECT COUNT(1) FROM message_dedup WHERE msg_id = #{msgId}")
-    int exists(@Param("msgId") String msgId);
-}
-
-// 检查并标记
-private boolean isAlreadyProcessed(String msgId) {
-    return messageDedupMapper.exists(msgId) > 0;
-}
-
-private void markAsProcessed(String msgId) {
-    try {
-        messageDedupMapper.insert(msgId);
-    } catch (DuplicateKeyException e) {
-        // 已存在，忽略
-    }
-}
+def mark_as_processed(msg_id: str) -> None:
+    try:
+        message_dedup_dao.insert(msg_id)
+    except IntegrityError:
+        pass  # 已存在，忽略
 ```
 
 ---
 
 ### 数据库库存扣减（乐观锁防超卖）
 
-```java
-// Mapper
-@Update("UPDATE seckill_activity " +
-        "SET stock = stock - 1, version = version + 1 " +
-        "WHERE id = #{id} AND stock > 0 AND version = #{version}")
-int deductStock(@Param("id") Long id, @Param("version") Integer version);
+```python
+def deduct_stock_with_retry(activity_id: int, max_retry: int = 3) -> None:
+    """乐观锁扣库存，支持重试"""
+    for i in range(max_retry):
+        activity = activity_dao.get_by_id(activity_id)
 
-// Service（带重试）
-private void deductStockWithRetry(Long activityId) {
-    int maxRetry = 3;
+        if activity["stock"] <= 0:
+            raise BusinessException("库存已售罄")
 
-    for (int i = 0; i < maxRetry; i++) {
-        SeckillActivity activity = activityDao.getById(activityId);
+        affected = activity_dao.deduct_stock(activity_id, activity["version"])
 
-        if (activity.getStock() <= 0) {
-            throw new BusinessException("库存已售罄");
-        }
+        if affected > 0:
+            return  # 扣减成功
 
-        int affected = activityDao.deductStock(activityId, activity.getVersion());
+        logger.warning(f"乐观锁冲突，第{i + 1}次重试")
+        time.sleep(0.05 * (i + 1))  # 递增等待
 
-        if (affected > 0) {
-            return;  // 扣减成功
-        }
-
-        // 乐观锁冲突，等待重试
-        log.warn("乐观锁冲突，第{}次重试", i + 1);
-        try {
-            Thread.sleep(50 * (i + 1));  // 递增等待
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    throw new BusinessException("库存扣减失败，请重试");
-}
+    raise BusinessException("库存扣减失败，请重试")
 ```
 
----
-
-### 订单创建
-
-```java
-private Order createOrder(Long userId, SeckillActivity activity) {
-    Order order = new Order();
-
-    // 全局唯一订单号（雪花算法）
-    order.setOrderNo(snowflakeIdGenerator.nextId());
-    order.setUserId(userId);
-    order.setActivityId(activity.getId());
-    order.setProductId(activity.getProductId());
-
-    // 快照价格（不能引用商品当前价格，要用活动时的价格）
-    order.setActivityPrice(activity.getActivityPrice());
-    order.setProductName(activity.getProductName());  // 商品名称快照
-
-    order.setStatus(OrderStatus.CREATED);
-    order.setCreateTime(new Date());
-    order.setExpireTime(new Date(System.currentTimeMillis() + 30 * 60 * 1000));  // 30分钟后过期
-
-    return order;
-}
+对应的 SQL：
+```sql
+-- 乐观锁扣减
+UPDATE seckill_activity
+SET stock = stock - 1, version = version + 1
+WHERE id = :id AND stock > 0 AND version = :version;
 ```
 
 ---
 
 ## 八、超时取消：订单未支付自动关闭
 
-### 延迟消息实现
+### 延迟消息实现（RocketMQ）
 
-```java
-// 创建订单后，发送延迟消息
-private void sendCancelMessage(Order order) {
-    Message cancelMsg = new Message();
-    cancelMsg.setTopic("order-cancel-topic");
-    cancelMsg.setBody(JSON.toJSONString(order).getBytes());
+```python
+def send_cancel_message(order: dict) -> None:
+    """创建订单后，发送延迟取消消息"""
+    msg = Message(
+        topic="order-cancel-topic",
+        body=json.dumps(order).encode()
+    )
+    msg.set_delay_time_level(16)  # Level16 = 30分钟
+    rocketmq_producer.send(msg)
 
-    // RocketMQ延迟30分钟
-    cancelMsg.setDelayTimeLevel(16);  // Level16 = 30分钟
 
-    rocketMQProducer.send(cancelMsg);
-}
+def on_cancel_message(message: dict) -> None:
+    """取消消费者：30分钟后检查"""
+    order = order_dao.get_by_order_no(message["order_no"])
 
-// 取消消费者
-@RocketMQMessageListener(
-    topic = "order-cancel-topic",
-    consumerGroup = "order-cancel-group"
-)
-public class OrderCancelConsumer implements RocketMQListener<String> {
+    if order is None:
+        return
 
-    @Override
-    public void onMessage(String message) {
-        Order order = JSON.parseObject(message, Order.class);
+    # 只取消未支付的订单
+    if order["status"] != "CREATED":
+        logger.info(f"订单已支付或已取消，跳过: orderNo={order['order_no']}")
+        return
 
-        // 查询最新订单状态
-        Order current = orderDao.getByOrderNo(order.getOrderNo());
+    # 取消订单
+    affected = order_dao.cancel_order(
+        order["order_no"],
+        expected_status="CREATED",
+        new_status="CANCELLED"
+    )
 
-        if (current == null) {
-            return;
-        }
+    if affected > 0:
+        restore_stock(order["activity_id"])
+        logger.info(f"订单超时取消: orderNo={order['order_no']}")
 
-        // 只取消未支付的订单
-        if (current.getStatus() != OrderStatus.CREATED) {
-            log.info("订单已支付或已取消，跳过: orderNo={}", order.getOrderNo());
-            return;
-        }
 
-        // 取消订单（乐观锁）
-        int affected = orderDao.cancelOrder(
-            order.getOrderNo(),
-            OrderStatus.CREATED,      // 期望的当前状态
-            OrderStatus.CANCELLED     // 要变更的状态
-        );
-
-        if (affected > 0) {
-            // 恢复库存
-            restoreStock(order.getActivityId());
-            log.info("订单超时取消: orderNo={}", order.getOrderNo());
-        }
-    }
-
-    private void restoreStock(Long activityId) {
-        // 1. 恢复DB库存
-        activityDao.increaseStock(activityId);
-
-        // 2. 恢复Redis库存
-        String stockKey = "seckill:stock:" + activityId;
-        redis.incr(stockKey);
-
-        log.info("库存恢复: activityId={}", activityId);
-    }
-}
+def restore_stock(activity_id: int) -> None:
+    """恢复库存"""
+    # 1. 恢复DB库存
+    activity_dao.increase_stock(activity_id)
+    # 2. 恢复Redis库存
+    redis.incr(f"seckill:stock:{activity_id}")
+    logger.info(f"库存恢复: activityId={activity_id}")
 ```
 
 ---
@@ -926,17 +804,17 @@ public class OrderCancelConsumer implements RocketMQListener<String> {
 
 ### 轮询方案
 
-```java
-// 前端轮询
+> 前端 JavaScript 参考代码：
+
+```javascript
 async function pollResult(userId, activityId) {
-    const maxAttempts = 10;
     let attempts = 0;
+    const maxAttempts = 10;
 
     const poll = setInterval(async () => {
         attempts++;
-
-        const result = await fetch(`/api/seckill/result?userId=${userId}&activityId=${activityId}`);
-        const data = await result.json();
+        const resp = await fetch(`/api/seckill/result?userId=${userId}&activityId=${activityId}`);
+        const data = await resp.json();
 
         if (data.status === 'SUCCESS') {
             clearInterval(poll);
@@ -948,81 +826,78 @@ async function pollResult(userId, activityId) {
             clearInterval(poll);
             showFail('查询超时，请刷新页面查看结果');
         }
-        // 否则继续轮询
-    }, 1000);  // 每秒查一次
-}
-
-// 后端接口
-@GetMapping("/api/seckill/result")
-public Result getSeckillResult(Long userId, Long activityId) {
-    // 1. 查Redis（快）
-    String resultKey = "seckill:result:" + activityId + ":" + userId;
-    String result = redis.get(resultKey);
-
-    if ("SUCCESS".equals(result)) {
-        // 查订单号
-        String orderNo = redis.get("seckill:orderNo:" + activityId + ":" + userId);
-        return Result.success(new SeckillResult("SUCCESS", orderNo));
-    } else if ("FAILED".equals(result)) {
-        return Result.success(new SeckillResult("FAILED", null));
-    }
-
-    // 2. 查DB（兜底）
-    Order order = orderDao.getByUserAndActivity(userId, activityId);
-    if (order != null) {
-        return Result.success(new SeckillResult("SUCCESS", order.getOrderNo()));
-    }
-
-    return Result.success(new SeckillResult("PROCESSING", null));
+    }, 1000);
 }
 ```
 
-**订单创建后通知结果：**
-```java
-private void notifyUser(Long userId, Order order) {
-    // 写入结果到Redis
-    String resultKey = "seckill:result:" + order.getActivityId() + ":" + userId;
-    String orderNoKey = "seckill:orderNo:" + order.getActivityId() + ":" + userId;
+**后端接口和结果通知：**
 
-    redis.setex(resultKey, 3600, "SUCCESS");
-    redis.setex(orderNoKey, 3600, order.getOrderNo().toString());
+```python
+from fastapi import FastAPI
 
-    // 推送通知（WebSocket / 短信）
-    notificationService.notify(userId, "恭喜！秒杀成功，订单号：" + order.getOrderNo());
-}
+@app.get("/api/seckill/result")
+async def get_seckill_result(user_id: int, activity_id: int):
+    # 1. 查Redis（快）
+    result = redis.get(f"seckill:result:{activity_id}:{user_id}")
+
+    if result and result.decode() == "SUCCESS":
+        order_no = redis.get(f"seckill:orderNo:{activity_id}:{user_id}")
+        return {"code": 200, "data": {"status": "SUCCESS", "order_no": order_no.decode()}}
+    elif result and result.decode() == "FAILED":
+        return {"code": 200, "data": {"status": "FAILED", "order_no": None}}
+
+    # 2. 查DB（兜底）
+    order = order_dao.get_by_user_and_activity(user_id, activity_id)
+    if order:
+        return {"code": 200, "data": {"status": "SUCCESS", "order_no": order["order_no"]}}
+
+    return {"code": 200, "data": {"status": "PROCESSING", "order_no": None}}
+
+
+def notify_user(user_id: int, order: dict) -> None:
+    """订单创建后通知结果"""
+    activity_id = order["activity_id"]
+
+    # 写入结果到Redis
+    redis.setex(f"seckill:result:{activity_id}:{user_id}", 3600, "SUCCESS")
+    redis.setex(f"seckill:orderNo:{activity_id}:{user_id}", 3600, order["order_no"])
+
+    # 推送通知（WebSocket / 短信）
+    notification_service.notify(user_id, f"恭喜！秒杀成功，订单号：{order['order_no']}")
 ```
 
 ---
 
 ### WebSocket实时推送（更好的体验）
 
-```java
-// WebSocket推送
-@Component
-public class SeckillResultPusher {
+```python
+from fastapi import WebSocket
+from collections import defaultdict
 
-    @Autowired
-    private SimpMessagingTemplate messagingTemplate;
 
-    public void pushResult(Long userId, SeckillResult result) {
-        // 推送给指定用户
-        messagingTemplate.convertAndSendToUser(
-            userId.toString(),
-            "/topic/seckill/result",
-            result
-        );
-    }
-}
+class SeckillResultPusher:
+    """WebSocket 结果推送"""
 
-// 订单创建后推送
-private void notifyUser(Long userId, Order order) {
-    SeckillResult result = new SeckillResult();
-    result.setStatus("SUCCESS");
-    result.setOrderNo(order.getOrderNo());
+    def __init__(self):
+        self.connections: dict[int, WebSocket] = {}
 
-    // 实时推送
-    seckillResultPusher.pushResult(userId, result);
-}
+    async def register(self, user_id: int, ws: WebSocket):
+        await ws.accept()
+        self.connections[user_id] = ws
+
+    async def push_result(self, user_id: int, result: dict):
+        ws = self.connections.get(user_id)
+        if ws:
+            await ws.send_json(result)
+
+    def unregister(self, user_id: int):
+        self.connections.pop(user_id, None)
+
+
+# 订单创建后推送
+async def notify_user_realtime(user_id: int, order: dict) -> None:
+    result = {"status": "SUCCESS", "order_no": order["order_no"]}
+    await result_pusher.push_result(user_id, result)
 ```
 
 ---
@@ -1063,186 +938,161 @@ CREATE TABLE seckill_activity (
 
 ### 超卖场景模拟与验证
 
-```java
-// 并发测试
-@Test
-public void testSeckillConcurrency() throws InterruptedException {
-    int userCount = 10000;  // 1万用户
-    int stock = 100;        // 100个库存
+```python
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    // 预热库存
-    redis.set("seckill:stock:1", String.valueOf(stock));
 
-    CountDownLatch latch = new CountDownLatch(userCount);
-    AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger failCount = new AtomicInteger(0);
+def test_seckill_concurrency():
+    """并发测试秒杀"""
+    user_count = 10000  # 1万用户
+    stock = 100         # 100个库存
 
-    ExecutorService executor = Executors.newFixedThreadPool(200);
+    # 预热库存
+    redis.set("seckill:stock:1", stock)
 
-    for (int i = 0; i < userCount; i++) {
-        final long userId = i + 1;
-        executor.submit(() -> {
-            try {
-                boolean result = seckillService.seckill(userId, 1L);
-                if (result) {
-                    successCount.incrementAndGet();
-                } else {
-                    failCount.incrementAndGet();
-                }
-            } finally {
-                latch.countDown();
-            }
-        });
-    }
+    success_count = 0
+    fail_count = 0
+    lock = threading.Lock()
 
-    latch.await(30, TimeUnit.SECONDS);
+    def do_seckill(user_id: int) -> bool:
+        try:
+            return seckill_service.seckill(user_id, 1)
+        except Exception:
+            return False
 
-    System.out.println("成功数: " + successCount.get());  // 应该等于100
-    System.out.println("失败数: " + failCount.get());    // 应该等于9900
+    with ThreadPoolExecutor(max_workers=200) as executor:
+        futures = {executor.submit(do_seckill, i + 1): i for i in range(user_count)}
+        for future in as_completed(futures):
+            if future.result():
+                with lock:
+                    nonlocal success_count
+                    success_count += 1
+            else:
+                with lock:
+                    nonlocal fail_count
+                    fail_count += 1
 
-    // 验证库存
-    String stockLeft = redis.get("seckill:stock:1");
-    System.out.println("剩余库存: " + stockLeft);  // 应该等于0
+    print(f"成功数: {success_count}")    # 应该等于100
+    print(f"失败数: {fail_count}")      # 应该等于9900
 
-    // 验证不超卖
-    Assert.assertEquals(stock, successCount.get());
-}
+    # 验证库存
+    stock_left = redis.get("seckill:stock:1")
+    print(f"剩余库存: {stock_left}")     # 应该等于0
+
+    assert success_count == stock, f"超卖了! 成功数={success_count}, 库存={stock}"
 ```
 
 ---
 
 ## 十一、高可用保障
 
-### Sentinel规则
+### 限流和熔断配置
 
-```java
-@Configuration
-public class SeckillSentinelConfig {
+```python
+# 使用自定义 TokenBucket + CircuitBreaker
 
-    @PostConstruct
-    public void initRules() {
-        List<FlowRule> flowRules = new ArrayList<>();
-        List<DegradeRule> degradeRules = new ArrayList<>();
+# 秒杀接口限流：10000 QPS
+seckill_token_bucket = TokenBucket(rate=10000, capacity=20000)
 
-        // 秒杀接口限流
-        FlowRule seckillFlow = new FlowRule("seckill");
-        seckillFlow.setGrade(RuleConstant.FLOW_GRADE_QPS);
-        seckillFlow.setCount(10000);  // 1万QPS
-        seckillFlow.setControlBehavior(RuleConstant.CONTROL_BEHAVIOR_WARM_UP);
-        seckillFlow.setWarmUpPeriodSec(5);  // 5秒预热
-        flowRules.add(seckillFlow);
+# Redis调用熔断器
+redis_breaker = CircuitBreaker(
+    failure_threshold=5,
+    timeout=30,       # 熔断30秒
+    half_open_limit=3
+)
 
-        // Redis调用熔断
-        DegradeRule redisDegrade = new DegradeRule("redis.deductStock");
-        redisDegrade.setGrade(CircuitBreakerStrategy.ERROR_RATIO.getType());
-        redisDegrade.setCount(0.5);   // 错误率50%触发熔断
-        redisDegrade.setMinRequestAmount(10);
-        redisDegrade.setTimeWindow(30);
-        degradeRules.add(redisDegrade);
+# Kafka发送熔断器
+kafka_breaker = CircuitBreaker(
+    failure_threshold=10,
+    timeout=60,
+    half_open_limit=5
+)
 
-        // Kafka发送熔断
-        DegradeRule kafkaDegrade = new DegradeRule("kafka.sendMessage");
-        kafkaDegrade.setGrade(CircuitBreakerStrategy.SLOW_REQUEST_RATIO.getType());
-        kafkaDegrade.setCount(500);   // RT > 500ms算慢
-        kafkaDegrade.setSlowRatioThreshold(0.3);
-        kafkaDegrade.setMinRequestAmount(10);
-        kafkaDegrade.setTimeWindow(60);
-        degradeRules.add(kafkaDegrade);
-
-        FlowRuleManager.loadRules(flowRules);
-        DegradeRuleManager.loadRules(degradeRules);
-    }
-}
+# 使用装饰器组合
+@app.post("/api/seckill")
+@rate_limit(seckill_token_bucket)
+@circuit_breaker(redis_breaker)
+async def seckill(request: SeckillRequest, user_id: int = Depends(get_user_id)):
+    ...
 ```
 
 ---
 
 ### Redis故障降级
 
-```java
-private boolean preDeductStock(Long userId, Long activityId) {
-    try {
-        return doPreDeductStock(userId, activityId);
-    } catch (RedisException e) {
-        log.error("Redis故障，降级到数据库扣减", e);
+```python
+def pre_deduct_stock(user_id: int, activity_id: int) -> bool:
+    try:
+        return _redis_deduct_stock(user_id, activity_id)
+    except redis.RedisError:
+        logger.error("Redis故障，降级到数据库扣减")
+        return _fallback_db_deduct(user_id, activity_id)
 
-        // 降级：直接走数据库（性能差，但能保证正确性）
-        return fallbackToDBDeduct(userId, activityId);
-    }
-}
 
-private boolean fallbackToDBDeduct(Long userId, Long activityId) {
-    // 加分布式锁（防止超卖）
-    String lockKey = "seckill:lock:" + activityId;
+def _fallback_db_deduct(user_id: int, activity_id: int) -> bool:
+    """降级：直接走数据库（加锁防超卖）"""
+    lock_key = f"seckill:lock:{activity_id}"
+    lock_value = str(uuid.uuid4())
 
-    RLock lock = redisson.getLock(lockKey);
-    try {
-        boolean locked = lock.tryLock(1, 3, TimeUnit.SECONDS);
-        if (!locked) {
-            return false;
-        }
+    # Redis分布式锁（SETNX，超时3秒）
+    acquired = redis.set(lock_key, lock_value, nx=True, ex=3)
 
-        // 查DB库存
-        SeckillActivity activity = activityDao.getById(activityId);
-        if (activity.getStock() <= 0) {
-            return false;
-        }
+    if not acquired:
+        return False
 
-        // 扣减
-        int affected = activityDao.deductStock(activityId, activity.getVersion());
-        return affected > 0;
+    try:
+        activity = activity_dao.get_by_id(activity_id)
+        if activity["stock"] <= 0:
+            return False
 
-    } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return false;
-    } finally {
-        lock.unlock();
-    }
-}
+        affected = activity_dao.deduct_stock(activity_id, activity["version"])
+        return affected > 0
+    finally:
+        # Lua脚本安全释放锁
+        redis.eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                   1, lock_key, lock_value)
 ```
 
 ---
 
 ### Kafka故障处理
 
-```java
-private void sendOrderMessage(Long userId, Long activityId) {
-    try {
-        doSendKafkaMessage(userId, activityId);
-    } catch (Exception e) {
-        log.error("Kafka发送失败，降级到本地消息表", e);
+```python
+def send_order_message(user_id: int, activity_id: int) -> None:
+    try:
+        _send_kafka_message(user_id, activity_id)
+    except Exception as e:
+        logger.error("Kafka发送失败，降级到本地消息表")
 
-        // 降级：写本地消息表
-        LocalMessage localMsg = new LocalMessage();
-        localMsg.setTopic("seckill-order-topic");
-        localMsg.setBody(buildMessageBody(userId, activityId));
-        localMsg.setStatus("INIT");
-        localMessageDao.insert(localMsg);
-
-        // 后台线程定时重发
-    }
-}
-
-// 后台重发任务
-@Scheduled(fixedRate = 5000)
-public void retryLocalMessages() {
-    List<LocalMessage> messages = localMessageDao.findPending(100);
-
-    for (LocalMessage msg : messages) {
-        try {
-            kafkaProducer.send(msg.getTopic(), msg.getBody());
-            msg.setStatus("SENT");
-        } catch (Exception e) {
-            msg.setRetryCount(msg.getRetryCount() + 1);
-            if (msg.getRetryCount() >= 5) {
-                msg.setStatus("FAILED");
-                // 人工处理
-                alertService.notifyAdmin(msg);
-            }
+        # 写本地消息表
+        local_msg = {
+            "topic": "seckill-order-topic",
+            "body": json.dumps({"user_id": user_id, "activity_id": activity_id}),
+            "status": "INIT",
+            "retry_count": 0,
         }
-        localMessageDao.update(msg);
-    }
-}
+        local_message_dao.insert(local_msg)
+
+
+# 后台重发任务
+def retry_local_messages() -> None:
+    messages = local_message_dao.find_pending(limit=100)
+
+    for msg in messages:
+        try:
+            producer.send(msg["topic"], msg["body"].encode())
+            msg["status"] = "SENT"
+        except Exception:
+            msg["retry_count"] += 1
+            if msg["retry_count"] >= 5:
+                msg["status"] = "FAILED"
+                alert_service.notify_admin(msg)
+
+        local_message_dao.update(msg)
+
+
+scheduler.add_job(retry_local_messages, 'interval', seconds=5)
 ```
 
 ---
@@ -1469,9 +1319,8 @@ Redis和DB的一致性：
 **第五步：说高可用（1分钟）**
 
 ```
-限流：Sentinel 10000 QPS限制
-熔断：Redis/Kafka故障时有降级方案
-降级：Redis挂了->DB+分布式锁兜底
+限流、熔断、降级三级保护
+Redis/Kafka故障时有降级方案
 监控：消费延迟、库存变化、订单成功率
 ```
 
@@ -1495,8 +1344,8 @@ Redis和DB的一致性：
 ### 练习1：Lua脚本
 
 写一个Lua脚本，实现：
-- 检查用户是否已购买（key: `seckill:bought:{activityId}:{userId}`）
-- 检查库存（key: `seckill:stock:{activityId}`）
+- 检查用户是否已购买
+- 检查库存
 - 扣减库存
 - 标记用户已购买（有效期30分钟）
 - 返回：-1=已购买，0=库存不足，1=成功
