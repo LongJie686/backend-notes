@@ -1063,358 +1063,107 @@ def build_system_prompt(
 
 ### 3. 完整"心语"机器人实现
 
+**XinYuBot 类的核心组件：**
+
+| 组件 | 类型 | 作用 |
+|------|------|------|
+| `llm` | ChatOpenAI (temp=0.7) | 对话生成 |
+| `analysis_llm` | ChatOpenAI (temp=0.1) | 情感分析/危机检测 |
+| `memory` | SummaryMemory | 三层记忆管理 |
+| `emotion_analyzer` | EmotionAnalyzer | 情感实时分析 |
+| `crisis_detector` | CrisisDetector | 双层危机检测 |
+| `content_filter` | ContentFilter | 输入输出过滤 |
+| `state_machine` | DialogStateMachine | 对话状态管理 |
+| `user_profile` | UserProfile | 用户画像持久化 |
+| `emotion_history` | deque(maxlen=10) | 情感趋势追踪 |
+
+**核心方法 `chat()` 的执行流程（10步）：**
+
 ```python
-import os
-import json
-import time
-import re
-from typing import List, Optional
-from datetime import datetime
-from collections import deque
-from dataclasses import dataclass, field
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-
-
-@dataclass
-class UserProfile:
-    """用户画像"""
-    user_id: str
-    name: Optional[str] = None
-    occupation: Optional[str] = None
-    key_relationships: List[str] = field(default_factory=list)
-    recurring_concerns: List[str] = field(default_factory=list)
-    personality_traits: List[str] = field(default_factory=list)
-    important_events: List[str] = field(default_factory=list)
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-
-    def get_summary(self) -> str:
-        parts = []
-        if self.name:
-            parts.append(f"用户叫{self.name}")
-        if self.occupation:
-            parts.append(f"职业是{self.occupation}")
-        if self.recurring_concerns:
-            parts.append(f"常见困扰：{'、'.join(self.recurring_concerns[:3])}")
-        if self.key_relationships:
-            parts.append(f"重要的人：{'、'.join(self.key_relationships[:3])}")
-        if self.important_events:
-            parts.append(f"重要经历：{'、'.join(self.important_events[:2])}")
-        return "。".join(parts) if parts else ""
-
-
 class XinYuBot:
-    """心语情感机器人"""
+    """心语情感机器人 -- 完整实现思路（前文各组件已定义好）"""
 
-    def __init__(
-        self,
-        user_id: str,
-        openai_api_key: str = None,
-        model: str = "gpt-4",
-    ):
-        self.user_id = user_id
-
-        # LLM
-        self.llm = ChatOpenAI(
-            model=model,
-            temperature=0.7,
-            api_key=openai_api_key or os.getenv("OPENAI_API_KEY")
-        )
-
-        # 分析 LLM（低温度，用于情感分析/危机检测）
-        self.analysis_llm = ChatOpenAI(
-            model=model,
-            temperature=0.1,
-            api_key=openai_api_key or os.getenv("OPENAI_API_KEY")
-        )
-
-        # 组件
+    def __init__(self, user_id: str, model: str = "gpt-4"):
+        self.llm = ChatOpenAI(model=model, temperature=0.7)
+        self.analysis_llm = ChatOpenAI(model=model, temperature=0.1)
         self.memory = SummaryMemory(self.analysis_llm)
         self.emotion_analyzer = EmotionAnalyzer(self.analysis_llm)
         self.crisis_detector = CrisisDetector(self.analysis_llm)
         self.content_filter = ContentFilter(self.analysis_llm)
         self.state_machine = DialogStateMachine()
-
-        # 用户画像
-        self.user_profile = self._load_or_create_profile(user_id)
-
-        # 当前情感状态
-        self.current_emotion = {}
+        self.user_profile = UserProfile(user_id=user_id)
         self.emotion_history = deque(maxlen=10)
-
-        # 会话统计
-        self.session_start = datetime.now()
         self.total_rounds = 0
 
-    # ==================== 核心对话 ====================
-
     def chat(self, user_input: str) -> str:
-        """
-        主对话接口
-        """
-
+        """主对话接口 -- 10 步流水线"""
         # Step 1: 输入过滤
-        filter_result = self.content_filter.filter_input(user_input)
-        if not filter_result["allowed"]:
-            return "抱歉，我没办法回应这个内容。如果你有困扰，我们可以换个方式聊聊？"
+        if not self.content_filter.filter_input(user_input)["allowed"]:
+            return "抱歉，我没办法回应这个内容。"
 
-        # Step 2: 危机检测（快速）
+        # Step 2: 快速危机检测（关键词匹配，毫秒级）
         crisis_quick = self.crisis_detector.quick_check(user_input)
-
         if crisis_quick["risk_level"] == "high":
-            # 进入危机干预流程
             return self._handle_crisis("high", user_input)
 
-        # Step 3: 情感分析
-        context_text = self._get_recent_context_text()
-        self.current_emotion = self.emotion_analyzer.analyze(
-            user_input, context=context_text
-        )
+        # Step 3: 情感分析（LLM 分析，提取 primary_emotion / intensity / needs）
+        context = self._get_recent_context_text()
+        self.current_emotion = self.emotion_analyzer.analyze(user_input, context)
         self.emotion_history.append(self.current_emotion)
 
-        # Step 4: 深度危机检测（如有中风险信号）
+        # Step 4: 深度危机检测（中风险信号触发 LLM 二次判断）
         if crisis_quick["risk_level"] == "medium" or self.current_emotion.get("is_crisis"):
-            crisis_deep = self.crisis_detector.deep_check(user_input, context_text)
-            if crisis_deep.get("risk_level") == "high":
-                return self._handle_crisis("high", user_input)
-            elif crisis_deep.get("risk_level") == "medium":
-                return self._handle_crisis("medium", user_input)
+            deep = self.crisis_detector.deep_check(user_input, context)
+            if deep.get("risk_level") in ("high", "medium"):
+                return self._handle_crisis(deep["risk_level"], user_input)
 
-        # Step 5: 更新状态机
+        # Step 5: 状态机更新（根据情感强度决定状态转移）
         self._update_state(user_input)
 
-        # Step 6: 添加到记忆
+        # Step 6-7: 存入记忆 → 构建 Prompt → 调用 LLM
         self.memory.add("user", user_input)
-
-        # Step 7: 构建 Prompt 并调用 LLM
         response = self._generate_response(user_input)
 
         # Step 8: 输出过滤
-        filter_output = self.content_filter.filter_output(response)
-        if not filter_output["allowed"]:
-            response = filter_output.get("replacement", "让我换个方式来说......")
+        filtered = self.content_filter.filter_output(response)
+        if not filtered["allowed"]:
+            response = filtered.get("replacement", "让我换个方式来说...")
 
-        # Step 9: 添加回复到记忆
+        # Step 9-10: 存入记忆 + 异步更新画像（每5轮触发）
         self.memory.add("assistant", response)
         self.total_rounds += 1
-
-        # Step 10: 异步更新用户画像（每5轮）
         if self.total_rounds % 5 == 0:
             self._async_update_profile()
 
         return response
 
-    # ==================== 生成回复 ====================
-
     def _generate_response(self, user_input: str) -> str:
-        """生成回复"""
-
-        # 构建 System Prompt
-        system_content = build_system_prompt(
+        """构建动态 System Prompt + 历史消息 → 调用 LLM"""
+        system = build_system_prompt(
             user_profile_summary=self.user_profile.get_summary(),
             dialog_state=self._get_state_description(),
             memory_summary=self.memory.summary,
             emotion_data=self.current_emotion
         )
-
-        # 构建消息列表
-        messages = [SystemMessage(content=system_content)]
-
-        # 加入历史对话
+        messages = [SystemMessage(content=system)]
         for msg in self.memory.recent_messages:
-            if msg["role"] == "user":
-                messages.append(HumanMessage(content=msg["content"]))
-            elif msg["role"] == "assistant":
-                messages.append(AIMessage(content=msg["content"]))
-
-        # 调用 LLM
-        response = self.llm.invoke(messages)
-        return response.content
-
-    # ==================== 危机干预 ====================
-
-    def _handle_crisis(self, risk_level: str, user_input: str) -> str:
-        """处理危机情况"""
-
-        # 切换到危机状态
-        self.state_machine.transition(DialogState.CRISIS)
-
-        # 获取危机干预回应
-        crisis_response = self.crisis_detector.get_crisis_response(risk_level)
-
-        if crisis_response:
-            return crisis_response
-
-        # 如果没有预设回应，用 LLM 生成
-        prompt = f"""你是心语，一个情感支持机器人。
-用户可能正处于心理危机中。
-用户说："{user_input}"
-
-请用温暖、不评判的方式回应，询问他们的安全状况，并提供危机热线。
-回应要：
-1. 先表达关心
-2. 直接但温和地询问是否有伤害自己的想法
-3. 提供专业求助资源：400-161-9995（24小时）
-4. 表示你在这里陪着他
-
-回应："""
-
-        return self.analysis_llm.predict(prompt)
-
-    # ==================== 状态管理 ====================
+            role_cls = HumanMessage if msg["role"] == "user" else AIMessage
+            messages.append(role_cls(content=msg["content"]))
+        return self.llm.invoke(messages).content
 
     def _update_state(self, user_input: str):
-        """根据用户输入和情感更新状态"""
+        """状态转移逻辑：
+        GREETING → EXPLORING（情感强度>3）
+        EXPLORING → EMPATHIZING（强度>=7）
+        EMPATHIZING → SUPPORTING/PROBLEM_SOLVING（停留超过4轮后根据 suggested_response_style 决定）"""
+        # 具体逻辑见前面状态机部分，此处省略细节
+        pass
 
-        current = self.state_machine.current_state
-        emotion = self.current_emotion
-
-        # 根据情感强度和内容决定状态转移
-        intensity = emotion.get("intensity", 5)
-
-        if current == DialogState.GREETING:
-            if intensity > 3:
-                self.state_machine.transition(DialogState.EXPLORING)
-
-        elif current == DialogState.EXPLORING:
-            if intensity >= 7:
-                self.state_machine.transition(DialogState.EMPATHIZING)
-
-        elif current == DialogState.EMPATHIZING:
-            if self.state_machine.rounds_in_current_state > 4:
-                response_style = emotion.get("suggested_response_style", "")
-                if "问题解决" in response_style:
-                    self.state_machine.transition(DialogState.PROBLEM_SOLVING)
-                else:
-                    self.state_machine.transition(DialogState.SUPPORTING)
-
-        self.state_machine.increment_round()
-
-    def _get_state_description(self) -> str:
-        """获取当前状态描述"""
-        state = self.state_machine.current_state
-
-        descriptions = {
-            DialogState.GREETING: "初次问候阶段",
-            DialogState.EXPLORING: "探索用户困扰阶段——多倾听，少评判",
-            DialogState.EMPATHIZING: "深度共情阶段——让用户感到被理解",
-            DialogState.SUPPORTING: "情感支持阶段——陪伴与鼓励",
-            DialogState.PROBLEM_SOLVING: "问题解决阶段——提供建议",
-            DialogState.CRISIS: "[危机干预模式]——保持冷静，提供支持",
-            DialogState.CLOSING: "对话收尾阶段",
-            DialogState.IDLE: "轻松闲聊阶段"
-        }
-
-        return descriptions.get(state, "普通对话阶段")
-
-    # ==================== 辅助方法 ====================
-
-    def _get_recent_context_text(self) -> str:
-        """获取最近对话文本"""
-        recent = list(self.memory.recent_messages)[-6:]  # 最近3轮
-        return "\n".join([
-            f"{'用户' if m['role'] == 'user' else '心语'}: {m['content']}"
-            for m in recent
-        ])
-
-    def _load_or_create_profile(self, user_id: str) -> UserProfile:
-        """加载或创建用户画像"""
-        # 实际中从数据库加载
-        # 这里简单返回新画像
-        return UserProfile(user_id=user_id)
-
-    def _async_update_profile(self):
-        """异步更新用户画像"""
-        if not self.memory.recent_messages:
-            return
-
-        prompt = f"""从以下对话中提取用户信息，以 JSON 格式输出：
-
-对话：
-{self._get_recent_context_text()}
-
-{{
-    "name": null,
-    "occupation": null,
-    "new_relationships": [],
-    "new_concerns": [],
-    "new_traits": [],
-    "new_events": []
-}}
-
-只输出 JSON："""
-
-        try:
-            result = json.loads(self.analysis_llm.predict(prompt))
-
-            if result.get("name") and not self.user_profile.name:
-                self.user_profile.name = result["name"]
-            if result.get("occupation") and not self.user_profile.occupation:
-                self.user_profile.occupation = result["occupation"]
-
-            self.user_profile.key_relationships.extend(result.get("new_relationships", []))
-            self.user_profile.recurring_concerns.extend(result.get("new_concerns", []))
-            self.user_profile.personality_traits.extend(result.get("new_traits", []))
-            self.user_profile.important_events.extend(result.get("new_events", []))
-
-            # 去重
-            self.user_profile.key_relationships = list(set(self.user_profile.key_relationships))
-            self.user_profile.recurring_concerns = list(set(self.user_profile.recurring_concerns))
-
-        except Exception as e:
-            print(f"画像更新失败: {e}")
-
-    def get_session_summary(self) -> dict:
-        """获取会话统计"""
-        return {
-            "user_id": self.user_id,
-            "total_rounds": self.total_rounds,
-            "session_duration": str(datetime.now() - self.session_start),
-            "current_state": self.state_machine.current_state.value,
-            "profile": {
-                "name": self.user_profile.name,
-                "concerns": self.user_profile.recurring_concerns
-            },
-            "emotion_history": list(self.emotion_history)
-        }
-
-
-# ==================== 使用示例 ====================
-
-def run_demo():
-    """演示对话"""
-    print("=" * 50)
-    print("心语情感陪伴机器人")
-    print("=" * 50)
-    print("输入 'quit' 退出，输入 'summary' 查看会话摘要")
-    print()
-
-    bot = XinYuBot(user_id="demo_user_001")
-
-    # 初始问候
-    greeting = bot.chat("你好")
-    print(f"心语: {greeting}\n")
-
-    while True:
-        user_input = input("你: ").strip()
-
-        if not user_input:
-            continue
-
-        if user_input.lower() == "quit":
-            print("\n心语: 保重，随时可以来找我聊天。")
-            break
-
-        if user_input.lower() == "summary":
-            summary = bot.get_session_summary()
-            print(f"\n[会话摘要]\n{json.dumps(summary, ensure_ascii=False, indent=2)}\n")
-            continue
-
-        response = bot.chat(user_input)
-        print(f"\n心语: {response}\n")
-
-if __name__ == "__main__":
-    run_demo()
+    def _handle_crisis(self, risk_level: str, user_input: str) -> str:
+        """危机干预：切换 CRISIS 状态 → 获取预设回应 → 无预设时 LLM 生成"""
+        self.state_machine.transition(DialogState.CRISIS)
+        return (self.crisis_detector.get_crisis_response(risk_level)
+                or self.analysis_llm.predict(f"危机干预回应...{user_input}"))
 ```
 
 ---
@@ -1426,76 +1175,41 @@ if __name__ == "__main__":
 ### 1. 流式输出实现
 
 ```python
-from langchain_core.callbacks import StreamingStdOutCallbackHandler
-
+# 流式输出核心逻辑
 def stream_chat(bot: XinYuBot, user_input: str):
-    """流式输出，改善用户体验"""
-
-    # 前置处理（过滤、分析等）
-    filter_result = bot.content_filter.filter_input(user_input)
-    if not filter_result["allowed"]:
+    # 前置处理（过滤、分析等） -- 与 chat() 方法相同
+    if not bot.content_filter.filter_input(user_input)["allowed"]:
         yield "抱歉，我没办法回应这个内容。"
         return
 
-    # 构建消息
-    system_content = build_system_prompt(
-        user_profile_summary=bot.user_profile.get_summary(),
-        dialog_state=bot._get_state_description(),
-        memory_summary=bot.memory.summary,
-        emotion_data=bot.current_emotion
-    )
-
-    messages = [SystemMessage(content=system_content)]
+    # 构建消息（System Prompt + 记忆中的历史 + 当前用户输入）
+    system = build_system_prompt(profile=..., state=..., memory=..., emotion=...)
+    messages = [SystemMessage(content=system)]
     for msg in bot.memory.recent_messages:
-        if msg["role"] == "user":
-            messages.append(HumanMessage(content=msg["content"]))
-        else:
-            messages.append(AIMessage(content=msg["content"]))
+        messages.append(HumanMessage(content=...) if msg["role"] == "user" else AIMessage(...))
     messages.append(HumanMessage(content=user_input))
 
-    # 流式调用
-    stream_llm = ChatOpenAI(
-        model="gpt-4",
-        temperature=0.7,
-        streaming=True
-    )
-
+    # 流式调用（streaming=True）
+    stream_llm = ChatOpenAI(model="gpt-4", temperature=0.7, streaming=True)
     full_response = ""
     for chunk in stream_llm.stream(messages):
-        content = chunk.content
-        if content:
-            full_response += content
-            yield content  # 逐字符/逐词返回
+        if chunk.content:
+            full_response += chunk.content
+            yield chunk.content  # 逐词返回，打字机效果
 
     # 后置处理
     bot.memory.add("user", user_input)
     bot.memory.add("assistant", full_response)
-    bot.total_rounds += 1
 
-
-# FastAPI SSE 接口
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
-import asyncio
-
-app = FastAPI()
-
+# FastAPI SSE 接口（模板）
 @app.post("/chat/stream")
 async def chat_stream(request: dict):
-    user_id = request["user_id"]
-    message = request["message"]
-
-    bot = get_bot(user_id)  # 从会话存储获取
-
+    bot = get_bot(request["user_id"])
     async def generate():
-        for chunk in stream_chat(bot, message):
+        for chunk in stream_chat(bot, request["message"]):
             yield f"data: {json.dumps({'text': chunk})}\n\n"
         yield "data: [DONE]\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream"
-    )
+    return StreamingResponse(generate(), media_type="text/event-stream")
 ```
 
 ---
