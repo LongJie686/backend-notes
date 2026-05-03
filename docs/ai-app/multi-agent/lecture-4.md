@@ -559,144 +559,27 @@ file_tool = FileReadTool()
 
 ### 2. 自定义企业级工具集
 
+设计一个市场调研场景的 4 个工具：
+
+| 工具 | 功能 | 关键参数 |
+|------|------|---------|
+| `market_search` | 搜索市场和行业数据（使用 mock_data 字典模拟） | `query: str` — 如"手机市场份额"、"折叠屏" |
+| `data_analysis` | 数据分析，支持趋势/对比/摘要三种模式 | `data: str`, `analysis_type: str` |
+| `generate_report_section` | 生成 Markdown 格式的报告章节 | `section_title`, `content`, `format_type` |
+| `competitor_analysis` | 两家公司的多维度对比 | `company_a`, `company_b`, `dimension` |
+
+核心示例（其他工具同上模式）：
+
 ```python
-import requests
-import json
-import pandas as pd
-from datetime import datetime
-from crewai_tools import tool
-
-
 @tool("市场数据搜索")
 def market_search(query: str) -> str:
-    """
-    搜索市场和行业相关信息。
-    适用于：市场份额、行业趋势、竞品信息
-    输入：具体的市场研究问题
-    输出：相关市场数据和分析信息
-    """
-    mock_data = {
-        "手机市场份额": """
-        2024年Q1中国手机市场数据：
-        - 华为：市场份额20%，同比增长35%
-        - 小米：市场份额18%，同比增长8%
-        - OPPO：市场份额15%，同比下滑3%
-        - vivo：市场份额14%，同比持平
-        - 苹果：市场份额16%，同比下滑5%
-        - 其他：市场份额17%
-        数据来源：IDC 2024Q1报告
-        """,
-        "折叠屏": """
-        2024年折叠屏手机市场：
-        - 全球出货量：1500万台，同比增长52%
-        - 中国市场：650万台，占全球43%
-        - 华为领导国内市场，三星领导全球市场
-        - 平均售价：8000-15000元
-        数据来源：Counterpoint Research
-        """
-    }
-
-    for key, data in mock_data.items():
-        if key in query:
-            return data
-
-    return f"搜索结果：关于'{query}'的市场数据\n市场规模持续增长，具体数据建议参考IDC、Gartner等专业报告。"
-
-
-@tool("数据分析")
-def data_analysis(data: str, analysis_type: str = "trend") -> str:
-    """
-    对提供的数据进行分析。
-    analysis_type选项：
-    - trend：趋势分析
-    - compare：对比分析
-    - summary：数据摘要
-    输入：数据内容和分析类型
-    输出：分析结论
-    """
-    if analysis_type == "trend":
-        prompt_hint = "识别数据中的增长趋势、季节性特征和异常点"
-    elif analysis_type == "compare":
-        prompt_hint = "对比不同维度的数据差异，找出关键差距"
-    else:
-        prompt_hint = "提炼数据中的核心指标和关键结论"
-
-    return f"""
-数据分析结果（{analysis_type}）：
-
-原始数据：
-{data}
-
-分析结论：
-{prompt_hint}
-
-主要发现：
-1. 数据整体呈增长态势
-2. 头部效应明显，TOP3占据超过50%份额
-3. 新兴品牌增速明显高于传统品牌
-
-建议：
-- 重点关注增速超过行业平均水平的品牌
-- 跟踪市场份额变化趋势
-"""
-
-
-@tool("报告生成")
-def generate_report_section(
-    section_title: str,
-    content: str,
-    format_type: str = "markdown"
-) -> str:
-    """
-    生成报告的指定章节。
-    format_type：markdown（默认）或 plain
-    输入：章节标题和内容
-    输出：格式化的报告章节
-    """
-    if format_type == "markdown":
-        return f"""
-## {section_title}
-
-{content}
-
----
-*生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}*
-"""
-    else:
-        return f"{section_title}\n\n{content}"
-
+    """搜索市场和行业数据，返回市场份额、行业趋势等信息。"""
+    return mock_data.get(query, f"关于'{query}'的搜索结果...")
 
 @tool("竞品对比")
-def competitor_analysis(
-    company_a: str,
-    company_b: str,
-    dimension: str = "综合"
-) -> str:
-    """
-    对比两家公司在指定维度的竞争态势。
-    dimension选项：市场份额、产品、价格、技术、品牌
-    输入：两家公司名称和对比维度
-    输出：详细的对比分析
-    """
-    return f"""
-{company_a} vs {company_b} {dimension}对比分析：
-
-维度：{dimension}
-
-{company_a}优势：
-- 在高端市场具有强品牌认知
-- 供应链整合能力强
-- 研发投入持续增加
-
-{company_b}优势：
-- 性价比突出，中低端市场份额大
-- 互联网生态协同效应
-- 社区用户活跃度高
-
-总体评估：
-两者各有所长，在不同价格带形成差异化竞争。
-短期内竞争格局不会发生根本性变化。
-"""
+def competitor_analysis(company_a: str, company_b: str, dimension: str = "综合") -> str:
+    """对比两家公司在指定维度的竞争态势。"""
+    return f"{company_a} vs {company_b} {dimension}对比分析：..."
 ```
 
 ---
@@ -838,476 +721,73 @@ writer = Agent(
 
 ### 完整代码
 
+整合以上所有组件，完整系统包含：
+
+| 模块 | 内容 | 关键点 |
+|------|------|--------|
+| 工具定义 | `market_search`、`competitor_compare`、`trend_analysis` | 3 个 `@tool` 装饰器函数，返回结构化文本 |
+| Agent 定义 | 研究员（2 工具）、分析师（2 工具）、写作者（0 工具）| `max_iter=8`, `allow_delegation=False` |
+| Task 定义 | `create_tasks(topic)` 返回 4 个 Task | 用 `context` 建立串行依赖链 |
+| 主程序 | `MarketResearchSystem` 类 | 封装 Agent + Task + Crew 调度 |
+
+**核心执行流程：**
+
 ```python
-import os
-from datetime import datetime
-from crewai import Agent, Task, Crew, Process
-from crewai_tools import tool
-from langchain_openai import ChatOpenAI
-
-# ========== 环境配置 ==========
-os.environ["OPENAI_API_KEY"] = "your_key"
-
-
-# ========== 工具定义 ==========
-
-@tool("市场数据搜索")
-def market_search(query: str) -> str:
-    """
-    搜索市场和行业数据。
-    适用于：市场份额、行业规模、增长趋势
-    输入：搜索关键词
-    """
-    return f"""
-搜索'{query}'的结果：
-
-1. 市场规模：2024年中国手机市场规模约3.5亿台，同比下滑2%
-2. 品牌格局：
-   - 华为：20%（强势回归，增长35%）
-   - 苹果：16%（高端市场为主）
-   - 小米：18%（性价比路线）
-   - OPPO：15%（线下渠道优势）
-   - vivo：14%（影像赛道突围）
-3. 价格趋势：高端化明显，3000元以上机型占比提升至45%
-4. 技术趋势：AI功能成为核心卖点，折叠屏市场持续增长
-
-数据来源：IDC、Counterpoint Research（2024Q1）
-"""
-
-
-@tool("竞品对比分析")
-def competitor_compare(
-    companies: str,
-    dimension: str = "综合竞争力"
-) -> str:
-    """
-    分析多家公司的竞争态势。
-    companies：公司名称，用逗号分隔，如"华为,小米,苹果"
-    dimension：对比维度，如"市场份额"、"产品策略"、"技术实力"
-    """
-    company_list = [c.strip() for c in companies.split(",")]
-
-    return f"""
-{' vs '.join(company_list)} {dimension}对比分析：
-
-各品牌核心竞争力：
-
-华为：
-- 优势：国产旗舰代表，品牌溢价高，5G+卫星通信技术领先
-- 劣势：高端芯片受限，海外市场受阻
-- 策略：主打国产替代，深耕高端市场
-
-小米：
-- 优势：性价比极致，互联网生态完善，粉丝黏性高
-- 劣势：品牌溢价不足，高端突破困难
-- 策略：冲击高端（小米14系列），保持中端基本盘
-
-苹果：
-- 优势：生态护城河深，品牌溢价最强，高端市场主导
-- 劣势：价格敏感用户流失，国内市场承压
-- 策略：服务生态变现，AI功能差异化
-
-综合判断：
-华为强势回归改变了竞争格局，
-苹果在高端受到压力，
-小米持续向上突破。
-"""
-
-
-@tool("数据趋势分析")
-def trend_analysis(
-    data_description: str,
-    analysis_focus: str = "增长趋势"
-) -> str:
-    """
-    分析数据中的趋势和规律。
-    data_description：数据描述
-    analysis_focus：分析重点，如"增长趋势"、"市场机会"、"风险点"
-    """
-    return f"""
-趋势分析报告（聚焦：{analysis_focus}）：
-
-基于数据：{data_description[:200]}...
-
-核心趋势：
-
-1. 高端化趋势加速
-   - 3000元以上机型占比：40%->45%（同比+5pct）
-   - 均价提升至3200元，创历史新高
-
-2. 品牌集中度提升
-   - TOP5品牌合计份额：83%（去年78%）
-   - 中小品牌持续出清
-
-3. AI成为核心卖点
-   - 配备端侧AI的机型：35%->60%（预计年底）
-
-4. 折叠屏高速增长
-   - 出货量：800万->1500万台（+87%）
-   - 价格快速下探：主力价格带从1.5万降至8000元
-
-机会与风险：
-机会：高端AI手机、折叠屏平民化
-风险：整体需求疲软、AI功能同质化、渠道竞争加剧
-"""
-
-
-# ========== Agent定义 ==========
-
-llm = ChatOpenAI(model="gpt-4", temperature=0.7)
-
-researcher = Agent(
-    role="资深市场研究员",
-    goal="搜集全面准确的市场数据，为后续分析提供翔实的原始素材",
-    backstory="""
-    你是IDC的资深研究员，有15年手机行业研究经验。
-    你的工作方法论：
-    - 先搜索宏观市场数据（用市场数据搜索工具）
-    - 再搜索具体的竞品信息（用竞品对比分析工具）
-    - 所有数据必须注明来源
-    - 用数据说话，不凭感觉判断
-    """,
-    tools=[market_search, competitor_compare],
-    llm=llm,
-    verbose=True,
-    max_iter=8,
-    allow_delegation=False
-)
-
-analyst = Agent(
-    role="战略分析专家",
-    goal="深度分析市场数据，提炼有价值的商业洞察和战略建议",
-    backstory="""
-    你是麦肯锡的资深合伙人，擅长市场战略分析。
-    你的分析框架：
-    - 用趋势分析工具处理数据
-    - MECE原则：互相独立、完全穷尽
-    - 每个结论必须有数据支撑
-    - 洞察要超越表面，挖掘深层原因
-    """,
-    tools=[trend_analysis, competitor_compare],
-    llm=llm,
-    verbose=True,
-    allow_delegation=False
-)
-
-writer = Agent(
-    role="高级报告撰写专家",
-    goal="将研究数据和分析洞察转化为专业、易读的研究报告",
-    backstory="""
-    你是Gartner的高级分析师，擅长撰写商业研究报告。
-    你的写作风格：
-    - 结构严谨：总-分-总
-    - 数据丰富：每个观点有数据支撑
-    - 洞察深刻：不停留在描述层面
-    - 建议具体：可落地，有优先级
-    """,
-    tools=[],
-    llm=llm,
-    verbose=True,
-    allow_delegation=False
-)
-
-
-# ========== Task定义 ==========
-
-def create_tasks(research_topic: str):
-
-    task1_market = Task(
-        description=f"""
-        对 [{research_topic}] 进行全面的市场数据搜集。
-
-        必须完成的搜索：
-        1. 搜索整体市场规模和增长趋势
-        2. 搜索各主要品牌的市场份额
-        3. 搜索价格分布和高端化趋势
-        4. 搜索折叠屏和AI手机的市场数据
-
-        注意：必须调用工具，不要凭记忆回答！
-        """,
-        expected_output="""
-        结构化的市场数据报告，包含：
-        1. 市场规模数据（附来源）
-        2. 品牌份额数据（附来源）
-        3. 价格分布数据（附来源）
-        4. 新兴市场数据（折叠屏、AI手机）
-        """,
-        agent=researcher
-    )
-
-    task2_competitor = Task(
-        description=f"""
-        对 [{research_topic}] 中的主要竞争品牌进行深度分析。
-
-        分析维度：
-        1. 华为 vs 苹果（高端市场竞争）
-        2. 小米 vs OPPO vs vivo（中端市场竞争）
-        3. 各品牌的核心竞争优势
-        4. 竞争格局演变趋势
-        """,
-        expected_output="""
-        竞争格局分析报告，包含：
-        1. 各主要品牌的竞争定位
-        2. 品牌间的竞争关系
-        3. 竞争态势的核心变化
-        4. 未来竞争格局预测
-        """,
-        agent=researcher,
-        context=[task1_market]
-    )
-
-    task3_analysis = Task(
-        description=f"""
-        基于已搜集的市场数据，进行深度战略分析。
-
-        分析任务：
-        1. 市场趋势分析（增长/下滑的深层原因）
-        2. 竞争格局分析（谁在赢，为什么）
-        3. 机会识别（未来6-12个月的核心机会）
-        4. 风险评估（主要威胁和挑战）
-        5. 战略建议（针对不同品牌）
-        """,
-        expected_output="""
-        深度战略分析报告，包含：
-        1. 市场趋势及深层驱动因素（数据支撑）
-        2. 竞争格局的关键判断
-        3. 3-5个核心机会点
-        4. 主要风险
-        5. 针对性战略建议
-        """,
-        agent=analyst,
-        context=[task1_market, task2_competitor]
-    )
-
-    task4_report = Task(
-        description=f"""
-        基于前三个任务的所有输出，撰写完整的研究报告。
-
-        报告结构：
-        # {research_topic} 研究报告
-
-        ## 执行摘要（300字）
-        ## 一、市场概况
-        ## 二、竞争格局
-        ## 三、核心趋势
-        ## 四、机会与风险
-        ## 五、战略建议
-
-        要求：总字数3000-5000字，Markdown格式，数据充分。
-        """,
-        expected_output="""
-        一份完整的专业研究报告：
-        - Markdown格式
-        - 包含执行摘要和完整章节
-        - 所有数据有来源
-        - 有深度洞察和可执行建议
-        - 3000-5000字
-        """,
-        agent=writer,
-        context=[task1_market, task2_competitor, task3_analysis]
-    )
-
-    return [task1_market, task2_competitor, task3_analysis, task4_report]
-
-
-# ========== 主程序 ==========
-
 class MarketResearchSystem:
-    """市场调研Agent系统"""
-
-    def __init__(self):
-        self.llm = ChatOpenAI(model="gpt-4", temperature=0.7)
-        self.researcher = researcher
-        self.analyst = analyst
-        self.writer = writer
-
     def run(self, research_topic: str, output_file: str = None):
-        print(f"\n{'='*60}")
-        print(f"开始执行市场调研：{research_topic}")
-        print(f"{'='*60}\n")
-
-        start_time = datetime.now()
-
         tasks = create_tasks(research_topic)
-
         crew = Crew(
             agents=[self.researcher, self.analyst, self.writer],
             tasks=tasks,
             process=Process.sequential,
             verbose=True
         )
-
-        try:
-            result = crew.kickoff()
-
-            duration = (datetime.now() - start_time).seconds
-            print(f"\n{'='*60}")
-            print(f"调研完成！耗时：{duration}秒")
-            print(f"{'='*60}\n")
-
-            if output_file:
-                with open(output_file, 'w', encoding='utf-8') as f:
-                    f.write(f"# {research_topic}\n\n")
-                    f.write(f"*生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}*\n\n")
-                    f.write(result)
-                print(f"报告已保存到：{output_file}")
-
-            return result
-
-        except Exception as e:
-            print(f"\n执行出错：{e}")
-            raise
-
-
-def main():
-    system = MarketResearchSystem()
-    result = system.run(
-        research_topic="2024年中国手机市场",
-        output_file="phone_market_report.md"
-    )
-
-    print("\n=== 报告预览（前500字）===")
-    print(result[:500])
-
-
-if __name__ == "__main__":
-    main()
+        result = crew.kickoff()
+        if output_file:
+            with open(output_file, 'w') as f:
+                f.write(result)
+        return result
 ```
+
+**运行方式：**
+
+```python
+system = MarketResearchSystem()
+system.run(research_topic="2024年中国手机市场",
+           output_file="phone_market_report.md")
+```
+
+完整代码约 200 行，详见上方各模块的代码片段。核心设计模式：**工具定义 → Agent 角色分配 → Task 依赖编排 → Crew 串行执行**。
 
 ---
 
 ## 六、工具调用的异常处理与重试机制
 
-### 1. 多层次异常处理
+### 1. 重试装饰器
+
+核心思路：装饰器包裹工具函数，失败后按指数退避（1s → 2s → 4s）自动重试，可配置 `max_retries`、`delay`、`backoff` 参数。
 
 ```python
-import time
-import functools
-from typing import Callable
-
-def with_retry(
-    max_retries: int = 3,
-    delay: float = 1.0,
-    backoff: float = 2.0,
-    exceptions: tuple = (Exception,)
-):
-    """
-    重试装饰器
-    max_retries: 最大重试次数
-    delay: 初始等待时间（秒）
-    backoff: 等待时间倍增系数
-    """
-    def decorator(func: Callable):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            last_exception = None
-            current_delay = delay
-
-            for attempt in range(max_retries + 1):
-                try:
-                    return func(*args, **kwargs)
-
-                except exceptions as e:
-                    last_exception = e
-
-                    if attempt < max_retries:
-                        print(f"工具调用失败（第{attempt+1}次），"
-                              f"{current_delay}秒后重试...\n错误：{e}")
-                        time.sleep(current_delay)
-                        current_delay *= backoff
-                    else:
-                        print(f"工具调用最终失败（已重试{max_retries}次）")
-
-            return f"工具调用失败，请稍后重试。错误详情：{last_exception}"
-
-        return wrapper
-    return decorator
-
-
-# 使用重试装饰器
-@tool("带重试的网络搜索")
 @with_retry(max_retries=3, delay=1.0, exceptions=(Exception,))
 def robust_search(query: str) -> str:
-    """带自动重试的网络搜索工具。"""
-    import requests
-    response = requests.get(
-        f"https://api.search.com/search?q={query}",
-        timeout=5
-    )
+    """带自动重试的网络搜索工具"""
+    response = requests.get(f"https://api.search.com/search?q={query}", timeout=5)
     return response.json()['results']
 ```
 
-### 2. 工具调用的降级策略
+### 2. 降级策略
 
-```python
-@tool("智能搜索（带降级）")
-def smart_search(query: str) -> str:
-    """
-    智能搜索：优先使用高质量API，失败时自动降级。
-    降级顺序：Serper -> Bing -> 本地知识库 -> 默认回答
-    """
+工具内部按优先级依次尝试多个数据源，失败时自动切换：
 
-    # 优先：Serper搜索
-    try:
-        result = serper_search(query)
-        if result and len(result) > 50:
-            return f"[来源：Serper]\n{result}"
-    except Exception as e:
-        print(f"Serper搜索失败：{e}，尝试降级...")
-
-    # 次选：Bing搜索
-    try:
-        result = bing_search(query)
-        if result and len(result) > 50:
-            return f"[来源：Bing]\n{result}"
-    except Exception as e:
-        print(f"Bing搜索失败：{e}，尝试降级...")
-
-    # 再次：本地知识库
-    try:
-        result = local_kb_search(query)
-        if result:
-            return f"[来源：本地知识库]\n{result}"
-    except Exception as e:
-        print(f"知识库搜索失败：{e}，使用默认回答...")
-
-    return f"暂时无法搜索'{query}'，请稍后重试或换个关键词。"
+```
+Serper API → Bing API → 本地知识库 → 默认提示
 ```
 
-### 3. 工具调用的超时控制
+每次降级返回结果时标注来源（如 `[来源：本地知识库]`），让 LLM 了解数据可信度。
 
-```python
-import signal
-from contextlib import contextmanager
+### 3. 超时控制
 
-class TimeoutError(Exception):
-    pass
-
-@contextmanager
-def timeout(seconds: int):
-    """超时控制上下文管理器"""
-    def handler(signum, frame):
-        raise TimeoutError(f"工具执行超时（{seconds}秒）")
-
-    signal.signal(signal.SIGALRM, handler)
-    signal.alarm(seconds)
-
-    try:
-        yield
-    finally:
-        signal.alarm(0)
-
-# 使用
-@tool("带超时的搜索")
-def search_with_timeout(query: str) -> str:
-    """最多等待10秒的搜索工具"""
-    try:
-        with timeout(10):
-            result = slow_search_api(query)
-            return result
-    except TimeoutError:
-        return f"搜索超时，'{query}'的结果暂时无法获取，请稍后重试"
-```
+使用 `signal.alarm` 设置最大执行时间，超时抛出异常并返回友好提示，避免工具调用无限等待。
 
 ---
 
@@ -1315,80 +795,17 @@ def search_with_timeout(query: str) -> str:
 
 ### 1. Token 消耗统计
 
-```python
-class ToolCostTracker:
-    """工具调用成本追踪器"""
-
-    def __init__(self):
-        self.call_count = {}
-        self.token_count = 0
-        self.cost_usd = 0.0
-
-    def track_tool_call(self, tool_name: str, input_text: str, output_text: str):
-        self.call_count[tool_name] = self.call_count.get(tool_name, 0) + 1
-
-        input_tokens = len(input_text) // 1.5
-        output_tokens = len(output_text) // 1.5
-        total_tokens = input_tokens + output_tokens
-
-        self.token_count += total_tokens
-        self.cost_usd += (input_tokens / 1000 * 0.03 +
-                          output_tokens / 1000 * 0.06)
-
-    def report(self):
-        print("\n=== 工具调用成本报告 ===")
-        print(f"总Token消耗：{self.token_count:,.0f}")
-        print(f"估算成本：${self.cost_usd:.4f}")
-        print("\n各工具调用次数：")
-        for tool, count in sorted(
-            self.call_count.items(),
-            key=lambda x: x[1],
-            reverse=True
-        ):
-            print(f"  {tool}：{count}次")
-
-tracker = ToolCostTracker()
-```
+核心思路：每次工具调用后记录输入/输出文本长度，按字符数估算 Token（约 1.5 字符/Token），乘以 GPT-4 定价（输入 `$0.03/1K`、输出 `$0.06/1K`）计算费用。执行结束后输出汇总报告。
 
 ### 2. 调用频率限制
 
+用滑动窗口实现限流：记录每次调用时间戳，窗口内调用次数超过阈值时自动等待，避免超出 API 配额。
+
 ```python
-import time
-from collections import defaultdict
-
-class RateLimiter:
-    """工具调用频率限制器"""
-
-    def __init__(self, max_calls: int, window_seconds: int):
-        self.max_calls = max_calls
-        self.window = window_seconds
-        self.calls = defaultdict(list)
-
-    def is_allowed(self, tool_name: str) -> bool:
-        now = time.time()
-        self.calls[tool_name] = [
-            t for t in self.calls[tool_name]
-            if now - t < self.window
-        ]
-
-        if len(self.calls[tool_name]) >= self.max_calls:
-            return False
-
-        self.calls[tool_name].append(now)
-        return True
-
-    def wait_if_needed(self, tool_name: str):
-        if not self.is_allowed(tool_name):
-            wait_time = self.window / self.max_calls
-            print(f"工具'{tool_name}'调用频率超限，等待{wait_time:.1f}秒...")
-            time.sleep(wait_time)
-
-# 配置：搜索工具每分钟最多10次
 rate_limiter = RateLimiter(max_calls=10, window_seconds=60)
 
 @tool("频率受控的搜索")
 def rate_limited_search(query: str) -> str:
-    """带频率限制的搜索，防止超出API配额"""
     rate_limiter.wait_if_needed("search")
     return actual_search(query)
 ```
@@ -1397,54 +814,23 @@ def rate_limited_search(query: str) -> str:
 
 ## 八、防止工具滥用
 
-### 1. 工具调用安全守卫
+核心防护策略：
+- **危险模式检测**：检查输入中是否包含 `rm -rf`、`DROP TABLE`、`DELETE FROM` 等危险关键词
+- **调用次数限制**：每种工具设置最大调用上限（如搜索 10 次、抓取 5 次），超限后拒绝执行
+- **安全执行包装**：工具调用前统一过 `validate_input()`，不安全则返回拒绝原因
 
 ```python
 class ToolGuard:
-    """工具调用安全守卫"""
-
-    DANGEROUS_PATTERNS = [
-        "rm -rf", "DROP TABLE", "DELETE FROM",
-        "format", "shutdown", "reboot",
-        "password", "secret", "token"
-    ]
-
-    MAX_ITERATIONS = {
-        "web_search": 10,
-        "web_scrape": 5,
-        "database_query": 20
-    }
-
-    def __init__(self):
-        self.iteration_count = defaultdict(int)
+    DANGEROUS_PATTERNS = ["rm -rf", "DROP TABLE", "DELETE FROM"]
+    MAX_ITERATIONS = {"web_search": 10, "web_scrape": 5, "database_query": 20}
 
     def validate_input(self, tool_name: str, input_text: str) -> tuple:
-        """
-        验证工具调用输入
-        返回：(is_safe, reason)
-        """
         for pattern in self.DANGEROUS_PATTERNS:
             if pattern.lower() in input_text.lower():
                 return False, f"输入包含危险关键词：{pattern}"
-
-        max_iter = self.MAX_ITERATIONS.get(tool_name, 50)
-        self.iteration_count[tool_name] += 1
-
-        if self.iteration_count[tool_name] > max_iter:
-            return False, f"工具'{tool_name}'调用次数超限（最多{max_iter}次）"
-
+        if self.iteration_count[tool_name] > self.MAX_ITERATIONS.get(tool_name, 50):
+            return False, f"调用次数超限"
         return True, "安全"
-
-    def safe_execute(self, tool_name: str, tool_func, *args, **kwargs):
-        input_str = str(args) + str(kwargs)
-        is_safe, reason = self.validate_input(tool_name, input_str)
-
-        if not is_safe:
-            return f"工具调用被拒绝：{reason}"
-
-        return tool_func(*args, **kwargs)
-
-guard = ToolGuard()
 ```
 
 ---
