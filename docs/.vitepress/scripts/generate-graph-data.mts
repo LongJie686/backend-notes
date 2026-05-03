@@ -216,6 +216,8 @@ function parseSidebarForGraph() {
         { text: 'L5: 高可用', link: '/high-concurrency/lecture-5' },
         { text: 'L6: 服务治理', link: '/high-concurrency/lecture-6' },
         { text: 'L7: 场景实战', link: '/high-concurrency/lecture-7' },
+        { text: 'L8: 服务治理', link: '/high-concurrency/lecture-8' },
+        { text: 'L9: 同城双活与容灾', link: '/high-concurrency/lecture-9' },
       ]
     },
     {
