@@ -773,268 +773,55 @@ print("第二轮答案：", result2['answer'])
 ### **完整代码**
 
 ```python
-import os
-from pathlib import Path
-from typing import List
-
-from langchain.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceBgeEmbeddings
-from langchain.vectorstores import Chroma
-from langchain_openai import ChatOpenAI
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferWindowMemory
-from langchain.prompts import PromptTemplate
-
-
 class EnterpriseKnowledgeBase:
-    """企业知识库问答系统"""
+    """企业知识库问答系统 -- BGE Embedding + Chroma + MMR检索 + 多轮对话"""
 
-    def __init__(
-        self,
-        docs_dir: str = "./docs",
-        db_dir: str = "./knowledge_db",
-        embedding_model: str = "BAAI/bge-large-zh-v1.5"
-    ):
-        self.docs_dir = docs_dir
-        self.db_dir = db_dir
-
-        print("初始化Embedding模型...")
+    def __init__(self, docs_dir="./docs", db_dir="./knowledge_db"):
         self.embeddings = HuggingFaceBgeEmbeddings(
-            model_name=embedding_model,
-            encode_kwargs={"normalize_embeddings": True}
+            model_name="BAAI/bge-large-zh-v1.5", encode_kwargs={"normalize_embeddings": True}
         )
-
         self.vectorstore = None
         self.qa_chain = None
 
-    # ========== 知识库构建 ==========
-
+    # ========== 知识库构建（加载 → 切片 → 向量化）==========
     def build_knowledge_base(self):
-        """构建知识库"""
-        print("\n开始构建知识库...")
-
-        documents = self._load_documents()
-        if not documents:
-            print("没有找到文档！")
-            return False
-
-        chunks = self._split_documents(documents)
-
-        print(f"\n向量化 {len(chunks)} 个片段...")
-        self.vectorstore = Chroma.from_documents(
-            documents=chunks,
-            embedding=self.embeddings,
-            persist_directory=self.db_dir
-        )
-
-        print(f"知识库构建完成！共 {len(chunks)} 个片段")
-        return True
+        docs = self._load_documents()  # rglob *.pdf/*.docx/*.txt, 按扩展名选择 loader
+        chunks = RecursiveCharacterTextSplitter(
+            chunk_size=500, chunk_overlap=50,
+            separators=["\n\n", "\n", "。", "！", "？", "，", " ", ""]
+        ).split_documents(docs)
+        self.vectorstore = Chroma.from_documents(chunks, self.embeddings, persist_directory=self.db_dir)
 
     def load_knowledge_base(self):
-        """加载已有知识库"""
-        if not Path(self.db_dir).exists():
-            print("知识库不存在，开始构建...")
-            return self.build_knowledge_base()
+        """从持久化目录加载已有索引"""
+        self.vectorstore = Chroma(persist_directory=self.db_dir, embedding_function=self.embeddings)
 
-        print("加载已有知识库...")
-        self.vectorstore = Chroma(
-            persist_directory=self.db_dir,
-            embedding_function=self.embeddings
-        )
-        count = self.vectorstore._collection.count()
-        print(f"知识库加载成功！共 {count} 个片段")
-        return True
-
-    def update_knowledge_base(self, new_files: List[str]):
-        """更新知识库（增量添加）"""
-        new_docs = []
-        for filepath in new_files:
-            loader = self._get_loader(filepath)
-            if loader:
-                docs = loader.load()
-                new_docs.extend(docs)
-                print(f"加载：{filepath}")
-
-        if new_docs:
-            chunks = self._split_documents(new_docs)
-            self.vectorstore.add_documents(chunks)
-            print(f"新增 {len(chunks)} 个片段")
-
-    def _load_documents(self) -> list:
-        """加载所有文档"""
-        documents = []
-        docs_path = Path(self.docs_dir)
-
-        if not docs_path.exists():
-            docs_path.mkdir(parents=True)
-            return documents
-
-        for filepath in docs_path.rglob("*"):
-            if filepath.is_file():
-                loader = self._get_loader(str(filepath))
-                if loader:
-                    try:
-                        docs = loader.load()
-                        for doc in docs:
-                            doc.metadata['filename'] = filepath.name
-                        documents.extend(docs)
-                        print(f"加载：{filepath.name}（{len(docs)} 页）")
-                    except Exception as e:
-                        print(f"加载失败：{filepath.name}，{e}")
-
-        print(f"\n共加载 {len(documents)} 个文档片段")
-        return documents
-
-    def _get_loader(self, filepath: str):
-        fp = filepath.lower()
-        if fp.endswith('.pdf'):
-            return PyPDFLoader(filepath)
-        elif fp.endswith('.docx'):
-            return Docx2txtLoader(filepath)
-        elif fp.endswith('.txt'):
-            return TextLoader(filepath, encoding='utf-8')
-        return None
-
-    def _split_documents(self, documents: list) -> list:
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=50,
-            separators=["\n\n", "\n", "。", "！", "？", "，", " ", ""]
-        )
-        chunks = splitter.split_documents(documents)
-        print(f"切片完成：{len(documents)} 个文档 -> {len(chunks)} 个片段")
-        return chunks
-
-    # ========== 问答系统 ==========
-
+    # ========== 问答系统（MMR 检索 + 多轮记忆）==========
     def setup_qa_chain(self, llm=None):
-        """初始化问答链"""
-        if not self.vectorstore:
-            print("请先加载知识库！")
-            return False
+        llm = llm or ChatOpenAI(model="gpt-4", temperature=0)
+        memory = ConversationBufferWindowMemory(k=5, return_messages=True)
+        retriever = self.vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 5, "fetch_k": 20})
 
-        if llm is None:
-            llm = ChatOpenAI(model="gpt-4", temperature=0)
-
-        qa_prompt = PromptTemplate(
-            input_variables=["context", "question", "chat_history"],
-            template="""
-你是一位专业的企业知识助手，帮助员工了解公司制度和政策。
-
-对话历史：
-{chat_history}
-
-参考文档：
-{context}
-
+        qa_prompt = PromptTemplate.from_template("""
+对话历史：{chat_history}
+参考文档：{context}
 员工问题：{question}
-
-回答要求：
-1. 只基于参考文档中的内容回答
-2. 如果文档中没有相关信息，明确说"很抱歉，我在文档中没有找到相关信息"
-3. 回答简洁清晰，重点突出
-4. 如果问题涉及具体数字或规定，请准确引用
-
-你的回答：
-"""
-        )
-
-        memory = ConversationBufferWindowMemory(
-            memory_key="chat_history",
-            k=5,
-            return_messages=True,
-            output_key="answer"
-        )
-
-        retriever = self.vectorstore.as_retriever(
-            search_type="mmr",
-            search_kwargs={"k": 5, "fetch_k": 20}
-        )
+要求：只基于文档回答，不知道就说"未找到相关信息"。""")
 
         self.qa_chain = ConversationalRetrievalChain.from_llm(
-            llm=llm,
-            retriever=retriever,
-            memory=memory,
-            return_source_documents=True,
-            verbose=False,
-            combine_docs_chain_kwargs={"prompt": qa_prompt}
+            llm=llm, retriever=retriever, memory=memory,
+            return_source_documents=True, combine_docs_chain_kwargs={"prompt": qa_prompt}
         )
 
-        print("问答系统初始化完成！")
-        return True
-
     def ask(self, question: str) -> dict:
-        """提问"""
-        if not self.qa_chain:
-            return {"error": "请先初始化问答链"}
-
+        """返回 {answer, sources, question}"""
         result = self.qa_chain.invoke({"question": question})
-
         sources = []
         for doc in result.get('source_documents', []):
-            filename = doc.metadata.get('filename', '未知文件')
-            page = doc.metadata.get('page', '')
-            source = f"{filename}"
-            if page:
-                source += f" 第{page+1}页"
-            if source not in sources:
-                sources.append(source)
-
-        return {
-            "answer": result['answer'],
-            "sources": sources,
-            "question": question
-        }
-
-    def chat(self):
-        """交互式对话"""
-        print("\n" + "="*50)
-        print("企业知识库助手已就绪！")
-        print("输入 'quit' 退出，输入 'clear' 清除对话历史")
-        print("="*50)
-
-        while True:
-            question = input("\n你的问题：").strip()
-
-            if not question:
-                continue
-            elif question.lower() == 'quit':
-                print("再见！")
-                break
-            elif question.lower() == 'clear':
-                self.qa_chain.memory.clear()
-                print("对话历史已清除")
-                continue
-
-            print("\n思考中...")
-            result = self.ask(question)
-
-            print(f"\n答案：{result['answer']}")
-            if result['sources']:
-                print(f"\n来源：{', '.join(result['sources'])}")
-
-
-# ========== 主程序 ==========
-
-def main():
-    kb = EnterpriseKnowledgeBase(
-        docs_dir="./company_docs",
-        db_dir="./knowledge_db"
-    )
-
-    success = kb.load_knowledge_base()
-    if not success:
-        return
-
-    llm = ChatOpenAI(model="gpt-4", temperature=0)
-    kb.setup_qa_chain(llm=llm)
-
-    kb.chat()
-
-
-if __name__ == "__main__":
-    main()
+            src = doc.metadata.get('filename', '未知')
+            if doc.metadata.get('page'): src += f" 第{doc.metadata['page']+1}页"
+            if src not in sources: sources.append(src)
+        return {"answer": result['answer'], "sources": sources, "question": question}
 ```
 
 ---

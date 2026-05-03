@@ -794,119 +794,33 @@ State（状态）：在整个图中传递的数据
 ```python
 from typing import TypedDict, Annotated, Sequence
 import operator
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
-from langchain_core.tools import tool
 
-# 定义状态
 class AgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], operator.add]  # 消息历史
-    next_step: str  # 下一步节点
+    messages: Annotated[Sequence[BaseMessage], operator.add]  # 消息累积
+    next_step: str  # 路由控制：tools / reflect / end
 
-# 定义工具
-@tool
-def search(query: str) -> str:
-    """搜索互联网"""
-    return f"搜索结果：关于 '{query}' 的信息是 xxx"
-
-tools = [search]
-tool_map = {t.name: t for t in tools}
-
-# 定义节点
-def agent_node(state: AgentState):
-    """LLM 决策节点"""
-    llm = ChatOpenAI(model="gpt-4").bind_tools(tools)
-    messages = state["messages"]
-    response = llm.invoke(messages)
-
-    return {
-        "messages": [response],
-        "next_step": "tools" if response.tool_calls else "reflect"
-    }
-
-def tools_node(state: AgentState):
-    """工具执行节点"""
-    last_message = state["messages"][-1]
-    tool_messages = []
-
-    for tool_call in last_message.tool_calls:
-        tool = tool_map[tool_call["name"]]
-        result = tool.invoke(tool_call["args"])
-        tool_messages.append(ToolMessage(
-            content=result,
-            tool_call_id=tool_call["id"]
-        ))
-
-    return {
-        "messages": tool_messages,
-        "next_step": "agent"
-    }
-
-def reflect_node(state: AgentState):
-    """反思节点：检查答案质量"""
-    messages = state["messages"]
-
-    reflect_prompt = """你是一个质量控制专家。
-请检查以下对话，判断助手的回答是否充分、准确。
-如果回答不够好，请指出问题并给出改进建议。
-如果回答已经很好，请输出 "PASS"。
-
-对话：
-{conversation}
-
-评估："""
-
-    conversation = "\n".join([f"{m.type}: {m.content}" for m in messages])
-    llm = ChatOpenAI(model="gpt-4")
-    result = llm.invoke(reflect_prompt.format(conversation=conversation))
-
-    if "PASS" in result.content:
-        return {"messages": [], "next_step": "end"}
-    else:
-        return {
-            "messages": [HumanMessage(content=f"请改进你的回答。反思意见：{result.content}")],
-            "next_step": "agent"
-        }
+# 三个核心节点
+def agent_node(state):   # LLM 决策：bind_tools → 判断是否 tool_calls
+def tools_node(state):   # 执行工具 → 返回 ToolMessage
+def reflect_node(state): # 反思质量 → PASS 则 end，否则回 agent
 
 # 构建图
 workflow = StateGraph(AgentState)
-
-# 添加节点
 workflow.add_node("agent", agent_node)
 workflow.add_node("tools", tools_node)
 workflow.add_node("reflect", reflect_node)
-
-# 添加边
 workflow.set_entry_point("agent")
 
-# 条件边：根据 next_step 决定走向
-workflow.add_conditional_edges(
-    "agent",
-    lambda state: state["next_step"],
-    {
-        "tools": "tools",
-        "reflect": "reflect"
-    }
-)
-
+# 条件路由：agent → tools/reflect, tools → agent, reflect → agent/end
+workflow.add_conditional_edges("agent", lambda s: s["next_step"],
+    {"tools": "tools", "reflect": "reflect"})
 workflow.add_edge("tools", "agent")
-workflow.add_conditional_edges(
-    "reflect",
-    lambda state: state["next_step"],
-    {
-        "agent": "agent",
-        "end": END
-    }
-)
+workflow.add_conditional_edges("reflect", lambda s: s["next_step"],
+    {"agent": "agent", "end": END})
 
-# 编译
 app = workflow.compile()
-
-# 运行
-inputs = {"messages": [HumanMessage(content="2024年诺贝尔文学奖得主是谁？")]}
-result = app.invoke(inputs)
-print(result["messages"][-1].content)
+result = app.invoke({"messages": [HumanMessage(content="2024年诺贝尔文学奖得主是谁？")]})
 ```
 
 ---
@@ -956,71 +870,24 @@ print(result["messages"][-1].content)
 ### 2. 多 Agent 实战：研究团队
 
 ```python
-from langchain_core.messages import HumanMessage
-from langchain_openai import ChatOpenAI
-
-# 研究员 Agent
-researcher_prompt = """你是一个研究员。你的任务是搜索和分析信息。
-你只能做研究，不能写最终报告。
-请基于搜索结果，列出关键事实和数据。
-"""
-
-# 写手 Agent
-writer_prompt = """你是一个技术写手。你的任务是基于研究员提供的事实，
-撰写结构清晰、语言流畅的报告。
-你不能自己编造数据，必须完全基于提供的事实。
-"""
-
-# 审核 Agent
-reviewer_prompt = """你是一个审核专家。请检查报告：
-1. 是否有事实错误
-2. 是否有遗漏的重要信息
-3. 语言是否通顺
-如果有问题，指出具体修改意见。如果没问题，输出 "APPROVED"。
-"""
-
+# 多 Agent 协作核心代码（流水线模式：研究员 → 写手 → 审核）
 def run_multi_agent(topic: str):
     llm = ChatOpenAI(model="gpt-4")
 
-    # 研究员工作
-    research_result = llm.invoke([
-        HumanMessage(content=researcher_prompt + f"\n研究主题：{topic}")
-    ])
-    print("=== 研究员输出 ===")
-    print(research_result.content)
+    # 1. 研究员：搜索分析，产出关键事实（不写最终报告）
+    facts = llm.invoke([HumanMessage(content=f"你是研究员。列出关于'{topic}'的关键事实。")])
 
-    # 写手工作
-    draft = llm.invoke([
-        HumanMessage(content=writer_prompt + f"\n研究事实：\n{research_result.content}\n\n请撰写报告。")
-    ])
-    print("=== 写手初稿 ===")
-    print(draft.content)
+    # 2. 写手：基于研究员事实撰写报告（不能编造数据）
+    draft = llm.invoke([HumanMessage(content=f"基于事实：\n{facts.content}\n\n撰写报告。")])
 
-    # 审核循环
-    max_iterations = 3
-    current_draft = draft.content
-
-    for i in range(max_iterations):
-        review = llm.invoke([
-            HumanMessage(content=reviewer_prompt + f"\n报告内容：\n{current_draft}")
-        ])
-        print(f"=== 审核意见 (第{i+1}轮) ===")
-        print(review.content)
-
+    # 3. 审核循环：审核 → 不通过 → 写手修改 → 再审核（最多3轮）
+    for i in range(3):
+        review = llm.invoke([HumanMessage(content=f"审核报告：\n{draft.content}\n\n通过输出APPROVED。")])
         if "APPROVED" in review.content:
-            print("审核通过！")
-            break
+            return draft.content
+        draft = llm.invoke([HumanMessage(content=f"根据意见修改：\n{review.content}")])
 
-        # 写手修改
-        revision = llm.invoke([
-            HumanMessage(content=writer_prompt + f"\n原报告：\n{current_draft}\n\n修改意见：\n{review.content}\n\n请修改报告。")
-        ])
-        current_draft = revision.content
-
-    return current_draft
-
-# 使用
-# final_report = run_multi_agent("2024年AI大模型发展趋势")
+    return draft.content
 ```
 
 ---
