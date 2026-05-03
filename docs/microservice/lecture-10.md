@@ -249,17 +249,20 @@ Monitor：监控中心
 - MDC（线程上下文）
 
 **实现：**
-```java
-// 网关生成TraceID
-String traceId = UUID.randomUUID().toString();
-MDC.put("traceId", traceId);
+```python
+import uuid
+import logging
 
-// RPC调用时传递
-header.set("X-Trace-Id", traceId);
+# 网关生成TraceID
+trace_id = str(uuid.uuid4())
+# 使用 logging 的 extra 或 contextvars 传递上下文
+logger = logging.getLogger(__name__)
 
-// 后续服务从Header获取
-String traceId = header.get("X-Trace-Id");
-MDC.put("traceId", traceId);
+# RPC调用时传递（在请求头中携带）
+headers = {"X-Trace-Id": trace_id}
+
+# 后续服务从Header获取
+trace_id = request.headers.get("X-Trace-Id")
 ```
 
 ### 2. 怎么定位"某个服务偶尔超时"？

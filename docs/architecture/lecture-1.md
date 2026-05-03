@@ -78,18 +78,18 @@
 
 **不分层：** 所有逻辑混在一起，难以理解、测试、复用、修改
 
-```java
-public void createOrder(OrderRequest req) {
-    // 校验 + 查询 + 计算 + 扣库存 + 创建订单 + 发消息 全混一起
-}
+```python
+def create_order(req):
+    # 校验 + 查询 + 计算 + 扣库存 + 创建订单 + 发消息 全混一起
+    pass
 ```
 
 **分层后：** Controller -> Service -> Repository，职责清晰，复杂度被有效控制
 
-```java
-// Controller 层只管入口
-// Service 层管业务逻辑
-// Repository 层管数据访问
+```python
+# Controller 层只管入口
+# Service 层管业务逻辑
+# Repository 层管数据访问
 ```
 
 ### 为什么微服务能分解复杂度

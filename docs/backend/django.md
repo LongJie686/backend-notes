@@ -8,7 +8,6 @@
 | ORM | 强大的数据库抽象层，支持多种数据库 |
 | Admin 后台 | 开箱即用的管理界面 |
 | 中间件 | 请求/响应处理的插件机制 |
-| 模板引擎 | 内置 Django Template Language |
 | 安全性 | 内置 CSRF / XSS / SQL 注入防护 |
 
 ## 项目结构
@@ -39,76 +38,69 @@ class Book(models.Model):
     title = models.CharField(max_length=200)
     author = models.ForeignKey(Author, on_delete=models.CASCADE, related_name="books")
     published = models.DateField()
-
-# 查询
-Book.objects.filter(author__name="Alice")                        # 关联查询
-Book.objects.values("author__name").annotate(count=Count("id"))  # 聚合
-Book.objects.select_related("author").all()                      # JOIN 优化
-Book.objects.create(title="Guide", author=author, published="2025-01-01")
-Book.objects.filter(pk=1).update(title="New Title")
 ```
 
-```bash
-python manage.py makemigrations   # 生成迁移文件
-python manage.py migrate          # 执行迁移
-```
+| 操作 | 示例 |
+|------|------|
+| 关联查询 | `Book.objects.filter(author__name="Alice")` |
+| 聚合 | `Book.objects.values("author__name").annotate(count=Count("id"))` |
+| JOIN优化 | `Book.objects.select_related("author").all()` |
+| 创建 | `Book.objects.create(title="G", author=a)` |
+| 更新 | `Book.objects.filter(pk=1).update(title="New")` |
+| 迁移 | `python manage.py makemigrations && migrate` |
 
 ## 视图与路由
 
+| 类型 | 特点 | 适用 |
+|------|------|------|
+| FBV（函数视图） | 简单直接 | 逻辑简单的接口 |
+| CBV（类视图） | GET/POST自动分发 | RESTful 风格 |
+
 ```python
-from django.http import JsonResponse
-from django.views import View
-
-# FBV（函数视图）
-def user_list(request):
-    users = User.objects.all().values("id", "name")
-    return JsonResponse(list(users), safe=False)
-
-# CBV（类视图）
+# CBV 示例
 class UserDetailView(View):
     def get(self, request, pk):
-        user = User.objects.get(pk=pk)
-        return JsonResponse({"id": user.id, "name": user.name})
+        return JsonResponse({"id": pk})
 ```
 
 ```python
 # urls.py
 urlpatterns = [
-    path("users/", views.user_list),
     path("users/<int:pk>/", views.UserDetailView.as_view()),
 ]
 ```
 
 ## 中间件
 
+中间件是请求/响应处理的钩子链，可用于日志、鉴权、跨域等。
+
 ```python
 class SimpleLogMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
-
     def __call__(self, request):
-        print(f"Request: {request.method} {request.path}")
         response = self.get_response(request)
         return response
 ```
 
 ## Django REST Framework
 
-```python
-from rest_framework import serializers, viewsets
-from rest_framework.routers import DefaultRouter
+| 组件 | 作用 |
+|------|------|
+| Serializer | 序列化/反序列化 + 字段校验 |
+| ModelViewSet | 自动生成 CRUD 接口 |
+| Router | 自动注册 URL 路由 |
 
+```python
 class BookSerializer(serializers.ModelSerializer):
-    author_name = serializers.CharField(source="author.name", read_only=True)
     class Meta:
         model = Book
-        fields = ["id", "title", "author_name", "published"]
+        fields = ["id", "title", "published"]
 
 class BookViewSet(viewsets.ModelViewSet):
-    queryset = Book.objects.select_related("author").all()
+    queryset = Book.objects.all()
     serializer_class = BookSerializer
 
 router = DefaultRouter()
 router.register(r"books", BookViewSet)
-# urls.py -> urlpatterns = [*router.urls]
 ```
