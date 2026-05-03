@@ -205,7 +205,8 @@ export default defineConfig({
           { text: 'L5: 高可用设计（限流/熔断/降级）', link: '/high-concurrency/lecture-5' },
           { text: 'L6: 秒杀系统全链路设计', link: '/high-concurrency/lecture-6' },
           { text: 'L7: 信息流系统设计', link: '/high-concurrency/lecture-7' },
-          { text: 'L8: 分布式服务治理', link: '/high-concurrency/lecture-8' }
+          { text: 'L8: 分布式服务治理', link: '/high-concurrency/lecture-8' },
+          { text: 'L9: 同城双活与容灾设计', link: '/high-concurrency/lecture-9' }
         ]
       },
       {
