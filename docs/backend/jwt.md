@@ -257,7 +257,7 @@ def decode_session_token(session_token: str) -> dict | None:
 ### 核心代码
 
 ```python
-import base64, hmac, hashlib, json
+import base64
 
 def verify_webhook_auth(auth_header: str, webhook_secret: str) -> bool:
     if not auth_header or not auth_header.startswith("Bearer "):
@@ -286,74 +286,37 @@ def verify_webhook_auth(auth_header: str, webhook_secret: str) -> bool:
 
 ## 六、安全配置管理
 
-### 1. 集中化配置
+### 配置项一览
 
-```python
-from dataclasses import dataclass, field
+| 分类 | 配置项 | 默认值 | 说明 |
+|------|-------|--------|------|
+| JWT | `jwt_secret_key` | `""` | 密钥，启动时必填，建议 >= 32 字符 |
+| JWT | `jwt_algorithm` | `RS256` | 签名算法 |
+| JWT | `jwt_expiration_hours` | `24` | Access Token 过期时间（小时） |
+| JWT | `jwt_refresh_expiration_days` | `7` | Refresh Token 过期时间（天） |
+| 会话 | `session_timeout_minutes` | `30` | 会话超时 |
+| 会话 | `max_concurrent_sessions_per_user` | `5` | 单用户最大并发会话数 |
+| CORS | `allowed_origins` | `["http://localhost:3000"]` | 允许的跨域源 |
+| CORS | `allowed_methods` | `GET,POST,PUT,DELETE` | 允许的 HTTP 方法 |
+| CORS | `allow_credentials` | `True` | 是否允许携带凭据 |
+| 安全 | `rate_limit_requests_per_minute` | `60` | 每分钟请求限制 |
+| 密码 | `password_hash_algorithm` | `bcrypt` | 密码哈希算法 |
+| 密码 | `password_hash_rounds` | `12` | 哈希轮次 |
 
-@dataclass
-class SecurityConfig:
-    """安全配置（从环境变量加载）"""
-    # JWT
-    jwt_secret_key: str = ""
-    jwt_algorithm: str = "RS256"
-    jwt_expiration_hours: int = 24
-    jwt_refresh_expiration_days: int = 7
+### 配置校验
 
-    # 会话
-    session_timeout_minutes: int = 30
-    max_concurrent_sessions_per_user: int = 5
+启动时校验关键项：`jwt_secret_key` 未设置或长度 < 32 字符时告警；`allowed_origins` 包含 `*` 且 `allow_credentials=True` 时告警（CORS 安全风险）。
 
-    # 安全头
-    security_headers_enabled: bool = True
-    csrf_protection_enabled: bool = True
-    rate_limiting_enabled: bool = True
-    rate_limit_requests_per_minute: int = 60
+### 安全响应头
 
-    # CORS
-    allowed_origins: list = field(default_factory=lambda: ["http://localhost:3000"])
-    allowed_methods: list = field(default_factory=lambda: ["GET", "POST", "PUT", "DELETE"])
-    allow_credentials: bool = True
-
-    # 密码
-    password_hash_algorithm: str = "bcrypt"
-    password_hash_rounds: int = 12
-```
-
-### 2. 配置校验
-
-```python
-class SecurityConfigManager:
-    def _validate_config(self):
-        """启动时校验安全配置"""
-        warnings, errors = [], []
-
-        if not self.config.jwt_secret_key:
-            errors.append("JWT_SECRET_KEY 未设置")
-        elif len(self.config.jwt_secret_key) < 32:
-            warnings.append("JWT_SECRET_KEY 长度过短，建议至少 32 字符")
-
-        if "*" in self.config.allowed_origins and self.config.allow_credentials:
-            warnings.append("CORS：允许所有源且启用凭据存在安全风险")
-
-        for error in errors:
-            raise ValueError(f"安全配置错误: {error}")
-```
-
-### 3. 安全响应头
-
-```python
-def get_security_headers(self) -> dict:
-    """安全相关的 HTTP 响应头"""
-    return {
-        "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "DENY",
-        "X-XSS-Protection": "1; mode=block",
-        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-        "Content-Security-Policy": "default-src 'self'",
-    }
-```
+| 响应头 | 值 | 作用 |
+|-------|-----|------|
+| X-Content-Type-Options | nosniff | 禁止 MIME 类型嗅探 |
+| X-Frame-Options | DENY | 禁止页面被嵌入 iframe |
+| X-XSS-Protection | 1; mode=block | 启用浏览器 XSS 过滤器 |
+| Strict-Transport-Security | max-age=31536000; includeSubDomains | 强制 HTTPS |
+| Referrer-Policy | strict-origin-when-cross-origin | 控制 Referrer 发送策略 |
+| Content-Security-Policy | default-src 'self' | 限制资源加载来源 |
 
 ---
 
