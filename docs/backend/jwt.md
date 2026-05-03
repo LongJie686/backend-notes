@@ -67,168 +67,90 @@ HMACSHA256(base64url(header) + "." + base64url(payload), secret_key)
 
 ## 二、Token 生命周期管理
 
-### 1. Token 创建
+### JWTHandler 方法一览
+
+| 方法 | 用途 | 输入 | 输出 |
+|------|------|------|------|
+| `__init__(secret_key, algorithm, expiration_hours)` | 初始化处理器 | 密钥、算法、过期小时数 | -- |
+| `create_token(user_id, username, ...)` | 创建 JWT，设置标准字段 sub/iat/exp | 用户信息 | JWT 字符串 |
+| `decode_token(token)` | 解码 JWT，RS256 跳过签名但仍验证过期 | 令牌 | payload dict |
+| `verify_token(token)` | 验证令牌有效性 | 令牌 | bool |
+| `refresh_token(token)` | 解码旧令牌后生成新令牌 | 旧令牌 | 新令牌 or None |
+| `decode_token_with_fallback(token)` | 过期令牌降级提取用户信息，标记 `expired=True` | 令牌 | payload dict or None |
+
+### Token 创建（完整示例）
 
 ```python
 import jwt
 from datetime import datetime, timedelta
 
 class JWTHandler:
-    """JWT 令牌处理器"""
-
-    def __init__(self, secret_key: str, algorithm: str = "HS256",
-                 expiration_hours: int = 24):
+    def __init__(self, secret_key: str, algorithm="HS256", expiration_hours=24):
         self.secret_key = secret_key
         self.algorithm = algorithm
         self.expiration_hours = expiration_hours
 
     def create_token(self, user_id: str, username: str,
-                     email: str = None, roles: list = None,
-                     expires_delta: timedelta = None) -> str:
-        """创建 JWT 令牌"""
+                     email=None, roles=None, expires_delta=None) -> str:
         expires = datetime.utcnow() + (
-            expires_delta or timedelta(hours=self.expiration_hours)
-        )
-
+            expires_delta or timedelta(hours=self.expiration_hours))
         payload = {
-            "sub": user_id,           # 用户ID（标准字段）
-            "username": username,     # 用户名
-            "exp": expires.timestamp(),  # 过期时间
-            "iat": datetime.utcnow().timestamp(),  # 签发时间
+            "sub": user_id, "username": username,
+            "exp": expires.timestamp(), "iat": datetime.utcnow().timestamp(),
         }
-
-        if email:
-            payload["email"] = email
-        if roles:
-            payload["roles"] = roles
-
+        if email: payload["email"] = email
+        if roles: payload["roles"] = roles
         return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
 ```
 
-### 2. Token 验证与解码
+### Token 解码（算法自适应）
 
 ```python
 def decode_token(self, token: str) -> dict:
-    """解码 JWT 令牌（支持多种算法回退）"""
-    # 1. 读取令牌头部，判断算法
     header = jwt.get_unverified_header(token)
-    token_alg = header.get("alg")
-
-    # 2. RS256 算法（非对称，通常无私钥，不验证签名）
-    if token_alg == "RS256":
-        payload = jwt.decode(
-            token,
-            options={
-                "verify_signature": False,  # 无私钥，跳过签名验证
-                "verify_exp": True,         # 仍验证过期时间
-                "verify_aud": False,
-                "verify_iss": False,
-            }
-        )
-        return payload
-
-    # 3. HS256 等对称算法（有密钥，完整验证）
-    payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
-    return payload
-
-
-def verify_token(self, token: str) -> bool:
-    """验证令牌是否有效"""
-    try:
-        self.decode_token(token)
-        return True
-    except (jwt.InvalidTokenError, jwt.ExpiredSignatureError):
-        return False
+    if header.get("alg") == "RS256":
+        # 无私钥，跳过签名验证，仍验证过期
+        return jwt.decode(token, options={
+            "verify_signature": False, "verify_exp": True})
+    return jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
 ```
 
-### 3. Token 刷新
-
-```python
-def refresh_token(self, token: str) -> str | None:
-    """刷新令牌：解码旧令牌 → 生成新令牌"""
-    try:
-        payload = self.decode_token(token)
-        return self.create_token(
-            user_id=payload["sub"],
-            username=payload.get("username"),
-            email=payload.get("email"),
-            roles=payload.get("roles", []),
-        )
-    except (jwt.InvalidTokenError, jwt.ExpiredSignatureError):
-        return None
-```
-
-### 4. 过期令牌降级处理
-
-```python
-def decode_token_with_fallback(self, token: str) -> dict | None:
-    """解码令牌，过期时降级提取用户信息"""
-    try:
-        return jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
-    except jwt.ExpiredSignatureError:
-        # 过期令牌：不验证时间，仅提取用户信息
-        payload = jwt.decode(
-            token,
-            options={"verify_signature": False, "verify_exp": False}
-        )
-        payload["expired"] = True  # 标记为过期
-        return payload
-    except jwt.InvalidTokenError:
-        return None
-```
+`verify_token` 和 `refresh_token` 基于 `decode_token` 实现：前者返回 bool，后者解码后重新调用 `create_token`。`decode_token_with_fallback` 在过期时跳过 exp 验证，仅提取用户信息并标记 `expired=True`。
 
 ---
 
 ## 三、FastAPI 认证中间件
 
-### 1. Bearer Token 中间件
+### 认证层级
+
+| 层级 | 组件 | 职责 |
+|------|------|------|
+| 全局认证 | `JWTAuthMiddleware` (HTTPBearer) | 提取 Authorization 头，解码 JWT，设置 UserContext |
+| 路由级认证 | `create_jwt_dependency()` | 支持必选/可选认证，注入当前用户 |
+| 角色检查 | `require_roles()` | 校验用户角色，403 拒绝无权限用户 |
+
+### 核心实现
 
 ```python
-from fastapi import Request, HTTPException, status, Depends
+from fastapi import Request, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+# 1. Bearer Token 中间件
 class JWTAuthMiddleware(HTTPBearer):
-    """JWT 认证中间件"""
-
-    def __init__(self, jwt_handler: JWTHandler, auto_error: bool = True):
+    def __init__(self, jwt_handler: JWTHandler, auto_error=True):
         super().__init__(auto_error=auto_error)
         self.jwt_handler = jwt_handler
 
     async def __call__(self, request: Request) -> dict | None:
-        # 1. 提取 Authorization 头
-        credentials: HTTPAuthorizationCredentials = await super().__call__(request)
+        credentials = await super().__call__(request)
         if not credentials:
             if self.auto_error:
                 raise HTTPException(status_code=401, detail="未提供认证凭据")
             return None
+        return self.jwt_handler.decode_token(credentials.credentials)
 
-        # 2. 验证令牌
-        token = credentials.credentials
-        payload = self.jwt_handler.decode_token(token)
-
-        # 3. 提取用户信息并设置上下文
-        user_context = UserContext(
-            user_id=payload.get("sub") or payload.get("user_id"),
-            username=payload.get("username") or payload.get("email", "").split("@")[0],
-            email=payload.get("email"),
-            roles=payload.get("roles", []),
-            token=token,
-        )
-        UserContextManager.set_user_context(user_context)
-
-        return payload
-```
-
-### 2. 依赖注入：路由级认证
-
-```python
-def create_jwt_dependency(jwt_handler: JWTHandler, optional: bool = False):
-    """创建 JWT 认证依赖项
-
-    Args:
-        jwt_handler: JWT 处理器
-        optional: True 表示可选认证（未登录也能访问，但登录后获取用户信息）
-    """
+# 2. 依赖注入（支持 optional 模式）
+def create_jwt_dependency(jwt_handler: JWTHandler, optional=False):
     security = HTTPBearer(auto_error=not optional)
 
     async def get_current_user(
@@ -238,59 +160,36 @@ def create_jwt_dependency(jwt_handler: JWTHandler, optional: bool = False):
             if optional:
                 return None
             raise HTTPException(status_code=401, detail="未提供认证凭据")
-
-        token = credentials.credentials
-        payload = jwt_handler.decode_token(token)
-
+        payload = jwt_handler.decode_token(credentials.credentials)
         return UserContext(
-            user_id=payload.get("sub"),
-            username=payload.get("username"),
-            email=payload.get("email"),
-            roles=payload.get("roles", []),
-            token=token,
-        )
-
+            user_id=payload.get("sub"), username=payload.get("username"),
+            email=payload.get("email"), roles=payload.get("roles", []))
     return get_current_user
 
-
-# 使用示例
-jwt_handler = JWTHandler(secret_key="your-secret-key")
-require_auth = create_jwt_dependency(jwt_handler, optional=False)
-optional_auth = create_jwt_dependency(jwt_handler, optional=True)
-
-@app.get("/profile")
-async def get_profile(user: UserContext = Depends(require_auth)):
-    return {"user_id": user.user_id, "username": user.username}
-
-@app.get("/public-data")
-async def get_public_data(user: UserContext | None = Depends(optional_auth)):
-    # 未登录也能访问，登录后可个性化
-    return {"user": user.username if user else "anonymous"}
-```
-
-### 3. 角色权限装饰器
-
-```python
+# 3. 角色检查装饰器
 def require_roles(*required_roles: str):
-    """角色权限检查装饰器"""
     def role_checker(current_user: UserContext = Depends()):
         if not current_user:
             raise HTTPException(status_code=401, detail="用户未认证")
-
-        if not any(role in current_user.roles for role in required_roles):
-            raise HTTPException(
-                status_code=403,
-                detail=f"需要以下角色之一: {', '.join(required_roles)}",
-            )
+        if not any(r in current_user.roles for r in required_roles):
+            raise HTTPException(status_code=403,
+                detail=f"需要角色: {', '.join(required_roles)}")
         return current_user
-
     return role_checker
+```
 
+### 使用示例
 
-# 使用
-@app.get("/admin/dashboard")
-async def admin_dashboard(user: UserContext = Depends(require_roles("ADMIN", "SYSTEM"))):
-    return {"message": f"管理员面板，欢迎 {user.username}"}
+```python
+jwt_handler = JWTHandler(secret_key="your-secret-key")
+
+@app.get("/profile")
+async def get_profile(user=Depends(create_jwt_dependency(jwt_handler))):
+    return {"user_id": user.user_id}
+
+@app.get("/admin")
+async def admin(user=Depends(require_roles("ADMIN"))):
+    return {"message": f"欢迎 {user.username}"}
 ```
 
 ---
@@ -299,78 +198,45 @@ async def admin_dashboard(user: UserContext = Depends(require_roles("ADMIN", "SY
 
 浏览器 WebSocket API 不支持自定义 Header，需要通过 Cookie 传递 JWT。
 
-### 1. 从 WebSocket 请求提取 Cookie
+### 认证流程
+
+1. 从 WebSocket 请求头读取 Cookie（兼容 `cookie`/`Cookie`/`COOKIE` 多种大小写）
+2. 解析 Cookie 字符串，提取 `internal_access_token`
+3. 调用 `decode_session_token()` 解码 JWT 并做数据库二次验证
+4. 验证通过则继续业务处理，否则 close(code=4001)
+
+### 核心代码
 
 ```python
 from urllib.parse import unquote
 
 def extract_token_from_websocket(headers: dict) -> str | None:
-    """从 WebSocket 请求头提取 JWT Cookie"""
-    # WebSocket 头部键名可能不同
-    cookie_header = None
-    for key in ["cookie", "Cookie", "COOKIE"]:
-        if key in headers:
-            cookie_header = headers[key]
-            break
-
+    """从 WebSocket 请求头解析 Cookie 并提取 JWT 令牌"""
+    cookie_header = next(
+        (headers[k] for k in ["cookie", "Cookie", "COOKIE"] if k in headers), None)
     if not cookie_header:
         return None
-
-    # 解析 Cookie
     cookies = {}
     for pair in cookie_header.split(";"):
         if "=" in pair:
             name, value = pair.strip().split("=", 1)
             cookies[name.strip()] = unquote(value.strip())
+    return cookies.get("internal_access_token")
 
-    return cookies.get("internal_access_token")  # JWT 令牌的 Cookie 名称
-
-
-# 在 WebSocket 处理中使用
-async def websocket_handler(websocket):
-    # 从 Cookie 中提取并验证 JWT
-    token = extract_token_from_websocket(websocket.headers)
-    if not token:
-        await websocket.close(code=4001, reason="未提供认证令牌")
-        return
-
-    user_info = decode_session_token(token)
-    if not user_info:
-        await websocket.close(code=4001, reason="认证令牌无效")
-        return
-
-    # 认证通过，处理业务
-    user_id = user_info["user_id"]
-    await handle_websocket_messages(websocket, user_id)
-```
-
-### 2. 数据库二次验证
-
-```python
 def decode_session_token(session_token: str) -> dict | None:
-    """解码令牌并验证用户存在性"""
+    """解码 JWT 并验证用户存在性（数据库二次验证）"""
     try:
-        jwt_handler = JWTHandler()
-        payload = jwt_handler.decode_token(session_token)
-
+        payload = JWTHandler().decode_token(session_token)
         user_id = payload.get("sub") or payload.get("user_id")
-
-        # 二次验证：确认用户在数据库中存在
-        user_repo = UserRepository()
-        db_user = user_repo.find_by_user_id(user_id)
-        if not db_user:
-            return None  # 用户已被删除/禁用
-
+        if not UserRepository().find_by_user_id(user_id):
+            return None
         return {
             "user_id": user_id,
             "username": payload.get("username", "unknown"),
             "email": payload.get("email"),
             "roles": payload.get("roles", []),
         }
-
-    except jwt.ExpiredSignatureError:
-        return None
-    except jwt.InvalidTokenError:
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
 ```
 
@@ -380,68 +246,41 @@ def decode_session_token(session_token: str) -> dict | None:
 
 微服务间调用不走用户 JWT，使用系统级认证。
 
-### 1. 多格式 Webhook 认证
+### 1. 支持的认证格式
+
+| 格式 | 令牌结构 | 验证方式 |
+|------|---------|---------|
+| 系统级 JWT | `xxx.yyy.zzz`（三段） | HMAC-SHA256 签名验证，payload 须含 `system` + `webhook` 字段 |
+| SYSTEM 格式 | Base64 → `SYSTEM:<secret>:<timestamp>` | 比对 secret |
+| webhook 格式 | Base64 → `webhook:<secret>` | 比对 secret |
+
+### 核心代码
 
 ```python
-import base64
-import hmac
-import hashlib
+import base64, hmac, hashlib, json
 
 def verify_webhook_auth(auth_header: str, webhook_secret: str) -> bool:
-    """验证服务间 webhook 认证（支持多种格式）"""
     if not auth_header or not auth_header.startswith("Bearer "):
         return False
-
     token = auth_header[7:]
 
-    # 格式 1：JWT 格式（三个点分隔）
+    # 格式 1：JWT 格式
     if token.count(".") == 2:
         return _verify_system_jwt(token, webhook_secret)
 
     # 格式 2：Base64 编码
     try:
         decoded = base64.b64decode(token).decode("utf-8")
-
-        # SYSTEM:<secret>:<timestamp>
         if decoded.startswith("SYSTEM:"):
-            parts = decoded.split(":")
-            if len(parts) == 3:
-                _, provided_secret, _ = parts
-                return provided_secret == webhook_secret
-
-        # webhook:<secret>
+            return decoded.split(":")[1] == webhook_secret
         if decoded.startswith("webhook:"):
             return decoded[8:] == webhook_secret
-
     except Exception:
         pass
-
     return False
-
-
-def _verify_system_jwt(token: str, secret: str) -> bool:
-    """验证系统级 JWT（HMAC-SHA256 签名）"""
-    parts = token.split(".")
-    if len(parts) != 3:
-        return False
-
-    # 解码 payload 检查是否为系统级令牌
-    payload = json.loads(base64.b64decode(parts[1] + "==").decode("utf-8"))
-    if not (payload.get("system") and payload.get("webhook")):
-        return False
-
-    # HMAC-SHA256 签名验证
-    header_and_payload = f"{parts[0]}.{parts[1]}"
-    expected_sig = base64.urlsafe_b64encode(
-        hmac.new(
-            secret.encode(),
-            header_and_payload.encode(),
-            hashlib.sha256,
-        ).digest()
-    ).decode().rstrip("=")
-
-    return expected_sig == parts[2]
 ```
+
+`_verify_system_jwt()` 解码 payload 校验 `system`+`webhook` 字段，再用 HMAC-SHA256 验证签名。
 
 ---
 
