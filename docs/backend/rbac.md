@@ -101,12 +101,35 @@ class UserInfo(models.Model):
 
 用户登录后，从数据库查询该用户所有角色下的所有权限，存入 Session。
 
+### 核心类与方法
+
+| 方法 | 用途 | 输出目标 |
+|------|------|---------|
+| `init_data()` | 跨表查询用户所有权限和菜单信息 | 返回 QuerySet |
+| `init_permissions_dict()` | 以权限别名(name)为 key 构建字典 | `session[PERMISSION_SESSION_KEY]` |
+| `init_menu_dict()` | 以菜单ID为 key 构建菜单树 | `session[MENU_SESSION_KEY]` |
+
+### 输出格式
+
+**permissions_dict（权限字典）：**
+
+| Key (name) | id | url | title | pid | pname |
+|------|----|-----|-------|-----|-------|
+| customer_list | 1 | /customer/list/ | 客户列表 | null | null |
+| customer_add | 2 | /customer/add/ | 添加客户 | 1 | customer_list |
+
+**menu_dict（菜单字典）：**
+
+| Key (menu_id) | title | icon | children |
+|------|-------|------|----------|
+| 1 | 客户管理 | fa-users | `[{id, title, url}, ...]` |
+
+### 核心实现
+
 ```python
 from django.conf import settings
 
 class InitPermission:
-    """登录后初始化权限和菜单"""
-
     def __init__(self, request, user):
         self.request = request
         self.user = user
@@ -114,30 +137,16 @@ class InitPermission:
         self.permissions_dict = {}
 
     def init_data(self):
-        """查询用户的所有权限"""
         return self.user.roles.filter(
             permissions__url__isnull=False
         ).values(
-            'permissions__id',
-            'permissions__url',
-            'permissions__title',
-            'permissions__name',
-            'permissions__parent_id',
-            'permissions__parent__name',
-            'permissions__menu_id',
-            'permissions__menu__title',
-            'permissions__menu__icon',
+            'permissions__id', 'permissions__url', 'permissions__title',
+            'permissions__name', 'permissions__parent_id',
+            'permissions__parent__name', 'permissions__menu_id',
+            'permissions__menu__title', 'permissions__menu__icon',
         ).distinct()
 
     def init_permissions_dict(self):
-        """构建权限字典，存入 Session
-
-        结果格式：
-        {
-            'customer_list': {'id': 1, 'url': '/customer/list/', 'title': '客户列表', 'pid': None},
-            'customer_add':  {'id': 2, 'url': '/customer/add/',  'title': '添加客户', 'pid': 1},
-        }
-        """
         for row in self.init_data():
             self.permissions_dict[row['permissions__name']] = {
                 'id': row['permissions__id'],
@@ -149,55 +158,11 @@ class InitPermission:
         self.request.session[settings.PERMISSION_SESSION_KEY] = self.permissions_dict
 
     def init_menu_dict(self):
-        """构建菜单字典，存入 Session
-
-        结果格式：
-        {
-            1: {
-                'title': '客户管理',
-                'icon': 'fa fa-users',
-                'children': [
-                    {'id': 1, 'title': '客户列表', 'url': '/customer/list/'}
-                ]
-            }
-        }
-        """
-        for row in self.init_data():
-            menu_id = row['permissions__menu_id']
-            if not menu_id:
-                continue
-            if menu_id not in self.menu_dict:
-                self.menu_dict[menu_id] = {
-                    'title': row['permissions__menu__title'],
-                    'icon': row['permissions__menu__icon'],
-                    'children': [{
-                        'id': row['permissions__id'],
-                        'title': row['permissions__title'],
-                        'url': row['permissions__url'],
-                    }]
-                }
-            else:
-                self.menu_dict[menu_id]['children'].append({
-                    'id': row['permissions__id'],
-                    'title': row['permissions__title'],
-                    'url': row['permissions__url'],
-                })
-        self.request.session[settings.MENU_SESSION_KEY] = self.menu_dict
+        # 类似逻辑，按 menu_id 分组构建菜单树
+        ...
 ```
 
-**在登录视图中调用：**
-
-```python
-def login(request):
-    if request.method == 'POST':
-        user = UserInfo.objects.filter(username=username, password=password).first()
-        if user:
-            # 初始化权限和菜单
-            init = InitPermission(request, user)
-            init.init_permissions_dict()
-            init.init_menu_dict()
-            return redirect('/index/')
-```
+登录视图调用：`InitPermission(request, user).init_permissions_dict()` + `init_menu_dict()`。
 
 ---
 
@@ -205,52 +170,42 @@ def login(request):
 
 每个请求进入时，中间件自动检查当前用户是否有访问该 URL 的权限。
 
+### 处理流程
+
+1. 获取当前请求路径 `request.path_info`
+2. 匹配白名单 `VALID_URL` -- 命中则直接放行
+3. 从 Session 获取用户权限字典，不存在则跳转登录页
+4. 遍历权限字典，用正则匹配当前 URL
+5. 匹配成功：设置 `current_menu_id` 和面包屑，放行
+6. 无匹配：返回 403 "无权访问"
+
+### 核心代码
+
 ```python
 import re
 from django.utils.deprecation import MiddlewareMixin
-from django.conf import settings
 
 class PermissionMiddleWare(MiddlewareMixin):
-    """权限控制中间件"""
-
     def process_request(self, request):
         current_url = request.path_info
 
-        # 1. 白名单：不需要权限的 URL（登录、注册、静态资源等）
+        # 白名单放行
         for reg in settings.VALID_URL:
             if re.match(reg, current_url):
-                return None  # 放行
+                return None
 
-        # 2. 从 Session 获取用户权限
+        # 权限校验
         permissions_dict = request.session.get(settings.PERMISSION_SESSION_KEY)
         if not permissions_dict:
-            return redirect('/login/')  # 未登录，跳转登录页
-
-        # 3. 遍历权限，正则匹配当前 URL
-        flag = False
-        request.breadcrumb_list = [{'title': '首页', 'url': '/index/'}]
+            return redirect('/login/')
 
         for item in permissions_dict.values():
-            reg = item['url']
-            if re.match(reg, current_url):
-                # 匹配成功，设置当前菜单 ID 和面包屑
-                if item['pid']:  # 子权限
-                    request.current_menu_id = item['pid']
-                    parent = permissions_dict.get(item['pname'], {})
-                    request.breadcrumb_list.extend([
-                        {'title': parent.get('title', ''), 'url': parent.get('url', '')},
-                        {'title': item['title'], 'url': item['url']},
-                    ])
-                else:  # 一级权限
-                    request.current_menu_id = item['id']
-                    request.breadcrumb_list.append({
-                        'title': item['title'], 'url': item['url']
-                    })
-                flag = True
-                break
+            if re.match(item['url'], current_url):
+                request.current_menu_id = item['pid'] or item['id']
+                # 设置面包屑导航...
+                return None
 
-        if not flag:
-            return HttpResponse('无权访问')  # 没有匹配的权限
+        return HttpResponse('无权访问')
 ```
 
 **settings.py 配置：**
@@ -278,43 +233,22 @@ VALID_URL = [
 
 ```python
 from functools import wraps
-from django.http import JsonResponse
 
 def require_role(role_names):
-    """
-    装饰器：要求用户拥有指定角色
-
-    Usage:
-        @require_role(['老板', '办公室'])
-        def admin_view(request):
-            ...
-
-        @require_role('操作员')
-        def operator_view(request):
-            ...
-    """
+    """要求用户拥有指定角色，支持字符串或列表"""
     if isinstance(role_names, str):
         role_names = [role_names]
 
     def decorator(view_func):
         @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
-            user_id = request.session.get('user_id')
-            if not user_id:
-                return JsonResponse({'status': False, 'message': '用户未登录'})
-
-            user = UserInfo.objects.filter(id=user_id).first()
-            if not user:
-                return JsonResponse({'status': False, 'message': '用户不存在'})
-
-            user_role_names = [role.title for role in user.roles.all()]
-            if not any(name in user_role_names for name in role_names):
+            user = get_current_user(request)
+            user_roles = {r.title for r in user.roles.all()}
+            if not any(name in user_roles for name in role_names):
                 return JsonResponse({
                     'status': False,
-                    'message': f'需要以下角色之一: {", ".join(role_names)}',
+                    'message': f'需要角色: {", ".join(role_names)}',
                 })
-
-            request.current_user = user
             return view_func(request, *args, **kwargs)
         return _wrapped_view
     return decorator
@@ -324,30 +258,16 @@ def require_role(role_names):
 
 ```python
 def require_step_permission(operation_type):
-    """
-    装饰器：检查用户是否有操作指定步骤的权限
-
-    Usage:
-        @require_step_permission('start')
-        def start_step_view(request, step_id):
-            ...
-    """
+    """检查用户是否有操作指定步骤的权限"""
     def decorator(view_func):
         @wraps(view_func)
         def _wrapped_view(request, step_id, *args, **kwargs):
             step = get_object_or_404(OrderProgress, id=step_id)
             user = get_current_user(request)
-
-            is_allowed, error_message, details = check_step_permission(
-                user, step, operation_type, request
-            )
-
+            is_allowed, error_msg, _ = check_step_permission(
+                user, step, operation_type, request)
             if not is_allowed:
-                return JsonResponse({'status': False, 'message': error_message})
-
-            request.permission_check_result = details
-            request.current_user = user
-            request.current_step = step
+                return JsonResponse({'status': False, 'message': error_msg})
             return view_func(request, step_id, *args, **kwargs)
         return _wrapped_view
     return decorator
@@ -361,56 +281,19 @@ def require_step_permission(operation_type):
 
 ### 模型设计
 
-```python
-class WorkflowStepPermissionType(models.Model):
-    """步骤操作类型（开始、完成、跳过、审批）"""
-    name = models.CharField(max_length=50, unique=True)
-    description = models.CharField(max_length=200)
+**WorkflowStepPermission 字段：**
 
-class WorkflowStepPermission(models.Model):
-    """工作流步骤权限"""
-    name = models.CharField(max_length=100, unique=True)
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| name | CharField(100) | 权限名称，唯一 |
+| print_type | CharField(20) | 适用印刷类型：cover/content/both/all |
+| allowed_steps | TextField(JSON) | 允许的步骤名列表，如 `["印刷","覆膜"]` |
+| permission_types | M2M(WorkflowStepPermissionType) | 允许的操作类型（开始/完成/跳过/审批） |
+| time_restriction | CharField(20) | 时间限制：none/working_hours/specific_hours |
+| max_concurrent_steps | IntegerField | 并发限制，0=无限制 |
+| is_active | BooleanField | 是否启用 |
 
-    # 适用业务类型
-    print_type = models.CharField(max_length=20, choices=[
-        ('cover', '封面印刷'), ('content', '内文印刷'),
-        ('both', '封面+内文'), ('all', '所有类型'),
-    ], default='all')
-
-    # 允许的步骤（JSON 列表）
-    allowed_steps = models.TextField(blank=True)  # ["印刷", "覆膜", "烫金"]
-
-    # 允许的操作类型
-    permission_types = models.ManyToManyField(WorkflowStepPermissionType)
-
-    # 时间限制
-    time_restriction = models.CharField(max_length=20, choices=[
-        ('none', '无限制'), ('working_hours', '仅工作时间'),
-        ('specific_hours', '指定时间段'),
-    ], default='none')
-    start_time = models.TimeField(null=True, blank=True)
-    end_time = models.TimeField(null=True, blank=True)
-
-    # 并发限制
-    max_concurrent_steps = models.IntegerField(default=0)  # 0=无限制
-
-    # 是否启用
-    is_active = models.BooleanField(default=True)
-
-    def can_operate_step(self, step_name, print_type, operation_type):
-        """检查是否可以操作指定步骤"""
-        if not self.is_active:
-            return False
-        if self.print_type != 'all' and self.print_type != print_type:
-            return False
-        allowed_steps = json.loads(self.allowed_steps or '[]')
-        if allowed_steps and step_name not in allowed_steps:
-            return False
-        allowed_ops = [pt.name for pt in self.permission_types.all()]
-        if operation_type not in allowed_ops:
-            return False
-        return True
-```
+核心检查方法 `can_operate_step(step_name, print_type, operation_type)` 依次校验 is_active、print_type 匹配、步骤在 allowed_steps 中、操作类型在 permission_types 中。
 
 ### 权限检查链路
 
@@ -433,30 +316,23 @@ class WorkflowStepPermission(models.Model):
 
 ### 操作日志
 
-```python
-class WorkflowStepOperationLog(models.Model):
-    """步骤操作日志（审计用）"""
-    order_no = models.CharField(max_length=32)          # 订单号
-    step_name = models.CharField(max_length=100)        # 步骤名
-    print_type = models.CharField(max_length=20)        # 印刷类型
-    operation_type = models.CharField(max_length=20, choices=[
-        ('start', '开始'), ('complete', '完成'),
-        ('skip', '跳过'), ('approve', '审批'),
-    ])
-    operator_id = models.IntegerField()                 # 操作员 ID
-    operator_name = models.CharField(max_length=50)     # 操作员姓名
-    operator_roles = models.TextField()                 # 角色列表（JSON）
-    permission_check_result = models.BooleanField()     # 权限检查结果
-    success = models.BooleanField()                     # 操作是否成功
-    ip_address = models.GenericIPAddressField(null=True)
-    operation_time = models.DateTimeField(auto_now_add=True)
+**WorkflowStepOperationLog 字段：**
 
-    class Meta:
-        indexes = [
-            models.Index(fields=['order_no', 'operation_time']),
-            models.Index(fields=['operator_id', 'operation_time']),
-        ]
-```
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| order_no | CharField(32) | 订单号 |
+| step_name | CharField(100) | 步骤名称 |
+| print_type | CharField(20) | 印刷类型 |
+| operation_type | CharField(20) | 操作类型：start/complete/skip/approve |
+| operator_id | IntegerField | 操作员 ID |
+| operator_name | CharField(50) | 操作员姓名 |
+| operator_roles | TextField(JSON) | 角色列表 |
+| permission_check_result | BooleanField | 权限检查通过/失败 |
+| success | BooleanField | 操作是否成功 |
+| ip_address | GenericIPAddressField | 操作 IP |
+| operation_time | DateTimeField | 操作时间（自动记录） |
+
+索引：`(order_no, operation_time)` 和 `(operator_id, operation_time)`。
 
 ---
 

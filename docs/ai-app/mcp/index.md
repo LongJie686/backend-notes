@@ -153,64 +153,17 @@ if __name__ == "__main__":
 
 ### 1. JSON 配置管理
 
-生产环境中，工具信息以 JSON 配置文件持久化，支持动态增删：
+生产环境中，工具信息以 JSON 配置文件持久化，支持动态增删。核心接口：
 
-```python
-import json
-from pathlib import Path
+| 方法 | 说明 |
+|------|------|
+| `add_tool(config)` | 添加工具到注册表（自动去重），持久化到文件 |
+| `remove_tool(name)` | 移除指定工具 |
+| `enable_tool(name)` | 启用工具（热加载，无需重启） |
+| `disable_tool(name)` | 禁用工具（热加载，无需重启） |
+| `get_enabled_tools()` | 获取所有已启用的工具列表 |
 
-class MCPToolManager:
-    """MCP 工具注册表管理"""
-
-    def __init__(self, config_path: str):
-        self.config_path = Path(config_path)
-        self.config = self._load_config()
-
-    def _load_config(self) -> dict:
-        if self.config_path.exists():
-            return json.loads(self.config_path.read_text(encoding="utf-8"))
-        return {"tools": []}
-
-    def _save_config(self):
-        self.config_path.write_text(
-            json.dumps(self.config, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-    def add_tool(self, tool_config: dict):
-        """添加工具到注册表"""
-        name = tool_config["name"]
-        # 去重
-        self.config["tools"] = [
-            t for t in self.config["tools"] if t["name"] != name
-        ]
-        self.config["tools"].append(tool_config)
-        self._save_config()
-
-    def remove_tool(self, name: str):
-        """移除工具"""
-        self.config["tools"] = [
-            t for t in self.config["tools"] if t["name"] != name
-        ]
-        self._save_config()
-
-    def enable_tool(self, name: str):
-        """启用工具（热加载，无需重启）"""
-        for t in self.config["tools"]:
-            if t["name"] == name:
-                t["enabled"] = True
-        self._save_config()
-
-    def disable_tool(self, name: str):
-        """禁用工具（热加载，无需重启）"""
-        for t in self.config["tools"]:
-            if t["name"] == name:
-                t["enabled"] = False
-        self._save_config()
-
-    def get_enabled_tools(self) -> list[dict]:
-        return [t for t in self.config["tools"] if t.get("enabled", True)]
-```
+实现要点：基于 JSON 文件读写（`json.loads`/`json.dumps`），每次变更后调用 `_save_config()` 持久化。
 
 配置文件示例：
 
@@ -241,243 +194,40 @@ class MCPToolManager:
 
 ### 2. 工具搜索与自动获取
 
-从外部 API 搜索新的 MCP 工具，自动添加到配置中：
+从外部 API 搜索新的 MCP 工具，自动添加到配置中。核心流程：
 
-```python
-import aiohttp
-import asyncio
+**`search_and_acquire(query)` 执行步骤：**
+1. 冷却检查（30 秒内不重复搜索同一 query）
+2. 相似度检查（词重叠率 >= 0.8 视为相同查询，直接返回缓存）
+3. API 调用（带重试 + 指数退避：1s、2s、4s）
+4. 自动添加到工具注册表，设置 15 分钟 TTL
+5. 启动异步定时任务，到期自动清理
 
-class MCPToolSearch:
-    """MCP 工具搜索与自动获取"""
-
-    def __init__(self, search_api_url: str, tool_manager: MCPToolManager):
-        self.search_api_url = search_api_url
-        self.tool_manager = tool_manager
-        self._cache = {}       # query -> results, TTL 300s
-        self._cooldown = {}    # query -> last_search_time
-
-    async def search_and_acquire(self, query: str, auto_add: bool = True) -> list[dict]:
-        """
-        搜索新工具并自动添加
-
-        流程：缓存检查 → 冷却检查 → 相似度检查 → API 调用 → 保存配置
-        """
-        now = asyncio.get_event_loop().time()
-
-        # 冷却检查（30 秒内不重复搜索）
-        if query in self._cooldown and now - self._cooldown[query] < 30:
-            return []
-
-        # 相似度检查（词重叠率 >= 0.8 视为相同查询）
-        for cached_query in self._cache:
-            if self._word_overlap(query, cached_query) >= 0.8:
-                return self._cache[cached_query]
-
-        # API 调用（带重试和指数退避）
-        tools = await self._call_search_api(query)
-
-        self._cache[query] = tools
-        self._cooldown[query] = now
-
-        # 自动添加并设置过期时间
-        if auto_add:
-            for tool in tools:
-                tool["expires_at"] = now + 900  # 15 分钟后过期
-                self.tool_manager.add_tool(tool)
-                # 调度自动清理
-                asyncio.create_task(self._schedule_cleanup(tool["name"], 900))
-
-        return tools
-
-    async def _call_search_api(self, query: str, max_retries: int = 3) -> list[dict]:
-        """带重试的 API 调用"""
-        for attempt in range(max_retries):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        self.search_api_url,
-                        json={"query": query},
-                        timeout=aiohttp.ClientTimeout(total=10),
-                    ) as resp:
-                        data = await resp.json()
-                        return data.get("tools", [])
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                if attempt == max_retries - 1:
-                    return []
-                await asyncio.sleep(2 ** attempt)  # 指数退避
-        return []
-
-    @staticmethod
-    def _word_overlap(a: str, b: str) -> float:
-        """词重叠率"""
-        words_a = set(a)
-        words_b = set(b)
-        if not words_a or not words_b:
-            return 0.0
-        return len(words_a & words_b) / len(words_a | words_b)
-
-    async def _schedule_cleanup(self, tool_name: str, ttl: int):
-        """定时清理过期工具"""
-        await asyncio.sleep(ttl)
-        self.tool_manager.remove_tool(tool_name)
-```
+关键实现细节：使用 `_cache` 字典做查询结果缓存，`_cooldown` 字典防止重复调用，`_word_overlap()` 用 Jaccard 相似度判断查询是否等价。
 
 ### 3. SSE 与 REST 传输模式
 
-```python
-class MCPToolCaller:
-    """MCP 工具调用（支持 SSE 和 REST 两种传输模式）"""
-
-    async def call_sse(self, url: str, tool_name: str, arguments: dict) -> dict:
-        """
-        SSE 模式：启动会话 → 轮询结果
-
-        流程：
-        1. GET /sse?tool=name&args={...}&session_id=xxx
-        2. 轮询 GET /sse?session_id=xxx 获取结果
-        """
-        import uuid
-        session_id = str(uuid.uuid4())[:8]
-
-        # 发起 SSE 请求
-        params = {
-            "tool": tool_name,
-            "args": json.dumps(arguments),
-            "session_id": session_id,
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as resp:
-                pass  # 触发会话
-
-            # 轮询结果（最多 30 次）
-            for _ in range(30):
-                async with session.get(url, params={"session_id": session_id}) as resp:
-                    text = await resp.text()
-                    if text.strip():
-                        return json.loads(text)
-                await asyncio.sleep(1)
-
-        raise TimeoutError(f"SSE 调用超时: {tool_name}")
-
-    async def call_rest(self, url: str, tool_name: str, arguments: dict) -> dict:
-        """REST 模式：简单 POST 请求"""
-        payload = {
-            "tool_name": tool_name,
-            "arguments": arguments,
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload) as resp:
-                return await resp.json()
-```
+| 模式 | 通信方式 | 流程 | 适用场景 |
+|------|---------|------|---------|
+| SSE | 长连接 + 轮询 | 发起会话 → 生成 session_id → 轮询获取结果（最多30次，间隔1s）| 耗时操作、流式结果 |
+| REST | HTTP POST | 直接 POST JSON → 同步返回结果 | 快速查询、短耗时操作 |
 
 ### 4. 设备级会话管理
 
-每个用户设备的工具调用独立管理，避免会话冲突：
-
-```python
-class DeviceSessionManager:
-    """设备级会话管理（user_id + client_uid 唯一标识一台设备）"""
-
-    def __init__(self):
-        self._sessions = {}  # (user_id, client_uid, tool_name) -> session_data
-
-    def get_session(self, user_id: str, client_uid: str, tool_name: str) -> dict:
-        key = (user_id, client_uid, tool_name)
-        return self._sessions.get(key, {})
-
-    def set_session(self, user_id: str, client_uid: str, tool_name: str, data: dict):
-        key = (user_id, client_uid, tool_name)
-        self._sessions[key] = data
-
-    def clear_session(self, user_id: str, client_uid: str, tool_name: str):
-        key = (user_id, client_uid, tool_name)
-        self._sessions.pop(key, None)
-```
+每个用户设备的工具调用独立管理，避免会话冲突。以 `(user_id, client_uid, tool_name)` 三元组作为会话 key，提供 `get_session`/`set_session`/`clear_session` 三个方法，底层用字典存储。
 
 ### 5. 工具编排（智能匹配与执行）
 
-```python
-class MCPToolOrchestrator:
-    """MCP 工具编排器：智能匹配工具，并行或串行执行"""
+工具编排器负责根据用户查询自动匹配和调度工具。
 
-    # 工具类别权重
-    CATEGORY_WEIGHTS = {
-        "search": 10,
-        "weather": 5,
-        "map": 5,
-        "other": 1,
-    }
+**匹配评分公式：** `name匹配度 x 40% + description匹配度 x 30% + category权重 x 30%`
 
-    def find_best_tools(self, query: str, tools: list[dict], top_n: int = 3) -> list[dict]:
-        """
-        根据用户查询匹配最佳工具
+**执行策略：**
+- 单个工具匹配：直接执行
+- 多个不同类别工具：并行执行（`asyncio.gather`）
+- 多个同类工具：串行执行，取第一个成功结果
 
-        评分 = name 匹配度 x 40% + description 匹配度 x 30% + category 权重 x 30%
-        """
-        scored = []
-        for tool in tools:
-            if not tool.get("enabled", True):
-                continue
-            score = self._calculate_match(query, tool)
-            if score > 0:
-                scored.append((score, tool))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [t for _, t in scored[:top_n]]
-
-    def _calculate_match(self, query: str, tool: dict) -> float:
-        """计算工具匹配分数"""
-        q = query.lower()
-        name = tool.get("name", "").lower()
-        desc = tool.get("description", "").lower()
-        category = tool.get("category", "other")
-
-        # 名称匹配（完全匹配 1.0，部分匹配 0.5）
-        name_score = 1.0 if name in q else (0.5 if any(w in q for w in name.split("_")) else 0.0)
-
-        # 描述匹配（关键词重叠）
-        desc_words = set(desc.split())
-        query_words = set(q.split())
-        desc_score = len(desc_words & query_words) / max(len(desc_words), 1)
-
-        # 类别权重
-        cat_score = self.CATEGORY_WEIGHTS.get(category, 1) / 10
-
-        return name_score * 0.4 + desc_score * 0.3 + cat_score * 0.3
-
-    async def execute_orchestration(self, query: str, arguments: dict) -> list[dict]:
-        """
-        编排执行：匹配工具 → 决定并行/串行 → 执行
-
-        规则：
-        - 单个工具匹配 → 直接执行
-        - 多个不同类别工具 → 并行执行
-        - 多个同类工具 → 串行执行（取最佳结果）
-        """
-        tools = self.find_best_tools(query, self.tool_manager.get_enabled_tools())
-        if not tools:
-            return []
-
-        if len(tools) == 1:
-            result = await self._call_tool(tools[0], arguments)
-            return [result]
-
-        # 判断是否同类别
-        categories = {t.get("category") for t in tools}
-        if len(categories) > 1:
-            # 不同类别：并行执行
-            tasks = [self._call_tool(t, arguments) for t in tools]
-            return await asyncio.gather(*tasks)
-        else:
-            # 同类别：串行执行，取第一个成功结果
-            for tool in tools:
-                try:
-                    result = await self._call_tool(tool, arguments)
-                    return [result]
-                except Exception:
-                    continue
-            return []
-```
+类别权重预设：search=10, weather=5, map=5, other=1。
 
 ### 6. 中文 NLP 参数提取
 
