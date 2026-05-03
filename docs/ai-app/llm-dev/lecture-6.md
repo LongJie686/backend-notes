@@ -1012,66 +1012,30 @@ ollama run xinyu
 ### 3. FastAPI 推理服务
 
 ```python
-from fastapi import FastAPI
-from pydantic import BaseModel
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
-
+# FastAPI 推理服务核心代码
 app = FastAPI()
-
-# 全局加载模型（避免每次请求都加载）
-print("加载微调模型...")
+model = AutoModelForCausalLM.from_pretrained("merged_model_path", torch_dtype=torch.float16, device_map="auto")
 tokenizer = AutoTokenizer.from_pretrained("merged_model_path")
-model = AutoModelForCausalLM.from_pretrained(
-    "merged_model_path",
-    torch_dtype=torch.float16,
-    device_map="auto"
-)
 model.eval()
-print("模型加载完成！")
-
 
 class InferRequest(BaseModel):
     instruction: str
-    input: str = ""
     max_new_tokens: int = 256
     temperature: float = 0.7
 
-
 @app.post("/infer")
 async def infer(request: InferRequest):
-    # 格式化 Prompt
-    if request.input:
-        prompt = f"### 指令：\n{request.instruction}\n\n### 输入：\n{request.input}\n\n### 回复：\n"
-    else:
-        prompt = f"### 指令：\n{request.instruction}\n\n### 回复：\n"
-
-    # 分词
+    prompt = f"### 指令：\n{request.instruction}\n\n### 回复：\n"
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-
-    # 生成
     with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=request.max_new_tokens,
-            temperature=request.temperature,
-            do_sample=True,
-            repetition_penalty=1.1,
-            pad_token_id=tokenizer.eos_token_id
-        )
-
-    # 解码
-    generated = tokenizer.decode(
-        outputs[0][inputs["input_ids"].shape[1]:],
-        skip_special_tokens=True
-    )
-
+        outputs = model.generate(**inputs, max_new_tokens=request.max_new_tokens,
+                                 temperature=request.temperature, do_sample=True)
+    generated = tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
     return {"response": generated.strip()}
-
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": "xinyu-7b-lora"}
+    return {"status": "ok"}
 ```
 
 ---

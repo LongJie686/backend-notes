@@ -113,54 +113,34 @@
 
 ### 2. 推理服务 Dockerfile
 
+> 使用 `nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04` 基础镜像。
+
+**关键指令说明：**
+
+| 指令 | 作用 |
+|------|------|
+| `FROM nvidia/cuda:12.1.0-...` | CUDA 基础镜像 |
+| `COPY requirements.txt .` | 先复制依赖文件（利用 Docker 缓存层，避免每次构建都重新安装） |
+| `RUN pip3 install --no-cache-dir -r requirements.txt` | 安装 Python 依赖 |
+| `COPY . .` | 复制应用代码 |
+| `RUN useradd -m appuser` | 创建非 root 用户（安全最佳实践） |
+| `EXPOSE 8000` | 声明端口 |
+| `HEALTHCHECK ... curl /health` | 健康检查（30s 间隔，120s 启动等待） |
+| `CMD python3 -m uvicorn ...` | 启动命令 |
+
 ```dockerfile
-# 心语推理服务 Dockerfile
-# 基础镜像：CUDA + Python
+# 心语推理服务 Dockerfile（关键部分）
 FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04
-
-# 设置环境变量
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    DEBIAN_FRONTEND=noninteractive
-
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    python3.10 \
-    python3-pip \
-    git \
-    curl \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
-
-# 设置工作目录
 WORKDIR /app
-
-# 先复制依赖文件（利用 Docker 缓存层）
 COPY requirements.txt .
-
-# 安装 Python 依赖
 RUN pip3 install --no-cache-dir -r requirements.txt
-
-# 复制应用代码
 COPY . .
-
-# 创建非 root 用户（安全最佳实践）
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
-
-# 暴露端口
 EXPOSE 8000
-
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
-
-# 启动命令
-CMD ["python3", "-m", "uvicorn", "app.main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "1"]
+CMD ["python3", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 **requirements.txt：**
@@ -199,260 +179,65 @@ structlog==23.2.0
 
 ### 3. 多服务 Docker Compose
 
-```yaml
-# docker-compose.yml
-version: '3.8'
+**服务架构表：**
 
+| 服务 | 镜像 | 作用 | 关键配置 |
+|------|------|------|---------|
+| vllm-server | vllm/vllm-openai | LLM 推理引擎 | GPU 挂载，tensor-parallel-size=2，显存利用率 90% |
+| app | 自构建 Dockerfile | 应用服务 | 依赖 vllm/redis/postgres 健康检查完成 |
+| redis | redis:7-alpine | 会话缓存 | maxmemory 2GB，allkeys-lru 淘汰策略 |
+| postgres | postgres:15-alpine | 数据持久化 | 自动执行 init.sql |
+| nginx | nginx:alpine | 反向代理/SSL/限流 | 80→443 重定向，流式 API 特殊配置 |
+| prometheus | prom/prometheus | 指标采集 | 30天数据保留 |
+| grafana | grafana/grafana | 可视化面板 | 预置仪表盘和数据源 |
+| loki + promtail | grafana/loki | 日志收集 | 自动采集 /var/log/app/*.log |
+
+```yaml
+# docker-compose.yml 核心结构
 services:
-  # ==================== 推理服务 ====================
   vllm-server:
     image: vllm/vllm-openai:latest
-    runtime: nvidia          # 使用 GPU
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=0,1
-    volumes:
-      - /data/models:/models  # 挂载模型目录
+    runtime: nvidia
+    volumes: [/data/models:/models]
     command: >
       python -m vllm.entrypoints.openai.api_server
-      --model /models/xinyu-7b-merged
-      --tensor-parallel-size 2
+      --model /models/xinyu-7b-merged --tensor-parallel-size 2
       --gpu-memory-utilization 0.90
-      --max-model-len 4096
-      --port 8001
-    ports:
-      - "8001:8001"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 2
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s    # 模型加载需要时间
+    deploy: {resources: {reservations: {devices: [{driver: nvidia, count: 2, capabilities: [gpu]}]}}}
 
-  # ==================== 应用服务 ====================
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    environment:
-      - VLLM_API_BASE=http://vllm-server:8001/v1
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/xinyu
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - LOG_LEVEL=INFO
-      - ENVIRONMENT=production
-    ports:
-      - "8000:8000"
-    depends_on:
-      vllm-server:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./logs:/app/logs
-    restart: unless-stopped
+    build: {context: ., dockerfile: Dockerfile}
+    depends_on: {vllm-server: {condition: service_healthy}, redis: {condition: service_healthy}}
+    environment: [VLLM_API_BASE=http://vllm-server:8001/v1, REDIS_URL=redis://redis:6379]
 
-  # ==================== 基础设施 ====================
-  redis:
-    image: redis:7-alpine
-    command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_DB=xinyu
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ==================== 反向代理 ====================
   nginx:
     image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./nginx/ssl:/etc/nginx/ssl
-      - ./logs/nginx:/var/log/nginx
-    depends_on:
-      - app
-    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes: [./nginx/nginx.conf:/etc/nginx/nginx.conf]
 
-  # ==================== 监控 ====================
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=30d'
-
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
-    depends_on:
-      - prometheus
-
-  loki:
-    image: grafana/loki:latest
-    ports:
-      - "3100:3100"
-    volumes:
-      - ./monitoring/loki.yml:/etc/loki/local-config.yaml
-      - loki_data:/loki
-
-  promtail:
-    image: grafana/promtail:latest
-    volumes:
-      - ./logs:/var/log/app
-      - ./monitoring/promtail.yml:/etc/promtail/config.yml
-    depends_on:
-      - loki
-
-volumes:
-  redis_data:
-  postgres_data:
-  prometheus_data:
-  grafana_data:
-  loki_data:
+  redis: {image: redis:7-alpine, command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru}
+  postgres: {image: postgres:15-alpine, volumes: [./sql/init.sql:/docker-entrypoint-initdb.d/init.sql]}
+  prometheus: {image: prom/prometheus, ports: ["9090:9090"]}
+  grafana: {image: grafana/grafana, ports: ["3000:3000"]}
 ```
 
 ---
 
 ### 4. Nginx 配置
 
-```nginx
-# nginx/nginx.conf
-worker_processes auto;
-worker_rlimit_nofile 65535;
+**关键指令说明：**
 
-events {
-    worker_connections 4096;
-    use epoll;
-    multi_accept on;
-}
+| 配置项 | 作用 | 值 |
+|--------|------|-----|
+| `limit_req_zone` | API 限流（按 IP） | `/api/` 10r/s，`/chat/stream` 2r/s |
+| `upstream least_conn` | 负载均衡算法 | 最少连接（适应长连接场景） |
+| `proxy_read_timeout` | LLM 响应慢需更长超时 | 普通 API 120s，流式 300s |
+| `proxy_buffering off` | SSE 必须关闭缓冲 | 否则用户看不到打字机效果 |
+| `X-Accel-Buffering: no` | 通知 Nginx 不缓冲 | 流式场景必须配置 |
+| `keepalive 32` | 到上游的持久连接池 | 减少握手开销 |
+| `gzip on` | 压缩响应 | 对 SSE 也开启 |
 
-http {
-    # 基础配置
-    sendfile on;
-    tcp_nopush on;
-    tcp_nodelay on;
-    keepalive_timeout 65;
-    
-    # Gzip 压缩
-    gzip on;
-    gzip_types text/plain application/json text/event-stream;
-    
-    # 限流
-    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
-    limit_req_zone $binary_remote_addr zone=chat:10m rate=2r/s;
-    
-    # 上游服务
-    upstream app_servers {
-        least_conn;  # 最少连接负载均衡
-        server app:8000 weight=1 max_fails=3 fail_timeout=30s;
-        # 多实例时添加更多
-        # server app2:8000 weight=1 max_fails=3 fail_timeout=30s;
-        keepalive 32;
-    }
-    
-    server {
-        listen 80;
-        server_name _;
-        
-        # HTTP 转 HTTPS
-        return 301 https://$host$request_uri;
-    }
-    
-    server {
-        listen 443 ssl http2;
-        server_name your-domain.com;
-        
-        ssl_certificate /etc/nginx/ssl/cert.pem;
-        ssl_certificate_key /etc/nginx/ssl/key.pem;
-        ssl_protocols TLSv1.2 TLSv1.3;
-        
-        # 请求大小限制
-        client_max_body_size 10m;
-        
-        # 健康检查（不限流）
-        location /health {
-            proxy_pass http://app_servers;
-        }
-        
-        # 普通 API（限流）
-        location /api/ {
-            limit_req zone=api burst=20 nodelay;
-            
-            proxy_pass http://app_servers;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            
-            # 超时设置（LLM 响应可能较慢）
-            proxy_connect_timeout 10s;
-            proxy_read_timeout 120s;    # 允许 2 分钟
-            proxy_send_timeout 120s;
-        }
-        
-        # 流式 API（特殊配置）
-        location /api/chat/stream {
-            limit_req zone=chat burst=5 nodelay;
-            
-            proxy_pass http://app_servers;
-            proxy_set_header Connection '';
-            proxy_http_version 1.1;
-            
-            # SSE 必须关闭缓冲
-            proxy_buffering off;
-            proxy_cache off;
-            proxy_read_timeout 300s;   # 流式响应可能更长
-            
-            # SSE 需要的响应头
-            add_header Cache-Control no-cache;
-            add_header X-Accel-Buffering no;
-        }
-    }
-}
-```
+> 详细配置见前面 Docker Compose 挂载的 `./nginx/nginx.conf` 文件。
 
 ---
 
@@ -490,45 +275,26 @@ vLLM 的核心技术：
 
 ### 2. vLLM 部署配置
 
+**引擎参数配置：**
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| model | /models/xinyu-7b-merged | 合并后的模型路径 |
+| tensor_parallel_size | 2 | 张量并行，使用2块GPU |
+| gpu_memory_utilization | 0.90 | 使用90%显存 |
+| max_model_len | 4096 | 最大序列长度 |
+| max_num_batched_tokens | 8192 | 批处理Token上限 |
+| max_num_seqs | 256 | 最大并发请求数 |
+| dtype | bfloat16 | 计算精度 |
+
 ```python
-# vllm_server.py
-import asyncio
-from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams
-from vllm.utils import random_uuid
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import Optional, AsyncGenerator
-import json
-
-# ==================== 配置 ====================
-
+# vLLM 服务核心代码
 ENGINE_ARGS = AsyncEngineArgs(
     model="/models/xinyu-7b-merged",
-    
-    # 并行配置
-    tensor_parallel_size=2,          # 用 2 块 GPU
-    pipeline_parallel_size=1,
-    
-    # 显存配置
-    gpu_memory_utilization=0.90,     # 使用 90% 显存
-    max_model_len=4096,              # 最大序列长度
-    
-    # 性能配置
-    max_num_batched_tokens=8192,     # 批处理 Token 上限
-    max_num_seqs=256,                # 最大并发请求数
-    
-    # 量化（如果使用量化模型）
-    # quantization="awq",
-    
-    # 数据类型
-    dtype="bfloat16",
-    
-    # 信任远程代码（某些模型需要）
-    trust_remote_code=True,
+    tensor_parallel_size=2, gpu_memory_utilization=0.90,
+    max_model_len=4096, max_num_batched_tokens=8192, max_num_seqs=256,
+    dtype="bfloat16", trust_remote_code=True
 )
-
-# ==================== API ====================
 
 app = FastAPI()
 engine = None
@@ -537,109 +303,29 @@ engine = None
 async def startup():
     global engine
     engine = AsyncLLMEngine.from_engine_args(ENGINE_ARGS)
-    print("vLLM 引擎启动完成")
-
-class GenerateRequest(BaseModel):
-    prompt: str
-    max_tokens: int = 256
-    temperature: float = 0.7
-    top_p: float = 0.9
-    repetition_penalty: float = 1.1
-    stream: bool = False
 
 @app.post("/generate")
 async def generate(request: GenerateRequest):
     """非流式生成"""
-    
-    sampling_params = SamplingParams(
-        max_tokens=request.max_tokens,
-        temperature=request.temperature,
-        top_p=request.top_p,
-        repetition_penalty=request.repetition_penalty,
-    )
-    
-    request_id = random_uuid()
-    results_generator = engine.generate(
-        request.prompt,
-        sampling_params,
-        request_id
-    )
-    
-    # 等待生成完成
-    final_output = None
-    async for request_output in results_generator:
-        final_output = request_output
-    
-    if final_output is None:
-        raise HTTPException(status_code=500, detail="生成失败")
-    
-    generated_text = final_output.outputs[0].text
-    
-    return {
-        "text": generated_text,
-        "tokens_used": len(final_output.outputs[0].token_ids),
-        "finish_reason": final_output.outputs[0].finish_reason
-    }
+    params = SamplingParams(max_tokens=request.max_tokens, temperature=request.temperature)
+    final = None
+    async for output in engine.generate(request.prompt, params, random_uuid()):
+        final = output
+    return {"text": final.outputs[0].text, "tokens_used": len(final.outputs[0].token_ids)}
 
 @app.post("/generate/stream")
 async def generate_stream(request: GenerateRequest):
-    """流式生成（SSE）"""
-    
-    sampling_params = SamplingParams(
-        max_tokens=request.max_tokens,
-        temperature=request.temperature,
-        top_p=request.top_p,
-        repetition_penalty=request.repetition_penalty,
-    )
-    
-    request_id = random_uuid()
-    
-    async def event_generator() -> AsyncGenerator[str, None]:
-        previous_text = ""
-        
-        async for request_output in engine.generate(
-            request.prompt,
-            sampling_params,
-            request_id
-        ):
-            output = request_output.outputs[0]
-            
-            # 只发送增量部分
-            new_text = output.text[len(previous_text):]
-            previous_text = output.text
-            
-            if new_text:
-                chunk = {
-                    "text": new_text,
-                    "finished": output.finish_reason is not None
-                }
-                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-            
-            if output.finish_reason is not None:
-                yield "data: [DONE]\n\n"
-                break
-    
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        }
-    )
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
-
-@app.get("/metrics/engine")
-async def engine_metrics():
-    """引擎指标"""
-    stats = await engine.get_model_config()
-    return {
-        "model": stats.model,
-        "max_model_len": stats.max_model_len,
-    }
+    """流式生成（SSE）-- 逐增量返回"""
+    params = SamplingParams(max_tokens=request.max_tokens, temperature=request.temperature)
+    async def event_gen():
+        prev = ""
+        async for output in engine.generate(request.prompt, params, random_uuid()):
+            new = output.outputs[0].text[len(prev):]
+            prev = output.outputs[0].text
+            if new:
+                yield f"data: {json.dumps({'text': new})}\n\n"
+        yield "data: [DONE]\n\n"
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
 ```
 
 ---
@@ -650,135 +336,59 @@ async def engine_metrics():
 
 ### 1. 后端 SSE 实现
 
+**SSE 消息类型定义：**
+
+| type | 含义 | 携带数据 |
+|------|------|---------|
+| `text` | 增量文本 | content: str |
+| `emotion` | 情感分析结果（最后一批发送） | metadata: dict |
+| `error` | 错误信息 | content: str |
+| `done` | 生成完成 | 无 |
+
 ```python
-# app/api/chat.py
-import asyncio
-import json
-from typing import AsyncGenerator
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+# SSE 流式响应核心逻辑
+async def generate_stream_response(user_id, message, bot_manager, vllm_client):
+    bot = bot_manager.get_or_create(user_id)
 
-router = APIRouter()
+    # 1. 输入过滤（阻塞性：不合规直接返回 error chunk）
+    if not bot.content_filter.filter_input(message)["allowed"]:
+        yield sse_chunk("error", "内容不合规")
+        return
 
-class ChatRequest(BaseModel):
-    user_id: str
-    message: str
-    session_id: Optional[str] = None
+    # 2. 快速危机检测（高风险立即返回危机干预文本）
+    crisis = bot.crisis_detector.quick_check(message)
+    if crisis["risk_level"] == "high":
+        for char in bot.crisis_detector.get_crisis_response("high"):
+            yield sse_chunk("text", char)
+        yield sse_chunk("done")
+        return
 
-class StreamChunk(BaseModel):
-    type: str          # "text" | "emotion" | "error" | "done"
-    content: str = ""
-    metadata: dict = {}
+    # 3. 情感分析（异步并行，不阻塞主流程）
+    emotion_task = asyncio.create_task(asyncio.to_thread(bot.emotion_analyzer.analyze, message, context))
 
-async def generate_stream_response(
-    user_id: str,
-    message: str,
-    bot_manager,
-    vllm_client
-) -> AsyncGenerator[str, None]:
-    """生成流式响应"""
-    
+    # 4. 流式调用 vLLM，逐词返回
+    full_response = ""
+    async for chunk_text in vllm_client.stream(bot._build_prompt_text()):
+        full_response += chunk_text
+        yield sse_chunk("text", chunk_text)
+
+    bot.memory.add("assistant", full_response)
+
+    # 5. 发送情感分析结果（等待异步任务完成，超时5秒）
     try:
-        # 前置处理（快速）
-        bot = bot_manager.get_or_create(user_id)
-        
-        # 过滤检查
-        filter_result = bot.content_filter.filter_input(message)
-        if not filter_result["allowed"]:
-            error_chunk = StreamChunk(
-                type="error",
-                content="内容不合规，无法回应"
-            )
-            yield f"data: {error_chunk.model_dump_json()}\n\n"
-            return
-        
-        # 危机检测
-        crisis = bot.crisis_detector.quick_check(message)
-        if crisis["risk_level"] == "high":
-            crisis_response = bot.crisis_detector.get_crisis_response("high")
-            # 流式输出危机干预内容
-            for char in crisis_response:
-                chunk = StreamChunk(type="text", content=char)
-                yield f"data: {chunk.model_dump_json()}\n\n"
-                await asyncio.sleep(0.02)  # 模拟打字机效果
-            
-            done_chunk = StreamChunk(type="done")
-            yield f"data: {done_chunk.model_dump_json()}\n\n"
-            return
-        
-        # 情感分析（异步，不阻塞主流程）
-        emotion_task = asyncio.create_task(
-            asyncio.to_thread(
-                bot.emotion_analyzer.analyze,
-                message,
-                bot._get_recent_context_text()
-            )
-        )
-        
-        # 构建 Prompt
-        bot.memory.add("user", message)
-        prompt = bot._build_prompt_text()
-        
-        # 流式调用 vLLM
-        full_response = ""
-        async for chunk_text in vllm_client.stream(prompt):
-            full_response += chunk_text
-            
-            text_chunk = StreamChunk(
-                type="text",
-                content=chunk_text
-            )
-            yield f"data: {text_chunk.model_dump_json()}\n\n"
-        
-        # 保存到记忆
-        bot.memory.add("assistant", full_response)
-        
-        # 发送情感分析结果
-        try:
-            emotion_result = await asyncio.wait_for(emotion_task, timeout=5.0)
-            bot.current_emotion = emotion_result
-            
-            emotion_chunk = StreamChunk(
-                type="emotion",
-                metadata=emotion_result
-            )
-            yield f"data: {emotion_chunk.model_dump_json()}\n\n"
-        except asyncio.TimeoutError:
-            pass
-        
-        # 发送结束信号
-        done_chunk = StreamChunk(type="done")
-        yield f"data: {done_chunk.model_dump_json()}\n\n"
-        
-    except Exception as e:
-        error_chunk = StreamChunk(
-            type="error",
-            content=f"服务异常，请稍后重试"
-        )
-        yield f"data: {error_chunk.model_dump_json()}\n\n"
-        
-        # 记录错误（不暴露给用户）
-        logger.error("流式生成失败", error=str(e), user_id=user_id)
+        emotion = await asyncio.wait_for(emotion_task, timeout=5.0)
+        yield sse_chunk("emotion", "", emotion)
+    except asyncio.TimeoutError:
+        pass
 
+    yield sse_chunk("done")
 
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
-    """流式对话接口"""
-    
     return StreamingResponse(
-        generate_stream_response(
-            request.user_id,
-            request.message,
-            bot_manager,
-            vllm_client
-        ),
+        generate_stream_response(...),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Nginx 不缓冲
-        }
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     )
 ```
 
