@@ -25,7 +25,7 @@
 ```
 订单服务调用库存服务
 → 配置文件里写死库存服务的IP和端口
-  inventory.service.url = 192.168.1.10:8080
+  INVENTORY_SERVICE_URL = "http://192.168.1.10:8080"
 
 问题：
 → 库存服务扩容到10台，要改10个配置
@@ -53,7 +53,7 @@
 **三个角色：**
 
 ```
-[服务提供者] → 启动时注册到注册中心（IP、端口、服务名）
+[服务提供者] → 启动时注册到注册中心
 [注册中心]   → 维护服务列表，检测健康状态
 [服务消费者] → 从注册中心拉取服务列表，调用
 ```
@@ -61,209 +61,85 @@
 **核心流程：**
 
 ```
-1. 注册：
-   库存服务启动
-   → 向注册中心注册：
-     {
-       serviceName: "inventory-service",
-       ip: "192.168.1.10",
-       port: 8080,
-       weight: 1
-     }
-
-2. 心跳（保活）：
-   库存服务每30秒发一次心跳
-   → 告诉注册中心：我还活着
-   → 超时未收到心跳 → 剔除该实例
-
-3. 拉取/订阅：
-   订单服务启动
-   → 从注册中心拉取库存服务的实例列表
-   → 本地缓存
-   → 订阅变更（注册中心主动推送）
-
-4. 调用：
-   订单服务从本地缓存的实例列表中
-   → 负载均衡选一台
-   → 发起调用
-
-5. 注销：
-   库存服务正常下线
-   → 主动向注册中心注销
-   → 注册中心通知消费者更新列表
+1. 注册 → 服务启动时注册（服务名、IP、端口、权重）
+2. 心跳 → 每30秒发心跳，超时未收到则剔除
+3. 拉取/订阅 → 消费者拉取实例列表，本地缓存，订阅变更
+4. 调用 → 从本地缓存选择实例 → 负载均衡 → 发起调用
+5. 注销 → 正常下线时主动注销
 ```
 
 ---
 
 ### 主流注册中心对比
 
-| 维度 | Nacos | Eureka | Consul | etcd | ZooKeeper |
-|------|-------|--------|--------|------|-----------|
-| **一致性协议** | AP/CP可切换 | AP | CP | CP | CP |
-| **健康检查** | 心跳/主动检查 | 心跳 | 多种 | TTL | 临时节点 |
-| **配置中心** | 内置 | 无 | 支持 | 支持 | 可以 |
-| **控制台** | 丰富 | 基础 | 支持 | 无 | 无 |
-| **语言** | Java | Java | Go | Go | Java |
-| **维护状态** | 活跃 | 停止维护 | 活跃 | 活跃 | 活跃 |
-| **适用场景** | **国内首选** | 老系统 | 多语言 | K8s | 分布式协调 |
-
-**选型建议：**
-
-```
-国内新项目：Nacos（Spring Cloud Alibaba生态）
-多语言环境：Consul
-K8s环境：etcd（已内置）
-老Spring Cloud项目：Eureka（逐步迁移）
-```
+| 维度 | Nacos | Consul | etcd | ZooKeeper |
+|------|-------|--------|------|-----------|
+| **一致性协议** | AP/CP可切换 | CP | CP | CP |
+| **健康检查** | 心跳/主动检查 | 多种 | TTL | 临时节点 |
+| **配置中心** | 内置 | 支持 | 支持 | 可以 |
+| **适用场景** | **国内首选** | 多语言 | K8s | 分布式协调 |
 
 ---
 
-### Nacos 核心原理
+### Python 服务注册发现实践
 
-#### AP vs CP 模式
+```python
+import httpx
+import random
+from typing import Any
 
-**AP模式（默认，临时实例）：**
 
-```
-服务实例 = 临时节点
-心跳超时 → 自动剔除
-优点：可用性高，即使Nacos集群部分不可用，服务仍可访问
-缺点：数据可能不一致（最终一致）
-适合：微服务注册发现
-```
+class ServiceRegistry:
+    """服务注册发现客户端（对接 Nacos/Consul）"""
+    def __init__(self, registry_url: str):
+        self.registry_url = registry_url
+        self.local_cache: dict[str, list[dict]] = {}
 
-**CP模式（持久实例）：**
+    def register(self, service_name: str, ip: str, port: int, weight: float = 1.0) -> None:
+        """注册服务"""
+        httpx.post(
+            f"{self.registry_url}/v1/ns/instance",
+            json={
+                "serviceName": service_name,
+                "ip": ip,
+                "port": port,
+                "weight": weight,
+                "healthy": True,
+            }
+        )
 
-```
-服务实例 = 持久节点
-需要主动注销
-优点：数据强一致
-缺点：Nacos集群不可用时，服务不可访问
-适合：需要强一致的配置数据
-```
+    def discover(self, service_name: str) -> list[dict]:
+        """发现服务（优先用本地缓存）"""
+        if service_name in self.local_cache:
+            return self.local_cache[service_name]
 
-#### Nacos 集群架构
+        resp = httpx.get(f"{self.registry_url}/v1/ns/instance/list",
+                         params={"serviceName": service_name})
+        instances = resp.json()["hosts"]
+        self.local_cache[service_name] = instances
+        return instances
 
-```
-[服务实例]
-    ↓ 注册/心跳
-[Nacos Cluster]
-  [Nacos-1] [Nacos-2] [Nacos-3]  ← Raft协议保证一致性
-      ↓
-  [MySQL] ← 持久化存储
-    ↑
-[服务消费者] ← 拉取服务列表 + 订阅变更
-```
-
-#### Nacos 实战配置
-
-**服务提供者（库存服务）：**
-
-```yaml
-# application.yml
-spring:
-  application:
-    name: inventory-service
-  cloud:
-    nacos:
-      discovery:
-        server-addr: nacos-cluster:8848  # Nacos集群地址
-        namespace: prod                   # 命名空间（环境隔离）
-        group: DEFAULT_GROUP
-        weight: 1                         # 权重（负载均衡用）
-        metadata:
-          version: v2.0                   # 自定义元数据
-          region: beijing                 # 所在区域
+    def get_instance(self, service_name: str) -> dict:
+        """随机负载均衡获取一个实例"""
+        instances = self.discover(service_name)
+        healthy = [i for i in instances if i.get("healthy")]
+        if not healthy:
+            raise Exception(f"没有可用的 {service_name} 实例")
+        return random.choice(healthy)
 ```
 
-**服务消费者（订单服务）：**
+**使用示例：**
 
-```java
-// 使用LoadBalanced的RestTemplate
-@Configuration
-public class RestTemplateConfig {
+```python
+registry = ServiceRegistry("http://nacos:8848")
 
-    @Bean
-    @LoadBalanced  // 开启负载均衡
-    public RestTemplate restTemplate() {
-        RestTemplate template = new RestTemplate();
-        HttpComponentsClientHttpRequestFactory factory =
-            new HttpComponentsClientHttpRequestFactory();
-        factory.setConnectTimeout(3000);
-        factory.setReadTimeout(5000);
-        template.setRequestFactory(factory);
-        return template;
-    }
-}
+# 服务提供者：注册
+registry.register("inventory-service", "192.168.1.10", 8080)
 
-// 调用时使用服务名，而不是IP
-@Service
-public class OrderService {
-
-    @Autowired
-    private RestTemplate restTemplate;
-
-    public Inventory getInventory(Long productId) {
-        return restTemplate.getForObject(
-            "http://inventory-service/inventory/" + productId,
-            Inventory.class
-        );
-    }
-}
-```
-
-**使用Feign（更推荐）：**
-
-```java
-// 声明式HTTP客户端
-@FeignClient(
-    name = "inventory-service",
-    fallback = InventoryFallback.class  // 降级实现
-)
-public interface InventoryClient {
-
-    @GetMapping("/inventory/{productId}")
-    Inventory getInventory(@PathVariable Long productId);
-
-    @PostMapping("/inventory/deduct")
-    boolean deductStock(@RequestBody DeductRequest request);
-}
-
-// 降级实现
-@Component
-public class InventoryFallback implements InventoryClient {
-
-    @Override
-    public Inventory getInventory(Long productId) {
-        return Inventory.defaultInventory(productId);
-    }
-
-    @Override
-    public boolean deductStock(DeductRequest request) {
-        return false;
-    }
-}
-```
-
----
-
-### 服务发现的本地缓存
-
-**重要：服务消费者不是每次调用都请求注册中心！**
-
-```
-消费者 → 启动时拉取服务列表 → 缓存在本地
-       → 订阅注册中心的变更推送
-       → 注册中心推送变更 → 更新本地缓存
-       → 调用时从本地缓存读取（不请求注册中心）
-```
-
-**好处：**
-
-```
-注册中心宕机了 → 消费者仍能使用本地缓存调用
-→ 短时间内服务不受影响
-→ 注册中心恢复后自动同步
+# 服务消费者：发现 + 调用
+instance = registry.get_instance("inventory-service")
+url = f"http://{instance['ip']}:{instance['port']}/inventory/{product_id}"
+resp = httpx.get(url, timeout=5)
 ```
 
 ---
@@ -275,29 +151,8 @@ public class InventoryFallback implements InventoryClient {
 **单机锁的局限：**
 
 ```
-synchronized / ReentrantLock
-→ 只在同一个JVM内有效
-→ 多台机器 → 每台机器有自己的锁
-→ 不能跨机器互斥
-```
-
-**典型场景：**
-
-```
-库存扣减：
-  机器A：读库存=1 → 准备扣减
-  机器B：读库存=1 → 准备扣减
-  → 两台机器同时扣 → 超卖
-
-定时任务：
-  机器A：执行了定时任务
-  机器B：也执行了定时任务
-  → 重复执行
-
-秒杀去重：
-  同一用户同时发两个请求
-  → 打到不同机器
-  → 两个都成功 → 重复购买
+threading.Lock → 只在同一进程内有效
+多台机器 → 每台有自己的锁 → 不能跨机器互斥
 ```
 
 ---
@@ -306,65 +161,50 @@ synchronized / ReentrantLock
 
 #### 基础实现
 
-```java
-public class RedisDistributedLock {
+```python
+import uuid
+import redis
 
-    private final RedisTemplate<String, String> redis;
+r = redis.Redis()
 
-    // 加锁
-    public boolean tryLock(String key, String value, long expireSeconds) {
-        // SET key value NX EX expireSeconds
-        // NX = 不存在才设置（原子操作）
-        // EX = 过期时间（防止死锁）
-        Boolean result = redis.opsForValue()
-            .setIfAbsent(key, value, expireSeconds, TimeUnit.SECONDS);
-        return Boolean.TRUE.equals(result);
-    }
 
-    // 释放锁（Lua脚本保证原子性）
-    public boolean unlock(String key, String value) {
-        String script =
-            "if redis.call('get', KEYS[1]) == ARGV[1] then " +
-            "    return redis.call('del', KEYS[1]); " +
-            "else " +
-            "    return 0; " +
-            "end";
+class RedisDistributedLock:
+    LUA_UNLOCK = """
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+        return redis.call('del', KEYS[1])
+    else
+        return 0
+    end
+    """
 
-        Long result = redis.execute(
-            new DefaultRedisScript<>(script, Long.class),
-            Collections.singletonList(key),
-            value
-        );
+    def try_lock(self, key: str, value: str, expire_seconds: int) -> bool:
+        """SET key value NX EX expire_seconds"""
+        return bool(r.set(key, value, nx=True, ex=expire_seconds))
 
-        return result != null && result == 1L;
-    }
-}
+    def unlock(self, key: str, value: str) -> bool:
+        """Lua脚本原子释放"""
+        return bool(r.eval(self.LUA_UNLOCK, 1, key, value))
 ```
 
 **使用示例：**
 
-```java
-public void deductStock(Long productId, int quantity) {
-    String lockKey = "lock:stock:" + productId;
-    String lockValue = UUID.randomUUID().toString();
+```python
+def deduct_stock(product_id: int, quantity: int) -> None:
+    lock = RedisDistributedLock()
+    lock_key = f"lock:stock:{product_id}"
+    lock_value = str(uuid.uuid4())
 
-    try {
-        boolean locked = lock.tryLock(lockKey, lockValue, 30);
+    try:
+        if not lock.try_lock(lock_key, lock_value, 30):
+            raise Exception("系统繁忙，请稍后重试")
 
-        if (!locked) {
-            throw new BusinessException("系统繁忙，请稍后重试");
-        }
+        stock = stock_dao.get_by_product_id(product_id)
+        if stock["count"] < quantity:
+            raise Exception("库存不足")
+        stock_dao.deduct(product_id, quantity)
 
-        Stock stock = stockDao.getByProductId(productId);
-        if (stock.getCount() < quantity) {
-            throw new BusinessException("库存不足");
-        }
-        stockDao.deduct(productId, quantity);
-
-    } finally {
-        lock.unlock(lockKey, lockValue);
-    }
-}
+    finally:
+        lock.unlock(lock_key, lock_value)
 ```
 
 ---
@@ -373,112 +213,67 @@ public void deductStock(Long productId, int quantity) {
 
 **坑1：锁过期了，业务还没执行完**
 
-```
-问题：
-  设置锁过期时间30秒
-  业务执行到第35秒才完成
-  → 第30秒时锁已经自动释放
-  → 其他线程拿到锁
-  → 两个线程同时在执行
-  → 数据不一致
-```
-
 **解决：看门狗机制（续期）**
 
-```java
-public class WatchdogLock {
+```python
+import threading
 
-    private final RedisTemplate<String, String> redis;
-    private final ScheduledExecutorService scheduler =
-        Executors.newScheduledThreadPool(1);
 
-    private ScheduledFuture<?> watchdog;
+class WatchdogLock:
+    def __init__(self):
+        self.r = redis.Redis()
+        self._watchdogs: dict[str, threading.Timer] = {}
 
-    public boolean tryLock(String key, String value, long expireSeconds) {
-        boolean locked = redis.opsForValue()
-            .setIfAbsent(key, value, expireSeconds, TimeUnit.SECONDS);
+    LUA_UNLOCK = """
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+        return redis.call('del', KEYS[1])
+    else
+        return 0
+    end
+    """
 
-        if (locked) {
-            long renewInterval = expireSeconds * 1000 / 3;
+    def try_lock(self, key: str, value: str, expire_seconds: int = 30) -> bool:
+        locked = self.r.set(key, value, nx=True, ex=expire_seconds)
 
-            watchdog = scheduler.scheduleAtFixedRate(() -> {
-                String currentValue = redis.opsForValue().get(key);
-                if (value.equals(currentValue)) {
-                    redis.expire(key, expireSeconds, TimeUnit.SECONDS);
-                }
-            }, renewInterval, renewInterval, TimeUnit.MILLISECONDS);
-        }
+        if locked:
+            # 每 expire/3 秒续期一次
+            renew_interval = expire_seconds / 3
 
-        return locked;
-    }
+            def renew():
+                current = self.r.get(key)
+                if current and current.decode() == value:
+                    self.r.expire(key, expire_seconds)
+                    # 重新调度
+                    self._watchdogs[key] = threading.Timer(renew_interval, renew)
+                    self._watchdogs[key].start()
 
-    public void unlock(String key, String value) {
-        if (watchdog != null) {
-            watchdog.cancel(false);
-        }
+            self._watchdogs[key] = threading.Timer(renew_interval, renew)
+            self._watchdogs[key].start()
 
-        String script =
-            "if redis.call('get', KEYS[1]) == ARGV[1] then " +
-            "    return redis.call('del', KEYS[1]); " +
-            "else " +
-            "    return 0; " +
-            "end";
+        return locked
 
-        redis.execute(
-            new DefaultRedisScript<>(script, Long.class),
-            Collections.singletonList(key),
-            value
-        );
-    }
-}
+    def unlock(self, key: str, value: str) -> bool:
+        # 停止看门狗
+        watchdog = self._watchdogs.pop(key, None)
+        if watchdog:
+            watchdog.cancel()
+
+        return bool(self.r.eval(self.LUA_UNLOCK, 1, key, value))
 ```
 
-**更好的方案：直接用Redisson（生产推荐）**
-
-```java
-// Redisson内置看门狗机制
-RLock lock = redisson.getLock("lock:stock:" + productId);
-
-try {
-    // 加锁，看门狗自动续期（默认30秒，每10秒续期一次）
-    lock.lock();
-
-    // 或者：尝试加锁，最多等待3秒，持有30秒
-    boolean locked = lock.tryLock(3, 30, TimeUnit.SECONDS);
-
-    if (locked) {
-        doDeductStock(productId, quantity);
-    }
-} finally {
-    if (lock.isHeldByCurrentThread()) {
-        lock.unlock();
-    }
-}
-```
+> **生产环境推荐用 `redis-py` + 手动看门狗，或使用 `redlock-py` 库。**
 
 ---
 
 **坑2：释放了别人的锁**
 
 ```
-问题：
-  线程A加锁，key=lockKey, value=A的UUID
-  线程A业务执行很慢，锁过期了
-  线程B加锁成功，key=lockKey, value=B的UUID
-  线程A执行完，释放锁
-  → 线程A释放的是B的锁！
-  → 线程C加锁成功
-  → 线程B和C同时持有锁
-```
+线程A加锁，value=A的UUID
+线程A业务慢，锁过期
+线程B加锁成功，value=B的UUID
+线程A执行完释放锁 → 释放的是B的锁！
 
-**解决：释放锁时验证value（前面的Lua脚本已解决）**
-
-```lua
-if redis.call('get', KEYS[1]) == ARGV[1] then
-    return redis.call('del', KEYS[1])
-else
-    return 0
-end
+解决：Lua脚本验证value再删除（上方已实现）
 ```
 
 ---
@@ -486,174 +281,72 @@ end
 **坑3：Redis主从切换导致锁丢失**
 
 ```
-问题：
-  线程A在Master加锁成功
-  Master还没把数据同步给Slave，Master宕机
-  Slave升级为新Master
-  新Master上没有这个锁
-  线程B在新Master加锁成功
-  → 两个线程同时持有锁
+Master加锁成功 → Master宕机 → Slave升级为Master
+→ 新Master没这个锁 → 线程B加锁成功 → 两个线程同时持有锁
 ```
 
-**解决方案一：RedLock算法**
+**解决方案：RedLock**
 
 ```
-向N个独立的Redis Master同时加锁
-需要超过N/2+1个成功才算加锁成功
-
-N=5时：
-  → 向5个Master发加锁请求
-  → 至少3个成功才算成功
-  → 某个Master宕机，不影响多数派
+向N个独立Redis Master同时加锁
+需要超过 N/2+1 个成功才算成功
 ```
 
-```java
-// Redisson实现RedLock
-RLock lock1 = redisson1.getLock("lock:stock");
-RLock lock2 = redisson2.getLock("lock:stock");
-RLock lock3 = redisson3.getLock("lock:stock");
+```python
+# Python RedLock 实现思路
+from redlock import Redlock
 
-RedissonRedLock redLock = new RedissonRedLock(lock1, lock2, lock3);
+dlm = Redlock([
+    {"host": "redis1", "port": 6379},
+    {"host": "redis2", "port": 6379},
+    {"host": "redis3", "port": 6379},
+])
 
-try {
-    boolean locked = redLock.tryLock(3, 30, TimeUnit.SECONDS);
-    if (locked) {
-        // 执行业务
-    }
-} finally {
-    redLock.unlock();
-}
+lock = dlm.lock("lock:stock", 30000)  # 30秒TTL
+if lock:
+    try:
+        do_deduct_stock(product_id, quantity)
+    finally:
+        dlm.unlock(lock)
 ```
-
-**RedLock的争议：**
-
-```
-Martin Kleppmann（《数据密集型应用系统设计》作者）指出：
-→ 即使用RedLock，在极端情况下（时钟跳跃）仍可能出现问题
-→ 如果需要绝对的分布式互斥，应该使用ZooKeeper
-
-Redis作者Antirez的回应：
-→ 大多数业务场景RedLock足够用
-→ 完全的强一致性需要Chubby/ZooKeeper这样的系统
-```
-
-**解决方案二：使用ZooKeeper锁（强一致性）**
 
 ---
 
 ### 方案二：ZooKeeper分布式锁
 
-#### ZooKeeper基础概念
-
-**ZooKeeper的节点类型：**
-
-```
-持久节点（Persistent）：
-  → 客户端断开后不删除
-  → 需要主动删除
-
-临时节点（Ephemeral）：
-  → 客户端断开后自动删除
-  → 用于分布式锁
-
-有序节点（Sequential）：
-  → 节点名自动加序号
-  → /lock/node-0001, /lock/node-0002...
-  → 用于有序排队
-```
-
-#### 基于临时有序节点实现
-
-**原理：**
+**基于临时有序节点实现：**
 
 ```
 1. 所有线程在 /lock 下创建临时有序节点
-   线程A → /lock/node-0001
-   线程B → /lock/node-0002
-   线程C → /lock/node-0003
+   线程A → /lock/node-0001, 线程B → /lock/node-0002
 
 2. 序号最小的获得锁（线程A）
 
-3. 线程B、C监听自己前一个节点的删除事件
-   线程B监听 /lock/node-0001 的删除
-   线程C监听 /lock/node-0002 的删除
+3. 其他线程监听前一个节点的删除事件
 
-4. 线程A释放锁（删除/lock/node-0001）
-   → 触发线程B的监听
-   → 线程B发现自己是最小节点
-   → 线程B获得锁
+4. 线程A释放锁 → 触发线程B的监听 → 线程B获得锁
 
-5. 如此类推...
+5. 客户端宕机 → 临时节点自动删除 → 不会死锁
 ```
 
-**代码实现（Curator框架）：**
+```python
+from kazoo.client import KazooClient
+from kazoo.recipe.lock import Lock
 
-```java
-@Configuration
-public class ZookeeperConfig {
+zk = KazooClient(hosts="zk-cluster:2181")
+zk.start()
 
-    @Bean
-    public CuratorFramework curatorFramework() {
-        RetryPolicy retryPolicy = new ExponentialBackoffRetry(1000, 3);
+# ZooKeeper分布式锁（kazoo已封装）
+lock = zk.Lock("/lock/stock", identifier=str(uuid.uuid4()))
 
-        CuratorFramework client = CuratorFrameworkFactory.newClient(
-            "zk-cluster:2181",
-            5000,
-            3000,
-            retryPolicy
-        );
-
-        client.start();
-        return client;
-    }
-}
-
-@Service
-public class ZkDistributedLock {
-
-    @Autowired
-    private CuratorFramework curator;
-
-    public void executeWithLock(String lockPath, Runnable task) throws Exception {
-        InterProcessMutex lock = new InterProcessMutex(curator, lockPath);
-
-        try {
-            boolean acquired = lock.acquire(3, TimeUnit.SECONDS);
-
-            if (!acquired) {
-                throw new BusinessException("获取锁超时");
-            }
-
-            task.run();
-
-        } finally {
-            lock.release();
-        }
-    }
-}
-
-// 使用
-public void deductStock(Long productId, int quantity) throws Exception {
-    zkLock.executeWithLock("/lock/stock/" + productId, () -> {
-        doDeductStock(productId, quantity);
-    });
-}
+with lock:  # 自动加锁/释放
+    do_deduct_stock(product_id, quantity)
 ```
 
----
-
-#### ZooKeeper锁的优势
-
-```
-ZooKeeper使用ZAB协议（类Paxos），保证强一致性：
-→ 节点创建/删除，所有ZK节点一致后才返回成功
-→ 不会出现Redis那种主从切换导致锁丢失的问题
-
-客户端宕机：
-→ 临时节点自动删除（session过期）
-→ 其他线程自动获得锁
-→ 不会死锁
-```
+**ZooKeeper锁的优势：**
+- ZAB协议保证强一致性
+- 客户端宕机，临时节点自动删除，不会死锁
+- 不会出现主从切换导致锁丢失
 
 ---
 
@@ -661,40 +354,33 @@ ZooKeeper使用ZAB协议（类Paxos），保证强一致性：
 
 ```sql
 CREATE TABLE distributed_lock (
-    lock_key VARCHAR(128) NOT NULL COMMENT '锁的Key',
-    lock_value VARCHAR(64) NOT NULL COMMENT '锁的Value（UUID）',
-    expire_time DATETIME NOT NULL COMMENT '过期时间',
+    lock_key VARCHAR(128) NOT NULL,
+    lock_value VARCHAR(64) NOT NULL,
+    expire_time DATETIME NOT NULL,
     PRIMARY KEY (lock_key)
 );
 ```
 
-```java
-public class DbDistributedLock {
+```python
+from datetime import datetime, timedelta
 
-    public boolean tryLock(String key, String value, int expireSeconds) {
-        try {
-            lockDao.insert(key, value,
-                LocalDateTime.now().plusSeconds(expireSeconds));
-            return true;
-        } catch (DuplicateKeyException e) {
-            Lock lock = lockDao.getByKey(key);
-            if (lock != null && lock.getExpireTime().isBefore(LocalDateTime.now())) {
-                int updated = lockDao.updateIfExpired(key, value,
-                    LocalDateTime.now().plusSeconds(expireSeconds));
-                return updated > 0;
-            }
-            return false;
-        }
-    }
 
-    public boolean unlock(String key, String value) {
-        int deleted = lockDao.deleteByKeyAndValue(key, value);
-        return deleted > 0;
-    }
-}
+class DbDistributedLock:
+    def try_lock(self, key: str, value: str, expire_seconds: int) -> bool:
+        expire_time = datetime.now() + timedelta(seconds=expire_seconds)
+        try:
+            lock_dao.insert(key, value, expire_time)
+            return True
+        except IntegrityError:
+            # 检查是否过期
+            lock = lock_dao.get_by_key(key)
+            if lock and lock["expire_time"] < datetime.now():
+                return lock_dao.update_if_expired(key, value, expire_time) > 0
+            return False
+
+    def unlock(self, key: str, value: str) -> bool:
+        return lock_dao.delete_by_key_and_value(key, value) > 0
 ```
-
-**适用：并发量低、已有数据库、不想引入新组件的场景**
 
 ---
 
@@ -703,47 +389,11 @@ public class DbDistributedLock {
 | 维度 | Redis锁 | ZooKeeper锁 | 数据库锁 |
 |------|---------|------------|---------|
 | **性能** | 最高 | 中 | 最低 |
-| **可靠性** | 中（主从切换有风险） | 最高 | 高 |
-| **实现复杂度** | 低（Redisson已封装） | 中（Curator） | 低 |
-| **死锁处理** | 过期时间 | 临时节点自动删除 | 过期时间 |
-| **续期** | Redisson看门狗 | 不需要（临时节点） | 需要自己实现 |
-| **适用场景** | **高并发，容忍极小概率问题** | **强一致性要求高** | 并发低 |
+| **可靠性** | 中 | 最高 | 高 |
+| **实现复杂度** | 低 | 中 | 低 |
+| **适用场景** | **高并发** | **强一致性** | 并发低 |
 
-**选型建议：**
-
-```
-99%的业务场景：Redis + Redisson
-对一致性要求极高（金融核心）：ZooKeeper
-简单低并发场景：数据库锁
-```
-
----
-
-### 分布式锁的最佳实践
-
-```java
-public void executeWithLock(String lockKey, Runnable business) {
-    RLock lock = redisson.getLock(lockKey);
-
-    try {
-        boolean acquired = lock.tryLock(3, -1, TimeUnit.SECONDS);
-
-        if (!acquired) {
-            throw new BusinessException("操作频繁，请稍后重试");
-        }
-
-        business.run();
-
-    } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new BusinessException("获取锁被中断");
-    } finally {
-        if (lock.isHeldByCurrentThread()) {
-            lock.unlock();
-        }
-    }
-}
-```
+**选型建议：** 99% 场景用 Redis 锁，金融核心场景用 ZooKeeper。
 
 ---
 
@@ -751,372 +401,157 @@ public void executeWithLock(String lockKey, Runnable business) {
 
 ### 为什么需要链路追踪？
 
-**微服务调用链路：**
-
-```
-用户请求
-  ↓
-[API网关]
-  ↓
-[订单服务]
-  ↓           ↓          ↓
-[库存服务] [用户服务] [优惠券服务]
-  ↓
-[数据库]
-```
-
-**出问题了，怎么找？**
-
 ```
 用户反馈：下单失败
-→ 是API网关的问题？
-→ 是订单服务的问题？
-→ 是库存服务的问题？
-→ 是数据库的问题？
+→ 是API网关的问题？订单服务？库存服务？数据库？
 
 没有链路追踪：
-→ 一个个服务查日志
-→ 日志散落在不同机器
-→ 无法关联同一个请求的日志
-→ 排查效率极低
-```
+→ 一个个服务查日志，日志散落不同机器，无法关联
 
-**有了链路追踪：**
-
-```
-一个请求有唯一的TraceID
-→ 所有服务的日志都带这个TraceID
-→ 输入TraceID，看完整调用链路
-→ 哪个服务、哪行代码、花了多少时间
-→ 秒级定位问题
+有了链路追踪：
+→ 一个请求有唯一TraceID → 所有服务日志带这个TraceID
+→ 输入TraceID，看完整调用链路 → 秒级定位问题
 ```
 
 ---
 
-### 链路追踪核心概念
+### TraceID跨服务传递（Python实现）
 
-**Trace（链路）：**
+```python
+import contextvars
+import uuid
+import time
+import httpx
+from fastapi import FastAPI, Request
+from starlette.middleware.base import BaseHTTPMiddleware
 
-```
-一次完整的请求链路
-由唯一的TraceID标识
-包含多个Span
-```
+# ---- Thread-safe TraceID 存储（支持异步） ----
+trace_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("trace_id", default="")
+span_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("span_id", default="")
 
-**Span（跨度）：**
 
-```
-链路中的一个操作单元
-比如：一次服务调用、一次数据库查询
-包含：
-  - SpanID（自身ID）
-  - ParentSpanID（父节点ID）
-  - 操作名
-  - 开始时间
-  - 结束时间
-  - 状态（成功/失败）
-  - 标签（key-value）
-```
+def generate_trace_id() -> str:
+    return uuid.uuid4().hex
 
-**调用链示例：**
+def generate_span_id() -> str:
+    return hex(int(time.time() * 1e9))[2:]
 
-```
-TraceID: abc123
 
-Span1: API网关处理
-  SpanID: 0001
-  ParentSpanID: null
-  耗时: 50ms
+# ---- FastAPI 中间件：自动提取/生成 TraceID ----
+class TraceMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        trace_id = request.headers.get("X-Trace-Id") or generate_trace_id()
+        span_id = request.headers.get("X-Span-Id") or generate_span_id()
 
-  Span2: 订单服务处理
-    SpanID: 0002
-    ParentSpanID: 0001
-    耗时: 30ms
+        trace_id_ctx.set(trace_id)
+        span_id_ctx.set(span_id)
 
-    Span3: 库存服务调用
-      SpanID: 0003
-      ParentSpanID: 0002
-      耗时: 10ms
+        response = await call_next(request)
+        response.headers["X-Trace-Id"] = trace_id
+        return response
 
-    Span4: 数据库查询
-      SpanID: 0004
-      ParentSpanID: 0002
-      耗时: 5ms
-```
 
----
+# ---- httpx 客户端：自动透传 TraceID ----
+class TraceTransport(httpx.HTTPTransport):
+    def handle_request(self, request):
+        trace_id = trace_id_ctx.get()
+        span_id = span_id_ctx.get()
+        if trace_id:
+            request.headers["X-Trace-Id"] = trace_id
+            request.headers["X-Parent-Span-Id"] = span_id
+            request.headers["X-Span-Id"] = generate_span_id()
+        return super().handle_request(request)
 
-### TraceID如何跨服务传递？
 
-**这是链路追踪最核心的问题。**
+traced_client = httpx.Client(transport=TraceTransport())
 
-**HTTP调用传递：**
 
-```
-发起方：把TraceID放在HTTP Header中
-  X-Trace-Id: abc123
-  X-Span-Id: 0002
+# ---- 日志自动带上 TraceID ----
+import logging
 
-接收方：从Header中提取TraceID
-  → 存入ThreadLocal
-  → 后续操作使用同一TraceID
-  → 调用下游服务时，带上TraceID
-```
+class TraceFilter(logging.Filter):
+    def filter(self, record):
+        record.trace_id = trace_id_ctx.get() or "-"
+        return True
 
-**代码实现：**
 
-```java
-// TraceID在ThreadLocal中存储
-public class TraceContext {
-
-    private static final ThreadLocal<String> traceId = new ThreadLocal<>();
-    private static final ThreadLocal<String> spanId = new ThreadLocal<>();
-
-    public static String getTraceId() {
-        return traceId.get();
-    }
-
-    public static void setTraceId(String id) {
-        traceId.set(id);
-    }
-
-    public static String getSpanId() {
-        return spanId.get();
-    }
-
-    public static void setSpanId(String id) {
-        spanId.set(id);
-    }
-
-    public static void clear() {
-        traceId.remove();
-        spanId.remove();
-    }
-}
-
-// HTTP请求拦截器（服务端）：提取TraceID
-@Component
-public class TraceInterceptor implements HandlerInterceptor {
-
-    @Override
-    public boolean preHandle(HttpServletRequest request,
-                              HttpServletResponse response,
-                              Object handler) {
-        String traceId = request.getHeader("X-Trace-Id");
-
-        if (StringUtils.isEmpty(traceId)) {
-            traceId = generateTraceId();
-        }
-
-        String spanId = generateSpanId();
-
-        TraceContext.setTraceId(traceId);
-        TraceContext.setSpanId(spanId);
-
-        response.setHeader("X-Trace-Id", traceId);
-
-        return true;
-    }
-
-    @Override
-    public void afterCompletion(HttpServletRequest request,
-                                 HttpServletResponse response,
-                                 Object handler,
-                                 Exception ex) {
-        TraceContext.clear();
-    }
-
-    private String generateTraceId() {
-        return UUID.randomUUID().toString().replace("-", "");
-    }
-
-    private String generateSpanId() {
-        return Long.toHexString(System.nanoTime());
-    }
-}
-
-// Feign拦截器（客户端）：透传TraceID
-@Component
-public class FeignTraceInterceptor implements RequestInterceptor {
-
-    @Override
-    public void apply(RequestTemplate template) {
-        String traceId = TraceContext.getTraceId();
-        String spanId = TraceContext.getSpanId();
-
-        if (traceId != null) {
-            template.header("X-Trace-Id", traceId);
-            template.header("X-Parent-Span-Id", spanId);
-            template.header("X-Span-Id", generateSpanId());
-        }
-    }
-}
-```
-
-**日志中自动带上TraceID：**
-
-```xml
-<!-- logback配置（使用MDC） -->
-<Pattern>
-    [%d{yyyy-MM-dd HH:mm:ss}] [%X{traceId}] [%thread] %-5level %logger{36} - %msg%n
-</Pattern>
-```
-
-```java
-// 在拦截器中设置MDC
-@Override
-public boolean preHandle(HttpServletRequest request, ...) {
-    String traceId = ...;
-    MDC.put("traceId", traceId);
-    return true;
-}
-
-@Override
-public void afterCompletion(...) {
-    MDC.clear();
-}
+logging.basicConfig(
+    format="[%(asctime)s] [%(trace_id)s] [%(threadName)s] %(levelname)s %(name)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+logger.addFilter(TraceFilter())
 ```
 
 **日志效果：**
 
 ```
-[2024-01-01 10:00:00] [abc123] [http-nio-8080] INFO  OrderService - 开始创建订单
-[2024-01-01 10:00:00] [abc123] [http-nio-8080] INFO  InventoryService - 查询库存
-[2024-01-01 10:00:00] [abc123] [http-nio-8080] INFO  OrderService - 订单创建成功
-
-→ 通过TraceID abc123，可以串联整个请求链路的所有日志
+[2024-01-01 10:00:00] [abc123] [MainThread] INFO OrderService - 开始创建订单
+[2024-01-01 10:00:00] [abc123] [MainThread] INFO InventoryService - 查询库存
+[2024-01-01 10:00:00] [abc123] [MainThread] INFO OrderService - 订单创建成功
 ```
 
 ---
 
 ### 消息队列中的TraceID传递
 
-```java
-// Kafka生产者：把TraceID放在消息Header
-public void sendMessage(String topic, String value) {
-    ProducerRecord<String, String> record = new ProducerRecord<>(topic, value);
+```python
+from kafka import KafkaProducer, KafkaConsumer
 
-    String traceId = TraceContext.getTraceId();
-    if (traceId != null) {
-        record.headers().add("X-Trace-Id", traceId.getBytes());
-    }
+# Kafka生产者：把TraceID放在Header
+def send_message(topic: str, value: dict) -> None:
+    trace_id = trace_id_ctx.get()
+    headers = [("X-Trace-Id", trace_id.encode())] if trace_id else []
+    producer.send(topic, value=json.dumps(value).encode(), headers=headers)
 
-    kafkaProducer.send(record);
-}
 
-// Kafka消费者：从消息Header提取TraceID
-@KafkaListener(topics = "order-topic")
-public void consume(ConsumerRecord<String, String> record) {
-    Header traceHeader = record.headers().lastHeader("X-Trace-Id");
-    if (traceHeader != null) {
-        String traceId = new String(traceHeader.value());
-        TraceContext.setTraceId(traceId);
-        MDC.put("traceId", traceId);
-    }
+# Kafka消费者：从Header提取TraceID
+def consume_messages():
+    consumer = KafkaConsumer(
+        'order-topic',
+        bootstrap_servers=['localhost:9092'],
+        value_deserializer=lambda v: json.loads(v)
+    )
+    for msg in consumer:
+        for header in msg.headers:
+            if header[0] == "X-Trace-Id":
+                trace_id_ctx.set(header[1].decode())
+                break
 
-    try {
-        processMessage(record);
-    } finally {
-        TraceContext.clear();
-        MDC.clear();
-    }
-}
+        try:
+            process_message(msg.value)
+        finally:
+            trace_id_ctx.set("")
 ```
 
 ---
 
 ### 主流链路追踪框架
 
-#### SkyWalking（推荐）
-
-**特点：**
-
-```
-- Apache开源，国内最流行
-- Java Agent方式，无侵入（不需要改业务代码）
-- 支持丰富的框架（Spring, Dubbo, Kafka, MySQL...）
-- 控制台功能丰富
-- 支持告警
-```
-
-**部署：**
+| 框架 | 特点 | 适用 |
+|------|------|------|
+| **SkyWalking** | Java Agent无侵入，国内最流行 | Java微服务 |
+| **Jaeger** | CNCF项目，多语言支持 | Go/Python |
+| **Zipkin** | Spring Sleuth集成 | Spring Cloud |
+| **OpenTelemetry** | 新标准，厂商中立 | 新项目首选 |
 
 ```yaml
-# docker-compose.yml
-version: '3'
-services:
-  oap:
-    image: apache/skywalking-oap-server
-    environment:
-      SW_STORAGE: elasticsearch
-      SW_STORAGE_ES_CLUSTER_NODES: es:9200
-    ports:
-      - 11800:11800
-      - 12800:12800
+# OpenTelemetry Python 示例配置
+# pip install opentelemetry-api opentelemetry-sdk opentelemetry-instrumentation-fastapi
 
-  ui:
-    image: apache/skywalking-ui
-    environment:
-      SW_OAP_ADDRESS: oap:12800
-    ports:
-      - 8080:8080
+# 环境变量
+# OTEL_SERVICE_NAME=order-service
+# OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
 ```
-
-**Java应用接入（只需加JVM参数，不改代码）：**
-
-```bash
-java -javaagent:/path/to/skywalking-agent.jar \
-     -Dskywalking.agent.service_name=order-service \
-     -Dskywalking.collector.backend_service=oap:11800 \
-     -jar order-service.jar
-```
-
----
-
-#### Zipkin
-
-```java
-// Spring Boot集成Sleuth + Zipkin
-// application.yml
-spring:
-  zipkin:
-    base-url: http://zipkin:9411
-  sleuth:
-    sampler:
-      probability: 0.1  # 采样率10%（生产环境不能全量采集）
-```
-
----
 
 ### 采样率的重要性
 
-**问题：**
-
 ```
-全量采集链路数据：
-→ 每个请求都上报
-→ 1万QPS → 每秒上报1万条链路数据
-→ 存储和计算压力极大
-```
-
-**解决：采样**
-
-```
-只采集一部分请求的链路数据
+全量采集 → 1万QPS → 每秒上报1万条链路数据 → 存储压力极大
 
 采样策略：
-  1. 固定比例：10%的请求采集
-  2. 基于QPS：每秒采集100条
-  3. 错误请求全采集（重要！）
-  4. 慢请求全采集（响应时间>1s）
-```
-
-```yaml
-# SkyWalking采样配置
-skywalking:
-  agent:
-    sample_n_per_3_secs: 9    # 每3秒采集9个（相当于3 QPS）
-    # 错误和慢请求会被强制采集，不受采样率限制
+  1. 固定比例：10%
+  2. 错误请求全采集
+  3. 慢请求全采集（>1s）
 ```
 
 ---
@@ -1125,121 +560,67 @@ skywalking:
 
 ### 为什么需要配置中心？
 
-**没有配置中心：**
-
 ```
-配置在application.yml里
-→ 修改配置要重新打包部署
-→ 重启服务（影响可用性）
-→ 10台机器要改10次
-→ 出错后回滚困难
+没有配置中心：修改配置要重新部署、重启、逐台改、难回滚
+
+有了配置中心：修改实时生效、所有机器同步更新、版本管理可回滚、灰度发布
 ```
 
-**有了配置中心：**
+### Python 配置中心实践
 
-```
-配置在配置中心
-→ 修改配置立即生效（不重启）
-→ 所有机器同时更新
-→ 版本管理（可回滚）
-→ 灰度发布（只部分机器生效）
-```
+```python
+import os
+import json
+from functools import lru_cache
+import httpx
 
----
 
-### Nacos配置中心
+class ConfigCenter:
+    """对接 Nacos 配置中心"""
+    def __init__(self, server_addr: str, namespace: str = "", group: str = "DEFAULT_GROUP"):
+        self.server_addr = server_addr
+        self.namespace = namespace
+        self.group = group
+        self._local: dict[str, str] = {}
 
-**核心功能：**
+    def get_config(self, data_id: str, default: str = "") -> str:
+        """获取配置（优先本地缓存）"""
+        if data_id in self._local:
+            return self._local[data_id]
 
-```
-1. 动态配置：修改配置实时推送到应用
-2. 版本管理：每次修改都有历史记录
-3. 回滚：一键回滚到历史版本
-4. 灰度：先发布到部分机器，验证后全量
-5. 监听：配置变更时触发回调
-```
+        try:
+            resp = httpx.get(
+                f"{self.server_addr}/v1/cs/configs",
+                params={"dataId": data_id, "group": self.group}
+            )
+            self._local[data_id] = resp.text
+            return resp.text
+        except Exception:
+            return default
 
-**配置示例：**
+    def watch_config(self, data_id: str, callback) -> None:
+        """监听配置变更（通过长轮询）"""
+        import threading
 
-```java
-// Spring Boot集成Nacos配置中心
-@Configuration
-public class NacosConfig {
+        def _poll():
+            import time
+            while True:
+                time.sleep(10)
+                new_val = self.get_config(data_id)
+                if new_val != self._local.get(data_id):
+                    self._local[data_id] = new_val
+                    callback(new_val)
 
-    @Value("${feature.seckill.limit:1000}")
-    private int seckillLimit;
+        threading.Thread(target=_poll, daemon=True).start()
 
-    @Value("${feature.recommend.enabled:true}")
-    private boolean recommendEnabled;
-}
 
-// 动态刷新（加@RefreshScope）
-@RestController
-@RefreshScope
-public class FeatureController {
+# 使用
+config = ConfigCenter("http://nacos:8848")
 
-    @Value("${feature.recommend.enabled:true}")
-    private boolean recommendEnabled;
+seckill_limit = int(config.get_config("seckill-limit", "1000"))
+recommend_enabled = config.get_config("feature.recommend.enabled", "true") == "true"
 
-    @GetMapping("/recommend")
-    public List<Product> getRecommend() {
-        if (!recommendEnabled) {
-            return Collections.emptyList();
-        }
-        return recommendService.get();
-    }
-}
-```
-
-**监听配置变更：**
-
-```java
-@Component
-public class ConfigListener implements ApplicationRunner {
-
-    @Autowired
-    private NacosConfigManager configManager;
-
-    @Override
-    public void run(ApplicationArguments args) throws Exception {
-        configManager.getConfigService().addListener(
-            "seckill-config",
-            "DEFAULT_GROUP",
-            new Listener() {
-                @Override
-                public void receiveConfigInfo(String configInfo) {
-                    log.info("配置变更: {}", configInfo);
-                    SeckillConfig config = JSON.parseObject(configInfo, SeckillConfig.class);
-                    seckillService.updateConfig(config);
-                }
-
-                @Override
-                public Executor getExecutor() {
-                    return null;
-                }
-            }
-        );
-    }
-}
-```
-
----
-
-### 配置的分层管理
-
-```
-Nacos命名空间（Namespace）：环境隔离
-  - dev（开发环境）
-  - test（测试环境）
-  - prod（生产环境）
-
-Group：业务隔离
-  - ORDER_GROUP（订单相关配置）
-  - SECKILL_GROUP（秒杀相关配置）
-
-DataId：具体配置文件
-  - application.yml（通用配置）
-  - order-service.yml（服务特有配置）
+config.watch_config("seckill-limit", lambda v: update_seckill_config(int(v)))
 ```
 
 ---
@@ -1252,143 +633,58 @@ DataId：具体配置文件
 [客户端]
   ↓
 [API网关]
-  → 路由（把请求转发到对应的微服务）
-  → 鉴权（验证Token，不需要每个服务都做）
-  → 限流（全局流量控制）
-  → 熔断（下游服务故障时保护）
-  → 负载均衡（配合注册中心）
-  → 协议转换（HTTP → gRPC）
-  → 请求/响应转换（数据格式转换）
-  → 灰度发布（部分流量到新版本）
-  → 日志记录
+  → 路由、鉴权、限流、熔断、负载均衡、灰度发布
   ↓
 [微服务集群]
 ```
 
----
+### Python API网关实现（FastAPI中间件）
 
-### Spring Cloud Gateway配置
+**全局鉴权过滤器：**
 
-**路由配置：**
+```python
+from fastapi import FastAPI, Request
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
-```yaml
-spring:
-  cloud:
-    gateway:
-      routes:
-        - id: order-route
-          uri: lb://order-service
-          predicates:
-            - Path=/api/order/**
-            - Method=GET,POST
-          filters:
-            - StripPrefix=1
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 100
-                redis-rate-limiter.burstCapacity: 200
-            - name: CircuitBreaker
-              args:
-                name: orderCircuitBreaker
-                fallbackUri: forward:/fallback/order
+WHITE_LIST = ["/api/user/login", "/api/user/register", "/api/product/list"]
 
-        - id: seckill-route
-          uri: lb://seckill-service
-          predicates:
-            - Path=/api/seckill/**
-          filters:
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 1000
-                redis-rate-limiter.burstCapacity: 2000
+
+class AuthGlobalMiddleware(BaseHTTPMiddleware):
+    """API网关全局鉴权"""
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+
+        # 白名单放行
+        if any(path.startswith(w) for w in WHITE_LIST):
+            return await call_next(request)
+
+        token = request.headers.get("Authorization")
+        if not token:
+            return JSONResponse({"message": "请先登录"}, status_code=401)
+
+        user_id = redis.get(f"token:{token}")
+        if not user_id:
+            return JSONResponse({"message": "Token已过期"}, status_code=401)
+
+        # 透传用户ID
+        request.state.user_id = user_id.decode()
+        return await call_next(request)
 ```
 
-**全局过滤器（鉴权）：**
+**灰度发布：**
 
-```java
-@Component
-@Order(-1)
-public class AuthGlobalFilter implements GlobalFilter {
+```python
+class GrayscaleMiddleware(BaseHTTPMiddleware):
+    """灰度发布：10%用户走新版本"""
+    async def dispatch(self, request: Request, call_next):
+        user_id = request.headers.get("X-User-Id")
 
-    private static final List<String> WHITE_LIST = Arrays.asList(
-        "/api/user/login",
-        "/api/user/register",
-        "/api/product/list"
-    );
+        if user_id and int(user_id) % 10 == 0:
+            # 注入版本标记
+            request.state.version = "v2"
 
-    @Override
-    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        String path = exchange.getRequest().getPath().value();
-
-        if (WHITE_LIST.stream().anyMatch(path::startsWith)) {
-            return chain.filter(exchange);
-        }
-
-        String token = exchange.getRequest().getHeaders().getFirst("Authorization");
-
-        if (StringUtils.isEmpty(token)) {
-            return returnUnauthorized(exchange, "请先登录");
-        }
-
-        return validateToken(token)
-            .flatMap(userId -> {
-                if (userId == null) {
-                    return returnUnauthorized(exchange, "Token已过期，请重新登录");
-                }
-
-                ServerHttpRequest mutated = exchange.getRequest()
-                    .mutate()
-                    .header("X-User-Id", userId)
-                    .build();
-
-                return chain.filter(exchange.mutate().request(mutated).build());
-            });
-    }
-
-    private Mono<String> validateToken(String token) {
-        return Mono.fromCallable(() -> redis.get("token:" + token));
-    }
-
-    private Mono<Void> returnUnauthorized(ServerWebExchange exchange, String message) {
-        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-        exchange.getResponse().getHeaders().add("Content-Type", "application/json");
-
-        String body = JSON.toJSONString(Result.fail(message));
-        DataBuffer buffer = exchange.getResponse().bufferFactory()
-            .wrap(body.getBytes(StandardCharsets.UTF_8));
-
-        return exchange.getResponse().writeWith(Mono.just(buffer));
-    }
-}
-```
-
----
-
-### 灰度发布
-
-```java
-@Component
-public class GrayscaleFilter implements GlobalFilter {
-
-    @Override
-    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        String userId = exchange.getRequest().getHeaders().getFirst("X-User-Id");
-
-        if (userId != null) {
-            long uid = Long.parseLong(userId);
-
-            if (uid % 10 == 0) {
-                ServerHttpRequest mutated = exchange.getRequest()
-                    .mutate()
-                    .header("X-Version", "v2")
-                    .build();
-                return chain.filter(exchange.mutate().request(mutated).build());
-            }
-        }
-
-        return chain.filter(exchange);
-    }
-}
+        return await call_next(request)
 ```
 
 ---
@@ -1398,30 +694,19 @@ public class GrayscaleFilter implements GlobalFilter {
 ```
 [用户请求]
     ↓
-[DNS负载均衡]
-    ↓
 [API网关集群]
-  - 全局鉴权
-  - 全局限流
-  - 路由
-  - 熔断
-  - 链路追踪（生成TraceID）
+  - 全局鉴权、限流、路由、熔断、TraceID生成
     ↓
 [微服务集群]
-  [订单服务]  [库存服务]  [用户服务]
-      |              |            |
-      +——————————————+————————————+
-                     |
-            [注册中心 Nacos]
-            - 服务注册
-            - 服务发现
-            - 配置管理
-                     |
-            [监控体系]
-            - Prometheus（指标采集）
-            - Grafana（指标展示）
-            - SkyWalking（链路追踪）
-            - ELK（日志搜索）
+  订单服务、库存服务、用户服务
+    ↓
+[注册中心 Nacos/Consul]
+  - 服务注册、服务发现、配置管理
+    ↓
+[监控体系]
+  - Prometheus（指标）+ Grafana（展示）
+  - Jaeger/OpenTelemetry（链路追踪）
+  - ELK（日志搜索）
 ```
 
 ---
@@ -1430,159 +715,58 @@ public class GrayscaleFilter implements GlobalFilter {
 
 ### 1. 服务注册发现的原理？
 
-**标准回答：**
-
 ```
 三个角色：服务提供者、注册中心、服务消费者
 
 流程：
-1. 提供者启动 → 注册到注册中心（IP、端口、服务名）
-2. 提供者定时心跳 → 超时未心跳自动剔除
+1. 提供者启动 → 注册（IP、端口、服务名）
+2. 提供者定时心跳 → 超时自动剔除
 3. 消费者启动 → 拉取服务列表 → 本地缓存
 4. 消费者订阅变更 → 注册中心推送更新
-5. 消费者调用 → 从本地缓存取实例 → 负载均衡 → 调用
-
-注册中心宕机：消费者使用本地缓存，短时间不受影响
+5. 注册中心宕机 → 消费者用本地缓存，短时间不受影响
 ```
-
----
 
 ### 2. Redis分布式锁有什么坑？
 
-**标准回答：**
-
 ```
-坑1：锁过期，业务还没完
-解决：Redisson看门狗自动续期
-
-坑2：释放了别人的锁
-解决：value用UUID，释放前用Lua脚本验证value
-
-坑3：主从切换，锁丢失
-解决：RedLock（多个Master都加锁）
-     或换用ZooKeeper（强一致性）
+坑1：锁过期业务还没完 → Redisson看门狗自动续期
+坑2：释放了别人的锁 → Lua脚本验证value再删
+坑3：主从切换锁丢失 → RedLock或换ZooKeeper
 ```
-
----
 
 ### 3. ZooKeeper和Redis做分布式锁的区别？
 
-**标准回答：**
-
 ```
-Redis锁：
-→ 基于SETNX + 过期时间
-→ 性能高
-→ 主从切换有极小概率丢锁
-→ 适合高并发、容忍极小概率问题的场景
-
-ZooKeeper锁：
-→ 基于临时有序节点
-→ 客户端宕机，临时节点自动删除
-→ ZAB协议保证强一致性，不会丢锁
-→ 性能低于Redis
-→ 适合对一致性要求极高的场景（金融）
-
-实际选择：
-→ 大多数场景用Redis + Redisson
-→ 金融核心场景用ZooKeeper
+Redis：基于SETNX + 过期，性能高，主从切换有风险，适合高并发
+ZooKeeper：基于临时有序节点，强一致性，客户端宕机自动删除
+大多数场景用Redis，金融核心用ZooKeeper
 ```
 
----
-
-### 4. 链路追踪是如何跨服务传递TraceID的？
-
-**标准回答：**
+### 4. 链路追踪如何跨服务传递TraceID？
 
 ```
-HTTP调用：
-→ 发起方把TraceID放在HTTP Header（X-Trace-Id）
-→ 接收方从Header提取，存入ThreadLocal
-→ 日志框架从ThreadLocal取出，加入每条日志（MDC）
-→ 调用下游时，从ThreadLocal取出，放入Header
-
-消息队列：
-→ 发送时把TraceID放入消息Header
-→ 消费时从消息Header提取
-→ 存入ThreadLocal
-
-SkyWalking：
-→ Java Agent方式
-→ 自动拦截所有支持的框架
-→ 无侵入透明传递
+HTTP：Header中传递 X-Trace-Id → 存入 contextvars → 日志自动带上
+MQ：消息Header携带 TraceID → 消费时提取
 ```
-
----
 
 ### 5. Nacos和Eureka的区别？
 
-**标准回答：**
-
 ```
-Nacos：
-→ AP/CP可切换
-→ 内置配置中心
-→ 控制台功能丰富
-→ 活跃维护
-→ 国内首选
-
-Eureka：
-→ AP模式（强调可用性）
-→ 只有注册发现，没有配置中心
-→ Netflix已停止维护
-→ 新项目不推荐
-
-主要区别：
-1. Nacos = 注册中心 + 配置中心
-2. Nacos支持CP模式（强一致），Eureka只有AP
-3. Nacos主动推送变更，Eureka客户端轮询
-4. Nacos的心跳和健康检查更灵活
+Nacos = 注册中心 + 配置中心，AP/CP可切换，国内首选
+Eureka 只有注册发现，已停止维护
 ```
-
----
 
 ### 6. API网关和Nginx有什么区别？
 
-**标准回答：**
-
 ```
-Nginx：
-→ 七层/四层负载均衡
-→ 静态配置为主
-→ 不感知服务注册发现
-→ 性能极高（C语言）
-→ 适合最外层流量接入
-
-API网关：
-→ 感知注册中心（服务发现）
-→ 动态路由（不需要重启）
-→ 业务级过滤器（鉴权、限流）
-→ 配置可动态变更
-→ 适合微服务内部流量治理
-
-关系：
-Nginx（最外层）→ API网关 → 微服务
+Nginx：七层负载均衡、静态配置、性能极高、适合最外层
+API网关：感知注册中心、动态路由、业务级过滤器、适合微服务内部治理
 ```
-
----
 
 ### 7. 配置中心解决了什么问题？
 
-**标准回答：**
-
 ```
-解决的问题：
-1. 配置修改需要重新部署（改为动态刷新）
-2. 多台机器配置不一致（改为集中管理）
-3. 配置没有版本记录（改为版本管理 + 回滚）
-4. 无法灰度配置（改为灰度推送）
-5. 配置变更无审计（改为变更记录）
-
-核心能力：
-→ 动态配置：不重启生效
-→ 版本管理：随时回滚
-→ 环境隔离：dev/test/prod分开
-→ 监听推送：变更实时通知
+动态配置（不停机生效）、版本管理（可回滚）、环境隔离、灰度推送
 ```
 
 ---
@@ -1590,11 +774,11 @@ Nginx（最外层）→ API网关 → 微服务
 ## 八、核心结论
 
 1. **服务注册发现消费者本地缓存，注册中心宕机不影响正常调用**
-2. **Redis分布式锁三个坑：过期/释放他人锁/主从切换，Redisson全部解决**
+2. **Redis分布式锁三个坑：过期/释放他人锁/主从切换，看门狗+Lua解决**
 3. **Redis锁高性能，ZooKeeper锁强一致，90%场景用Redis**
-4. **TraceID通过HTTP Header跨服务传递，存入ThreadLocal**
-5. **SkyWalking用Java Agent无侵入接入，生产环境要设采样率**
-6. **Nacos = 注册中心 + 配置中心，国内新项目首选**
+4. **TraceID通过HTTP Header跨服务传递，contextvars存储**
+5. **生产环境链路追踪要设采样率，错误和慢请求全采集**
+6. **Nacos/Consul = 注册中心 + 配置中心**
 7. **API网关统一处理鉴权、限流、路由，避免各服务重复实现**
 8. **配置中心解决配置动态刷新、版本管理、环境隔离**
 
@@ -1603,45 +787,15 @@ Nginx（最外层）→ API网关 → 微服务
 ## 九、练习题
 
 ### 练习1：分布式锁设计
-
-场景：分布式定时任务，同一时刻只能有一台机器执行。
-
-要求：
-1. 用Redis实现（Redisson）
-2. 任务执行超时怎么处理？（看门狗）
-3. 任务执行完如何保证锁一定释放？
-4. 写出完整代码
-
----
+用Redis实现分布式定时任务锁，同一时刻只能一台机器执行。考虑任务超时、锁释放、锁续期。
 
 ### 练习2：链路追踪
-
-场景：服务A（HTTP）→ 服务B（HTTP）→ 服务C（Kafka消息）
-
-要求：
-1. TraceID如何从A传到B？
-2. TraceID如何从B传到C（Kafka消息中）？
-3. TraceID如何从Kafka传到服务C的处理代码？
-4. 日志如何自动带上TraceID？
-
----
+设计 TraceID 传递方案：服务A(HTTP) → 服务B(HTTP) → 服务C(Kafka消息)。
 
 ### 练习3：服务治理设计
-
-为一个电商系统设计完整的服务治理方案：
-- 3个微服务：订单服务、库存服务、用户服务
-- 需要：注册发现、配置中心、鉴权、限流、链路追踪
-
-要求：
-1. 画出架构图
-2. 选型（注册中心/网关/链路追踪）
-3. 说明各组件的职责
-4. 说明鉴权在哪一层实现
-
----
+为电商系统设计完整服务治理方案（3个微服务），画出架构图并选型。
 
 ### 练习4：思考题
-
 **为什么Redis分布式锁要用Lua脚本释放，而不是普通的DEL命令？**
 
 ---
@@ -1649,5 +803,3 @@ Nginx（最外层）→ API网关 → 微服务
 ## 十、下讲预告
 
 **第 9 讲：高可用架构——同城双活与容灾设计**
-
-会讲：高可用度量、单点故障排查与消除、同城双活架构、异地多活挑战、数据同步与一致性、流量调度与容灾切换、故障演练（混沌工程）、大厂高可用实践案例。
