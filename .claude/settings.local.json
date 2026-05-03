@@ -86,7 +86,8 @@
       "Bash(pip list *)",
       "Bash(npx tsc *)",
       "Bash(pkill -f \"uvicorn synapse_server\")",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(tasklist /FI \"IMAGENAME eq python.exe\" /FO CSV)"
     ]
   }
 }
