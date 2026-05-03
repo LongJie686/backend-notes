@@ -270,6 +270,8 @@ def quick_convert(input_path: str) -> str:
 
 ## 四、Cesium 加载 3D Tiles
 
+> 以下为前端参考代码
+
 ```javascript
 // Vue3 + Cesium 加载 3D Tiles
 const viewer = new Cesium.Viewer("cesiumContainer", {

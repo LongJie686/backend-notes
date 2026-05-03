@@ -47,6 +47,8 @@ bar.render("sales.html")  # 输出 HTML 文件
 
 ## ECharts（前端集成）
 
+> 以下为前端参考代码
+
 ```javascript
 // 前端 Vue/React 中使用 ECharts
 const chart = echarts.init(document.getElementById("chart"));

@@ -25,33 +25,37 @@ app/
 
 ## 路由与请求
 
+| 参数类型 | 装饰器参数 | 示例 |
+|---------|-----------|------|
+| 路径参数 | `Path(...)` | `/users/{user_id}` |
+| 查询参数 | `Query(None)` | `?keyword=xxx` |
+| 请求体 | Pydantic Model | POST body JSON |
+
 ```python
-from fastapi import FastAPI, Query, Path
+from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import Optional
 
 app = FastAPI()
 
 class UserCreate(BaseModel):
     name: str
     email: str
-    age: Optional[int] = None
 
-# 路径参数 + 查询参数
 @app.get("/users/{user_id}")
-async def get_user(user_id: int = Path(..., gt=0), keyword: Optional[str] = Query(None)):
-    return {"id": user_id, "keyword": keyword}
+async def get_user(user_id: int):
+    return {"id": user_id}
 
-# 请求体
 @app.post("/users")
 async def create_user(user: UserCreate):
-    return {"name": user.name, "email": user.email}
+    return {"name": user.name}
 ```
 
 ## 依赖注入
 
+依赖注入用于复用数据库连接、认证校验等公共逻辑。
+
 ```python
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 
 async def get_db():
     db = SessionLocal()
@@ -59,12 +63,6 @@ async def get_db():
         yield db
     finally:
         db.close()
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    user = decode_token(token)
-    if not user:
-        raise HTTPException(status_code=401)
-    return user
 
 @app.get("/me")
 async def me(user=Depends(get_current_user), db=Depends(get_db)):
@@ -82,28 +80,23 @@ app.add_middleware(CORSMiddleware, allow_origins=["https://example.com"],
 @app.middleware("http")
 async def log_requests(request, call_next):
     response = await call_next(request)
-    print(f"{request.method} {request.url} -> {response.status_code}")
     return response
 ```
 
-## WebSocket
+## WebSocket 与部署
 
 ```python
-from fastapi import WebSocket
-
 @app.websocket("/ws/{client_id}")
 async def ws_endpoint(websocket: WebSocket, client_id: str):
     await websocket.accept()
     while True:
         data = await websocket.receive_text()
-        await websocket.send_text(f"Client {client_id}: {data}")
+        await websocket.send_text(f"{client_id}: {data}")
 ```
-
-## 部署
 
 ```bash
 # 开发
 uvicorn app.main:app --reload
-# 生产（多 worker）
+# 生产
 gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```

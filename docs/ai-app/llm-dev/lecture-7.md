@@ -786,6 +786,8 @@ async def chat_stream(request: ChatRequest):
 
 ### 2. 前端 SSE 消费（JavaScript）
 
+> 以下为前端参考代码，非本项目实现
+
 ```javascript
 // frontend/chat.js
 

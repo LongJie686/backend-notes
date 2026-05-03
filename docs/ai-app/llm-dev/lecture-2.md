@@ -599,7 +599,7 @@ ORDER BY create_time DESC;
 [2-3 条最重要的改进方向]
 
 # Code to Review
-```java
+```text
 {{code}}
 ```
 ```
