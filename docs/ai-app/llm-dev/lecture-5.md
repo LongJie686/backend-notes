@@ -1217,65 +1217,30 @@ async def chat_stream(request: dict):
 ### 2. 会话持久化
 
 ```python
-import pickle
-from pathlib import Path
-
 class SessionStore:
-    """会话持久化存储"""
-
+    """会话持久化存储 -- 核心方法"""
     def __init__(self, store_dir: str = "./sessions"):
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(exist_ok=True)
 
     def save_session(self, user_id: str, bot: XinYuBot):
-        """保存会话状态"""
+        """保存关键状态：memory_summary、recent_messages、user_profile、state、emotion_history"""
         session_data = {
-            "user_id": user_id,
             "memory_summary": bot.memory.summary,
             "recent_messages": list(bot.memory.recent_messages),
             "user_profile": bot.user_profile,
             "state": bot.state_machine.current_state.value,
             "emotion_history": list(bot.emotion_history),
-            "saved_at": datetime.now().isoformat()
         }
-
-        session_file = self.store_dir / f"{user_id}.pkl"
-        with open(session_file, "wb") as f:
+        with open(self.store_dir / f"{user_id}.pkl", "wb") as f:
             pickle.dump(session_data, f)
 
     def load_session(self, user_id: str) -> Optional[dict]:
-        """加载会话状态"""
         session_file = self.store_dir / f"{user_id}.pkl"
-
         if not session_file.exists():
             return None
-
         with open(session_file, "rb") as f:
             return pickle.load(f)
-
-    def restore_bot(self, user_id: str, llm=None) -> Optional[XinYuBot]:
-        """从保存状态恢复机器人"""
-        session_data = self.load_session(user_id)
-        if not session_data:
-            return None
-
-        bot = XinYuBot(user_id=user_id)
-
-        # 恢复记忆
-        bot.memory.summary = session_data.get("memory_summary", "")
-        bot.memory.recent_messages = session_data.get("recent_messages", [])
-
-        # 恢复用户画像
-        bot.user_profile = session_data.get("user_profile", UserProfile(user_id=user_id))
-
-        # 恢复情感历史
-        if session_data.get("emotion_history"):
-            bot.emotion_history = deque(
-                session_data["emotion_history"],
-                maxlen=10
-            )
-
-        return bot
 ```
 
 ---
@@ -1283,97 +1248,25 @@ class SessionStore:
 ### 3. 完整 API 服务
 
 ```python
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import Dict
-import uvicorn
-
-app = FastAPI(title="心语情感机器人 API")
-
-# 会话存储（生产环境用 Redis）
-sessions: Dict[str, XinYuBot] = {}
-session_store = SessionStore()
-
-
-class ChatRequest(BaseModel):
-    user_id: str
-    message: str
-
-
-class ChatResponse(BaseModel):
-    user_id: str
-    message: str
-    response: str
-    emotion: dict
-    state: str
-    round_num: int
-
-
-def get_or_create_bot(user_id: str) -> XinYuBot:
-    """获取或创建机器人实例"""
-    if user_id not in sessions:
-        # 尝试恢复历史会话
-        bot = session_store.restore_bot(user_id, None)
-        if not bot:
-            bot = XinYuBot(user_id=user_id)
-        sessions[user_id] = bot
-    return sessions[user_id]
-
+# 核心 API 路由一览（FastAPI）
+# - POST /chat           → 普通对话（ChatRequest → ChatResponse）
+# - GET  /session/{uid}  → 查看用户会话状态
+# - DELETE /session/{uid} → 结束并保存会话
+# - GET  /health          → 健康检查
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """对话接口"""
-
-    try:
-        bot = get_or_create_bot(request.user_id)
-        response = bot.chat(request.message)
-
-        # 异步保存会话
-        session_store.save_session(request.user_id, bot)
-
-        return ChatResponse(
-            user_id=request.user_id,
-            message=request.message,
-            response=response,
-            emotion=bot.current_emotion,
-            state=bot.state_machine.current_state.value,
-            round_num=bot.total_rounds
-        )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/session/{user_id}")
-async def get_session_info(user_id: str):
-    """获取会话信息"""
-    if user_id not in sessions:
-        raise HTTPException(status_code=404, detail="会话不存在")
-
-    bot = sessions[user_id]
-    return bot.get_session_summary()
-
-
-@app.delete("/session/{user_id}")
-async def end_session(user_id: str):
-    """结束会话"""
-    if user_id in sessions:
-        bot = sessions.pop(user_id)
-        session_store.save_session(user_id, bot)
-    return {"message": "会话已结束"}
-
-
-@app.get("/health")
-async def health_check():
-    return {
-        "status": "healthy",
-        "active_sessions": len(sessions),
-        "timestamp": datetime.now().isoformat()
-    }
-
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    bot = get_or_create_bot(request.user_id)  # 会话池管理（生产用 Redis）
+    response = bot.chat(request.message)
+    session_store.save_session(request.user_id, bot)  # 异步持久化
+    return ChatResponse(
+        user_id=request.user_id,
+        message=request.message,
+        response=response,
+        emotion=bot.current_emotion,       # 返回情感分析结果
+        state=bot.state_machine.current_state.value,  # 当前对话状态
+        round_num=bot.total_rounds
+    )
 ```
 
 ---

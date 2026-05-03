@@ -272,59 +272,23 @@ QLoRA（4-bit 量化基础模型）：
 
 ```python
 # 用 GPT-4 生成训练数据，再人工抽检
-import openai
-
-def generate_training_data(topic: str, n_samples: int = 10) -> list:
-    """用 GPT-4 生成训练数据"""
-
+def generate_training_data(topic: str, n_samples: int = 200) -> list:
     prompt = f"""请生成 {n_samples} 条用于训练情感支持机器人的对话数据。
-
-要求：
-1. 用户消息要真实、多样，涵盖不同的情感困扰
-2. 机器人回复要温暖、有共情、有引导性
-3. 机器人不要给过多建议，主要是倾听和共情
-4. 每条数据的机器人回复在 50-100 字之间
-
 主题：{topic}
-
-请以 JSON 数组格式输出：
-[
-  {{
-    "instruction": "用户消息",
-    "output": "机器人回复"
-  }}
-]
-
-只输出 JSON："""
+要求：用户消息真实多样，机器人回复温暖共情（50-100字）。
+以 JSON 数组格式输出：[{{"instruction": "用户消息", "output": "机器人回复"}}]"""
 
     client = openai.OpenAI()
     response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.8
+        model="gpt-4", messages=[{"role": "user", "content": prompt}], temperature=0.8
     )
+    return json.loads(response.choices[0].message.content)
 
-    try:
-        return json.loads(response.choices[0].message.content)
-    except:
-        return []
-
-# 生成各类主题的数据
-topics = [
-    "职场压力和职业困扰",
-    "恋爱和感情问题",
-    "家庭关系和亲子矛盾",
-    "自我价值感和自信问题",
-    "焦虑和压力管理"
-]
-
+# 批量生成各主题数据
+topics = ["职场压力", "感情问题", "家庭关系", "自我价值", "焦虑管理"]
 all_data = []
 for topic in topics:
-    samples = generate_training_data(topic, n_samples=200)
-    all_data.extend(samples)
-    print(f"生成 {topic}：{len(samples)} 条")
-
-print(f"总计：{len(all_data)} 条")
+    all_data.extend(generate_training_data(topic, n_samples=200))
 ```
 
 **来源 3：现有数据集（快速启动）**
@@ -345,146 +309,36 @@ dataset = load_dataset("Amod/mental_health_counseling_conversations")
 
 ### 3. 数据清洗
 
+> 数据清洗5步流程（代码核心逻辑）
+
+| 步骤 | 方法 | 过滤内容 |
+|------|------|---------|
+| 1 | `_remove_empty` | 移除 instruction 或 output 为空的数据 |
+| 2 | `_filter_length` | 过滤过短(<5字)或过长(>512字)的输入，以及过短(<10字)或过长(>1024字)的输出 |
+| 3 | `_remove_duplicates` | 基于 instruction 内容去重 |
+| 4 | `_filter_quality` | 过滤包含"抱歉我无法"、代码块过多、大量英文等低质量数据 |
+| 5 | `_normalize` | 格式标准化，统一为 {instruction, input, output} |
+
 ```python
-import re
-from typing import List, Dict
-
 class DataCleaner:
-    """训练数据清洗器"""
-
-    def __init__(self):
-        self.stats = {
-            "total": 0,
-            "removed_empty": 0,
-            "removed_too_short": 0,
-            "removed_too_long": 0,
-            "removed_duplicates": 0,
-            "removed_low_quality": 0,
-            "final": 0
-        }
-
+    """训练数据清洗器（5步流水线）"""
     def clean(self, data: List[Dict]) -> List[Dict]:
-        """完整清洗流程"""
-
-        self.stats["total"] = len(data)
-
-        # Step 1: 去除空数据
         data = self._remove_empty(data)
-
-        # Step 2: 过滤长度
         data = self._filter_length(data)
-
-        # Step 3: 去重
         data = self._remove_duplicates(data)
-
-        # Step 4: 质量过滤
         data = self._filter_quality(data)
-
-        # Step 5: 格式标准化
         data = self._normalize(data)
-
-        self.stats["final"] = len(data)
-        self._print_stats()
-
+        # 打印统计：total → removed_empty/too_short/too_long/duplicates/low_quality → final
         return data
 
-    def _remove_empty(self, data: List[Dict]) -> List[Dict]:
-        """去除空数据"""
-        cleaned = [
-            d for d in data
-            if d.get("instruction", "").strip()
-            and d.get("output", "").strip()
-        ]
-        self.stats["removed_empty"] = len(data) - len(cleaned)
-        return cleaned
-
-    def _filter_length(
-        self,
-        data: List[Dict],
-        min_input_len: int = 5,
-        max_input_len: int = 512,
-        min_output_len: int = 10,
-        max_output_len: int = 1024
-    ) -> List[Dict]:
-        """过滤长度不合适的数据"""
-
-        cleaned = []
-        removed = 0
-
-        for d in data:
-            input_len = len(d.get("instruction", ""))
-            output_len = len(d.get("output", ""))
-
-            if (min_input_len <= input_len <= max_input_len and
-                min_output_len <= output_len <= max_output_len):
-                cleaned.append(d)
-            else:
-                removed += 1
-
-        self.stats["removed_too_short"] = removed
-        return cleaned
-
-    def _remove_duplicates(self, data: List[Dict]) -> List[Dict]:
-        """基于指令去重"""
-        seen = set()
-        cleaned = []
-
-        for d in data:
-            key = d.get("instruction", "").strip()
-            if key not in seen:
-                seen.add(key)
-                cleaned.append(d)
-
-        self.stats["removed_duplicates"] = len(data) - len(cleaned)
-        return cleaned
-
     def _filter_quality(self, data: List[Dict]) -> List[Dict]:
-        """过滤低质量数据"""
-
-        cleaned = []
-        removed = 0
-
-        # 质量问题的特征
-        quality_issues = [
-            lambda d: "抱歉，我无法" in d.get("output", ""),  # 模型拒绝回答
-            lambda d: len(d.get("output", "").split("\n")) > 20,  # 输出太分散
-            lambda d: d.get("output", "").count("```") > 4,  # 代码块太多（不适合对话）
-            lambda d: bool(re.search(r"[a-zA-Z]{50,}", d.get("output", ""))),  # 大量英文（中文任务）
+        """过滤低质量数据：拒绝回答/代码块过多/大量英文"""
+        issues = [
+            lambda d: "抱歉，我无法" in d.get("output", ""),
+            lambda d: d.get("output", "").count("```") > 4,
+            lambda d: bool(re.search(r"[a-zA-Z]{50,}", d.get("output", ""))),
         ]
-
-        for d in data:
-            if any(issue(d) for issue in quality_issues):
-                removed += 1
-            else:
-                cleaned.append(d)
-
-        self.stats["removed_low_quality"] = removed
-        return cleaned
-
-    def _normalize(self, data: List[Dict]) -> List[Dict]:
-        """格式标准化"""
-        normalized = []
-
-        for d in data:
-            normalized.append({
-                "instruction": d.get("instruction", "").strip(),
-                "input": d.get("input", "").strip(),
-                "output": d.get("output", "").strip()
-            })
-
-        return normalized
-
-    def _print_stats(self):
-        print("=" * 40)
-        print("数据清洗统计")
-        print("=" * 40)
-        for key, value in self.stats.items():
-            print(f"{key}: {value}")
-        print(f"保留率: {self.stats['final']/self.stats['total']*100:.1f}%")
-
-# 使用
-cleaner = DataCleaner()
-clean_data = cleaner.clean(all_data)
+        return [d for d in data if not any(issue(d) for issue in issues)]
 ```
 
 ---
@@ -549,269 +403,73 @@ pip install wandb  # 训练监控
 
 ### 2. 完整训练脚本（LoRA）
 
+**训练配置参数表：**
+
+| 配置分类 | 参数 | 推荐值 | 说明 |
+|---------|------|--------|------|
+| **模型** | model_name | Qwen/Qwen-7B-Chat | 基础模型选择 |
+| **LoRA** | lora_r | 8 | 低秩矩阵秩，通常 4-64 |
+| | lora_alpha | 16 | 缩放系数，通常 = 2*r |
+| | lora_dropout | 0.05 | 防止过拟合 |
+| | target_modules | q/k/v/o_proj + gate/up/down_proj | 应用 LoRA 的模块 |
+| **量化** | use_4bit | True | QLoRA 4-bit 量化 |
+| | bnb_4bit_quant_type | nf4 | NormalFloat4 格式 |
+| | use_nested_quant | True | 双重量化节省显存 |
+| **训练** | num_epochs | 3 | 训练轮数 |
+| | per_device_batch_size | 4 | 每 GPU batch size |
+| | gradient_accumulation | 4 | 梯度累积，等效 batch=16 |
+| | learning_rate | 2e-4 | LoRA 推荐学习率 |
+| | lr_scheduler | cosine | 余弦退火调度 |
+| | warmup_ratio | 0.03 | 3% 步数做 warmup |
+| **数据** | max_seq_length | 2048 | 最大序列长度 |
+| | packing | False | 是否打包多条数据 |
+
+**训练脚本核心步骤（简化版）：**
+
 ```python
-import os
-import json
-import torch
-from dataclasses import dataclass, field
-from typing import Optional, List
-from datasets import Dataset
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    TrainingArguments,
-    BitsAndBytesConfig,
+# Step 1: 加载模型和分词器（QLoRA 4-bit）
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True, bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True
 )
-from peft import (
-    LoraConfig,
-    get_peft_model,
-    TaskType,
-    prepare_model_for_kbit_training
+model = AutoModelForCausalLM.from_pretrained(
+    model_name, quantization_config=bnb_config, device_map="auto", trust_remote_code=True
 )
-from trl import SFTTrainer
+model = prepare_model_for_kbit_training(model)  # QLoRA 必须步骤
 
+# Step 2: 配置 LoRA
+lora_config = LoraConfig(
+    r=8, lora_alpha=16, target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"],
+    lora_dropout=0.05, bias="none", task_type=TaskType.CAUSAL_LM
+)
+model = get_peft_model(model, lora_config)
+model.print_trainable_parameters()  # 输出: trainable params: 4,194,304 || 0.0622%
 
-# ==================== 配置 ====================
+# Step 3: 加载和格式化数据（Alpaca 格式 → "### 指令：\n{instruction}\n\n### 回复：\n{output}"）
+train_dataset = Dataset.from_list(json.load(open("train_data.json")))
+train_dataset = train_dataset.map(format_instruction)
 
-@dataclass
-class ModelConfig:
-    """模型配置"""
-    # 基础模型（选一个）
-    model_name: str = "Qwen/Qwen-7B-Chat"          # 通义千问 7B
-    # model_name: str = "THUDM/chatglm3-6b"         # ChatGLM3
-    # model_name: str = "meta-llama/Llama-2-7b-chat-hf"  # LLaMA2
+# Step 4: 配置训练参数
+training_args = TrainingArguments(
+    output_dir="./xinyu_lora",
+    num_train_epochs=3, per_device_train_batch_size=4,
+    gradient_accumulation_steps=4,  # 等效 batch_size=16
+    learning_rate=2e-4, optim="paged_adamw_32bit",
+    warmup_ratio=0.03, lr_scheduler_type="cosine",
+    fp16=False, bf16=True, max_grad_norm=0.3,
+    logging_steps=10, save_steps=100,
+    evaluation_strategy="steps", eval_steps=100,
+    load_best_model_at_end=True, report_to="wandb",
+)
 
-    # LoRA 参数
-    lora_r: int = 8              # 低秩矩阵的秩
-    lora_alpha: int = 16         # 缩放系数（通常 = 2*r）
-    lora_dropout: float = 0.05   # Dropout
-    target_modules: List[str] = field(default_factory=lambda: [
-        "q_proj", "k_proj", "v_proj", "o_proj",  # Attention 层
-        "gate_proj", "up_proj", "down_proj"        # FFN 层
-    ])
-
-    # 量化配置
-    use_4bit: bool = True        # 使用 4-bit 量化（QLoRA）
-    bnb_4bit_compute_dtype: str = "bfloat16"
-    bnb_4bit_quant_type: str = "nf4"
-    use_nested_quant: bool = True  # 双重量化
-
-
-@dataclass
-class TrainConfig:
-    """训练配置"""
-    # 数据
-    train_data_path: str = "train_data.json"
-    val_data_path: Optional[str] = "val_data.json"
-    max_seq_length: int = 2048
-
-    # 训练超参数
-    num_epochs: int = 3
-    per_device_train_batch_size: int = 4
-    gradient_accumulation_steps: int = 4  # 等效 batch_size = 16
-    learning_rate: float = 2e-4
-    weight_decay: float = 0.001
-    warmup_ratio: float = 0.03
-    lr_scheduler_type: str = "cosine"
-
-    # 输出
-    output_dir: str = "./xinyu_lora"
-    logging_steps: int = 10
-    save_steps: int = 100
-    eval_steps: int = 100
-
-    # 其他
-    fp16: bool = False
-    bf16: bool = True  # A100/H100 用 bf16，其他用 fp16
-
-
-# ==================== 数据处理 ====================
-
-def load_and_format_data(data_path: str, tokenizer) -> Dataset:
-    """加载并格式化训练数据"""
-
-    with open(data_path, "r", encoding="utf-8") as f:
-        raw_data = json.load(f)
-
-    def format_instruction(sample):
-        """格式化为对话模板"""
-        instruction = sample.get("instruction", "")
-        input_text = sample.get("input", "")
-        output = sample.get("output", "")
-
-        # Alpaca 对话模板
-        if input_text:
-            full_prompt = f"""### 指令：
-{instruction}
-
-### 输入：
-{input_text}
-
-### 回复：
-{output}"""
-        else:
-            full_prompt = f"""### 指令：
-{instruction}
-
-### 回复：
-{output}"""
-
-        return {"text": full_prompt}
-
-    dataset = Dataset.from_list(raw_data)
-    dataset = dataset.map(format_instruction)
-
-    return dataset
-
-
-# ==================== 模型加载 ====================
-
-def load_model_and_tokenizer(config: ModelConfig):
-    """加载模型和分词器"""
-
-    # 量化配置（QLoRA）
-    bnb_config = None
-    if config.use_4bit:
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type=config.bnb_4bit_quant_type,
-            bnb_4bit_compute_dtype=getattr(torch, config.bnb_4bit_compute_dtype),
-            bnb_4bit_use_double_quant=config.use_nested_quant,
-        )
-
-    # 加载分词器
-    tokenizer = AutoTokenizer.from_pretrained(
-        config.model_name,
-        trust_remote_code=True,  # 某些模型需要
-        padding_side="right"
-    )
-
-    # 确保有 pad token
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    # 加载模型
-    model = AutoModelForCausalLM.from_pretrained(
-        config.model_name,
-        quantization_config=bnb_config,
-        device_map="auto",           # 自动分配 GPU
-        trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
-    )
-
-    # QLoRA 必须的准备步骤
-    if config.use_4bit:
-        model = prepare_model_for_kbit_training(model)
-
-    return model, tokenizer
-
-
-# ==================== 配置 LoRA ====================
-
-def configure_lora(model, config: ModelConfig):
-    """配置 LoRA"""
-
-    lora_config = LoraConfig(
-        r=config.lora_r,
-        lora_alpha=config.lora_alpha,
-        target_modules=config.target_modules,
-        lora_dropout=config.lora_dropout,
-        bias="none",
-        task_type=TaskType.CAUSAL_LM,  # 因果语言模型
-    )
-
-    model = get_peft_model(model, lora_config)
-
-    # 打印可训练参数
-    model.print_trainable_parameters()
-    # 输出类似：
-    # trainable params: 4,194,304 || all params: 6,742,609,920 || trainable%: 0.0622
-
-    return model
-
-
-# ==================== 训练 ====================
-
-def train(model_config: ModelConfig, train_config: TrainConfig):
-    """完整训练流程"""
-
-    print("加载模型...")
-    model, tokenizer = load_model_and_tokenizer(model_config)
-
-    print("配置 LoRA...")
-    model = configure_lora(model, model_config)
-
-    print("加载数据集...")
-    train_dataset = load_and_format_data(
-        train_config.train_data_path,
-        tokenizer
-    )
-
-    eval_dataset = None
-    if train_config.val_data_path and os.path.exists(train_config.val_data_path):
-        eval_dataset = load_and_format_data(
-            train_config.val_data_path,
-            tokenizer
-        )
-
-    print(f"训练集大小: {len(train_dataset)}")
-    if eval_dataset:
-        print(f"验证集大小: {len(eval_dataset)}")
-
-    # 训练参数
-    training_args = TrainingArguments(
-        output_dir=train_config.output_dir,
-        num_train_epochs=train_config.num_epochs,
-        per_device_train_batch_size=train_config.per_device_train_batch_size,
-        gradient_accumulation_steps=train_config.gradient_accumulation_steps,
-        optim="paged_adamw_32bit",  # QLoRA 推荐优化器
-        save_steps=train_config.save_steps,
-        logging_steps=train_config.logging_steps,
-        learning_rate=train_config.learning_rate,
-        weight_decay=train_config.weight_decay,
-        fp16=train_config.fp16,
-        bf16=train_config.bf16,
-        max_grad_norm=0.3,          # 梯度裁剪
-        warmup_ratio=train_config.warmup_ratio,
-        lr_scheduler_type=train_config.lr_scheduler_type,
-        evaluation_strategy="steps" if eval_dataset else "no",
-        eval_steps=train_config.eval_steps if eval_dataset else None,
-        load_best_model_at_end=True if eval_dataset else False,
-        report_to="wandb",          # 训练监控
-        run_name="xinyu-lora-training",
-    )
-
-    # SFT 训练器
-    trainer = SFTTrainer(
-        model=model,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        dataset_text_field="text",
-        max_seq_length=train_config.max_seq_length,
-        tokenizer=tokenizer,
-        args=training_args,
-        packing=False,
-    )
-
-    print("开始训练...")
-    trainer.train()
-
-    print("保存模型...")
-    trainer.save_model(train_config.output_dir)
-    tokenizer.save_pretrained(train_config.output_dir)
-
-    print(f"训练完成！模型保存到 {train_config.output_dir}")
-
-    return trainer
-
-
-# ==================== 主程序 ====================
-
-if __name__ == "__main__":
-    model_config = ModelConfig()
-    train_config = TrainConfig()
-
-    trainer = train(model_config, train_config)
+# Step 5: 创建 SFTTrainer 并开始训练
+trainer = SFTTrainer(
+    model=model, train_dataset=train_dataset, eval_dataset=eval_dataset,
+    dataset_text_field="text", max_seq_length=2048, tokenizer=tokenizer,
+    args=training_args, packing=False,
+)
+trainer.train()
+trainer.save_model("./xinyu_lora")  # 保存 LoRA 权重
 ```
 
 ---
@@ -883,31 +541,14 @@ wandb.finish()
 **关键指标监控：**
 
 ```python
-# 自定义回调
-from transformers import TrainerCallback
-
+# 自定义训练监控回调
 class MonitorCallback(TrainerCallback):
-    """自定义监控回调"""
-
     def on_log(self, args, state, control, logs=None, **kwargs):
-        if logs:
-            # 记录学习率
-            if "learning_rate" in logs:
-                wandb.log({"learning_rate": logs["learning_rate"]})
-
-            # 记录 Loss
-            if "loss" in logs:
-                wandb.log({
-                    "train_loss": logs["loss"],
-                    "step": state.global_step
-                })
-
+        if logs and "loss" in logs:
+            wandb.log({"train_loss": logs["loss"], "learning_rate": logs.get("learning_rate")})
     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
         if metrics:
-            wandb.log({
-                "eval_loss": metrics.get("eval_loss"),
-                "step": state.global_step
-            })
+            wandb.log({"eval_loss": metrics.get("eval_loss")})
 ```
 
 ---
@@ -920,64 +561,21 @@ class MonitorCallback(TrainerCallback):
 
 ```python
 from datasets import load_metric
-import torch
 
-def evaluate_model(
-    model,
-    tokenizer,
-    eval_data: list,
-    max_new_tokens: int = 256
-) -> dict:
-    """评估微调效果"""
-
+def evaluate_model(model, tokenizer, eval_data: list) -> dict:
+    """评估微调效果：对前50条数据生成结果，计算 ROUGE 分数"""
     model.eval()
-
-    results = {
-        "generated": [],
-        "references": [],
-        "scores": []
-    }
-
-    for sample in eval_data[:50]:  # 取 50 条评估
-        instruction = sample["instruction"]
-        reference = sample["output"]
-
-        # 生成
-        inputs = tokenizer(
-            f"### 指令：\n{instruction}\n\n### 回复：\n",
-            return_tensors="pt"
-        ).to(model.device)
-
+    generated, references = [], []
+    for sample in eval_data[:50]:
+        inputs = tokenizer(f"### 指令：\n{sample['instruction']}\n\n### 回复：\n", return_tensors="pt").to(model.device)
         with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=0.7,
-                do_sample=True,
-                pad_token_id=tokenizer.eos_token_id
-            )
+            outputs = model.generate(**inputs, max_new_tokens=256, temperature=0.7, do_sample=True)
+        generated.append(tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True))
+        references.append(sample["output"])
 
-        generated = tokenizer.decode(
-            outputs[0][inputs["input_ids"].shape[1]:],
-            skip_special_tokens=True
-        )
-
-        results["generated"].append(generated)
-        results["references"].append(reference)
-
-    # 计算 ROUGE 分数
     rouge = load_metric("rouge")
-    rouge_scores = rouge.compute(
-        predictions=results["generated"],
-        references=results["references"]
-    )
-
-    return {
-        "rouge1": rouge_scores["rouge1"].mid.fmeasure,
-        "rouge2": rouge_scores["rouge2"].mid.fmeasure,
-        "rougeL": rouge_scores["rougeL"].mid.fmeasure,
-        "samples": results["generated"][:5]  # 展示 5 个样本
-    }
+    scores = rouge.compute(predictions=generated, references=references)
+    return {"rouge1": scores["rouge1"].mid.fmeasure, "rouge2": scores["rouge2"].mid.fmeasure, "rougeL": scores["rougeL"].mid.fmeasure}
 ```
 
 ---
