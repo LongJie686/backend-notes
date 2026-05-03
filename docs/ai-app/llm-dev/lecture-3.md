@@ -1633,209 +1633,50 @@ print(result)
 ## 十三、完整代码实战：企业知识库问答系统
 
 ```python
-import os
-from pathlib import Path
-from typing import List
-from langchain.document_loaders import DirectoryLoader, PyPDFLoader, TextLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Chroma
-from langchain.retrievers import BM25Retriever, EnsembleRetriever
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import Document
-
-
 class EnterpriseKnowledgeBase:
-    """企业知识库问答系统"""
+    """企业知识库问答系统 -- 核心方法说明"""
 
-    def __init__(self, docs_dir: str, persist_dir: str = "./knowledge_base",
-                 openai_api_key: str = None):
-        self.docs_dir = docs_dir
-        self.persist_dir = persist_dir
-
-        self.embeddings = OpenAIEmbeddings(
-            api_key=openai_api_key or os.getenv("OPENAI_API_KEY")
-        )
-        self.llm = ChatOpenAI(
-            model="gpt-4",
-            temperature=0.1,
-            api_key=openai_api_key or os.getenv("OPENAI_API_KEY")
-        )
-
+    def __init__(self, docs_dir: str, persist_dir: str = "./knowledge_base"):
+        self.embeddings = OpenAIEmbeddings()
+        self.llm = ChatOpenAI(model="gpt-4", temperature=0.1)
         self.vectorstore = None
         self.bm25_retriever = None
-        self.chunks = []
 
-    # ==================== 索引构建 ====================
-
-    def build_index(self, force_rebuild: bool = False):
-        persist_path = Path(self.persist_dir)
-
-        if persist_path.exists() and not force_rebuild:
-            print("加载已有索引...")
-            self._load_existing_index()
-            return
-
-        print("构建新索引...")
-        documents = self._load_documents()
-        print(f"加载了 {len(documents)} 个文档")
-
-        self.chunks = self._split_documents(documents)
-        print(f"切分为 {len(self.chunks)} 个块")
-
-        self.vectorstore = Chroma.from_documents(
-            documents=self.chunks,
-            embedding=self.embeddings,
-            persist_directory=self.persist_dir
-        )
+    # ============ 索引构建 ============
+    def build_index(self, force_rebuild=False):
+        """1. 加载文档 → 2. 递归切分(chunk=500/overlap=50) → 3. Chroma向量化 → 4. BM25索引"""
+        docs = self._load_documents()           # glob **/*.pdf + **/*.txt, 过滤空/短文本
+        self.chunks = self._split_documents(docs)
+        self.vectorstore = Chroma.from_documents(self.chunks, self.embeddings, persist_directory=self.persist_dir)
         self.vectorstore.persist()
-
         self.bm25_retriever = BM25Retriever.from_documents(self.chunks, k=10)
-        print("索引构建完成！")
 
-    def _load_documents(self) -> List[Document]:
-        documents = []
-        docs_path = Path(self.docs_dir)
-
-        for pdf_file in docs_path.glob("**/*.pdf"):
-            try:
-                loader = PyPDFLoader(str(pdf_file))
-                documents.extend(loader.load())
-            except Exception as e:
-                print(f"加载 PDF 失败 {pdf_file}: {e}")
-
-        for text_file in docs_path.glob("**/*.txt"):
-            try:
-                loader = TextLoader(str(text_file), encoding="utf-8")
-                documents.extend(loader.load())
-            except Exception as e:
-                print(f"加载文本失败 {text_file}: {e}")
-
-        return [doc for doc in documents
-                if doc.page_content.strip() and len(doc.page_content) > 50]
-
-    def _split_documents(self, documents: List[Document]) -> List[Document]:
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=50,
-            separators=["\n\n", "\n", "。", "！", "？", "；", "，", " ", ""]
-        )
-        return splitter.split_documents(documents)
-
-    # ==================== 检索 ====================
-
+    # ============ 检索（混合检索 + 查询改写）============
     def retrieve(self, query: str, top_k: int = 5) -> List[Document]:
-        refined_query = self._rewrite_query(query)
+        refined = self._rewrite_query(query)  # LLM 改写查询
+        dense = self.vectorstore.as_retriever(search_kwargs={"k": 15})
+        ensemble = EnsembleRetriever(retrievers=[dense, self.bm25_retriever], weights=[0.6, 0.4])
+        return ensemble.get_relevant_documents(refined)[:top_k]
 
-        dense_retriever = self.vectorstore.as_retriever(search_kwargs={"k": 15})
-
-        if self.bm25_retriever:
-            ensemble_retriever = EnsembleRetriever(
-                retrievers=[dense_retriever, self.bm25_retriever],
-                weights=[0.6, 0.4]
-            )
-            candidates = ensemble_retriever.get_relevant_documents(refined_query)
-        else:
-            candidates = dense_retriever.get_relevant_documents(refined_query)
-
-        return candidates[:top_k]
-
-    def _rewrite_query(self, query: str) -> str:
-        prompt = f"""将以下问题改写为更适合文档检索的查询。
-只输出改写后的查询，不要解释。
-
-原始问题：{query}
-改写后的查询："""
-        try:
-            return self.llm.predict(prompt).strip()
-        except Exception:
-            return query
-
-    # ==================== 生成 ====================
-
-    def generate(self, question: str, retrieved_docs: List[Document]) -> str:
-        context_parts = []
-        for i, doc in enumerate(retrieved_docs):
-            source = doc.metadata.get("source", "未知")
-            source_name = Path(source).name if source else "未知"
-            context_parts.append(
-                f"【资料{i+1}】（来源：{source_name}）\n{doc.page_content}"
-            )
-
-        context = "\n\n".join(context_parts)
-
-        prompt = f"""你是企业知识库助手，请严格基于以下参考资料回答问题。
-
-# 参考资料
-{context}
-
-# 回答规则
-1. 只使用参考资料中的信息
-2. 如果资料中没有答案，回复"根据现有资料，我没有找到相关信息，建议咨询相关部门"
-3. 回答要简洁准确，适当引用原文
-4. 不要编造任何信息
-
-# 问题
-{question}
-
-# 回答"""
-
+    # ============ 生成 ============
+    def generate(self, question: str, docs: List[Document]) -> str:
+        context = "\n\n".join([f"【资料{i+1}】（来源：{Path(d.metadata['source']).name}）\n{d.page_content}" for i, d in enumerate(docs)])
+        prompt = f"你是企业知识库助手。严格基于以下资料回答。无答案时说'未找到相关信息'。\n\n参考资料：\n{context}\n\n问题：{question}\n\n回答："
         return self.llm.predict(prompt)
 
-    # ==================== 对话接口 ====================
-
+    # ============ 对外接口 ============
     def ask(self, question: str) -> dict:
-        if not self.vectorstore:
-            raise RuntimeError("请先调用 build_index() 构建索引")
-
-        retrieved_docs = self.retrieve(question)
-        answer = self.generate(question, retrieved_docs)
-
-        return {
-            "question": question,
-            "answer": answer,
-            "sources": [
-                {
-                    "content": doc.page_content[:200] + "...",
-                    "source": doc.metadata.get("source", ""),
-                }
-                for doc in retrieved_docs
-            ]
-        }
+        docs = self.retrieve(question)
+        answer = self.generate(question, docs)
+        return {"question": question, "answer": answer,
+                "sources": [{"content": d.page_content[:200], "source": d.metadata.get("source", "")} for d in docs]}
 
     def add_document(self, file_path: str):
-        """动态添加文档"""
-        if file_path.endswith(".pdf"):
-            loader = PyPDFLoader(file_path)
-        else:
-            loader = TextLoader(file_path, encoding="utf-8")
-
-        new_docs = loader.load()
-        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-        new_chunks = splitter.split_documents(new_docs)
-
+        """动态增量添加文档"""
+        loader = PyPDFLoader(file_path) if file_path.endswith(".pdf") else TextLoader(file_path, encoding="utf-8")
+        new_chunks = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50).split_documents(loader.load())
         self.vectorstore.add_documents(new_chunks)
         self.vectorstore.persist()
-        print(f"成功添加文档：{file_path}，共 {len(new_chunks)} 个块")
-
-
-# ==================== 使用示例 ====================
-
-if __name__ == "__main__":
-    kb = EnterpriseKnowledgeBase(
-        docs_dir="./company_docs",
-        persist_dir="./chroma_db",
-    )
-
-    kb.build_index()
-
-    result = kb.ask("公司的年假政策是什么？")
-
-    print(f"问题：{result['question']}")
-    print(f"答案：{result['answer']}")
-    for source in result['sources']:
-        print(f"  - {source['source']}")
-        print(f"    {source['content']}")
 ```
 
 ---

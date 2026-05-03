@@ -216,7 +216,6 @@ Thought:"""
 
 ```python
 import re
-from typing import List, Dict, Callable
 
 class Tool:
     """工具定义"""
@@ -233,110 +232,47 @@ class Tool:
 
 
 class ReActAgent:
-    """手写版 ReAct Agent"""
-
+    """手写版 ReAct Agent -- 核心循环"""
     def __init__(self, llm, tools: List[Tool], max_iterations: int = 5):
         self.llm = llm
-        self.tools = {tool.name: tool for tool in tools}
+        self.tools = {t.name: t for t in tools}
         self.max_iterations = max_iterations
 
     def run(self, question: str) -> str:
-        # 构建工具描述
-        tool_desc = "\n".join([
-            f"- {name}: {tool.description}"
-            for name, tool in self.tools.items()
-        ])
-
-        # 初始化上下文
-        prompt = f"""你是一个智能助手，可以使用工具解决问题。
-
-可用工具：
-{tool_desc}
-
-请严格使用以下格式：
-Thought: [你的思考]
-Action: [工具名，必须是上面列出的之一]
-Action Input: [传给工具的参数]
-Observation: [工具返回结果]
-
-当得到最终答案时：
-Thought: [最终思考]
-Final Answer: [最终答案]
-
-Question: {question}
-Thought:"""
-
+        # 构建初始 Prompt（工具描述 + 格式说明）
+        tool_desc = "\n".join([f"- {n}: {t.description}" for n, t in self.tools.items()])
+        prompt = f"""可用工具：\n{tool_desc}\n\n格式：\nThought → Action → Action Input → Observation\n最终：Final Answer\n\nQuestion: {question}\nThought:"""
         history = ""
 
-        for i in range(self.max_iterations):
-            # 调用 LLM
+        for _ in range(self.max_iterations):
             response = self.llm.predict(prompt + history)
             history += response
 
-            print(f"--- 第 {i+1} 步 ---")
-            print(response)
+            # 正则解析：Final Answer → 直接返回；Action → 执行工具 → 追加 Observation
+            if m := re.search(r"Final Answer:\s*(.*)", response, re.DOTALL):
+                return m.group(1).strip()
 
-            # 解析 Action
-            action_match = re.search(r"Action:\s*(.*?)\n", response)
-            action_input_match = re.search(r"Action Input:\s*(.*?)(?:\n|Observation:)", response, re.DOTALL)
-            final_match = re.search(r"Final Answer:\s*(.*)", response, re.DOTALL)
-
-            # 如果得到最终答案
-            if final_match:
-                return final_match.group(1).strip()
-
-            # 如果需要调用工具
-            if action_match and action_input_match:
-                action_name = action_match.group(1).strip()
-                action_input = action_input_match.group(1).strip()
-
-                if action_name in self.tools:
-                    # 执行工具
-                    tool = self.tools[action_name]
-                    observation = tool.run(action_input)
-                    history += f"\nObservation: {observation}\nThought:"
-                    print(f"Observation: {observation}")
+            action_m = re.search(r"Action:\s*(.*?)\n", response)
+            input_m = re.search(r"Action Input:\s*(.*?)(?:\n|$)", response, re.DOTALL)
+            if action_m and input_m:
+                name, args = action_m.group(1).strip(), input_m.group(1).strip()
+                if name in self.tools:
+                    history += f"\nObservation: {self.tools[name].run(args)}\nThought:"
                 else:
-                    history += f"\nObservation: 错误：没有名为 {action_name} 的工具\nThought:"
+                    history += f"\nObservation: 错误：没有名为 {name} 的工具\nThought:"
             else:
-                # 模型没有输出 Action，继续
                 history += "\nThought:"
 
         return "达到最大迭代次数，未能完成问题。"
 
+# 工具示例
+def search(query: str) -> str:  # 模拟搜索
+    return {"2024年诺贝尔文学奖": "韩江"}.get(query, "未找到")
 
-# ==================== 使用示例 ====================
-
-# 定义工具
-def search(query: str) -> str:
-    """模拟搜索工具"""
-    knowledge = {
-        "2024年诺贝尔文学奖得主": "2024年诺贝尔文学奖授予韩国作家韩江。",
-        "韩江 作品": "代表作有《素食者》《少年来了》《白》。",
-    }
-    for key, value in knowledge.items():
-        if key in query:
-            return value
-    return "未找到相关信息"
-
-def calculator(expression: str) -> str:
-    """计算器工具"""
-    try:
-        # 注意：实际生产环境要用 safe_eval，不要直接 eval
-        return str(eval(expression))
-    except:
-        return "计算错误"
-
-# 初始化工具
-tools = [
-    Tool("search", "用于搜索互联网信息", search),
-    Tool("calculator", "用于数学计算", calculator),
-]
-
-# 初始化 Agent（假设 llm 已定义）
+tools = [Tool("search", "搜索互联网信息", search),
+         Tool("calculator", "数学计算", lambda expr: str(eval(expr)))]
 # agent = ReActAgent(llm, tools)
-# result = agent.run("2024年诺贝尔文学奖得主是谁？她写了哪些书？")
-# print(result)
+# result = agent.run("2024年诺贝尔文学奖得主是谁？")
 ```
 
 ---
