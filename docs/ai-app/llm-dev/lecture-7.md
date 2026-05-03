@@ -399,123 +399,49 @@ async def chat_stream(request: ChatRequest):
 > 以下为前端参考代码，非本项目实现
 
 ```javascript
-// frontend/chat.js
-
+// 核心：fetch + ReadableStream 消费 SSE 流
 class ChatClient {
-    constructor(apiBase) {
-        this.apiBase = apiBase;
-        this.controller = null;
-    }
-    
-    async sendMessage(userId, message, callbacks) {
-        // 取消之前的请求
-        if (this.controller) {
-            this.controller.abort();
-        }
+    async sendMessage(userId, message, { onText, onEmotion, onError, onDone }) {
         this.controller = new AbortController();
-        
-        const { onText, onEmotion, onError, onDone } = callbacks;
-        
-        try {
-            const response = await fetch(`${this.apiBase}/chat/stream`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.getToken()}`
-                },
-                body: JSON.stringify({ user_id: userId, message }),
-                signal: this.controller.signal
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            
-            // 读取 SSE 流
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            
-            while (true) {
-                const { done, value } = await reader.read();
-                
-                if (done) break;
-                
-                buffer += decoder.decode(value, { stream: true });
-                
-                // 按行处理 SSE 数据
-                const lines = buffer.split('\n');
-                buffer = lines.pop(); // 保留不完整的最后一行
-                
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6).trim();
-                        
-                        if (data === '[DONE]') continue;
-                        
-                        try {
-                            const chunk = JSON.parse(data);
-                            
-                            switch (chunk.type) {
-                                case 'text':
-                                    onText?.(chunk.content);
-                                    break;
-                                case 'emotion':
-                                    onEmotion?.(chunk.metadata);
-                                    break;
-                                case 'error':
-                                    onError?.(chunk.content);
-                                    break;
-                                case 'done':
-                                    onDone?.();
-                                    break;
-                            }
-                        } catch (e) {
-                            console.warn('解析 SSE 数据失败:', data);
-                        }
-                    }
+
+        const response = await fetch(`${this.apiBase}/chat/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.getToken()}` },
+            body: JSON.stringify({ user_id: userId, message }),
+            signal: this.controller.signal
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split('\n');
+            buffer = lines.pop();  // 保留不完整的最后一行
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const data = line.slice(6).trim();
+                if (data === '[DONE]') continue;
+
+                const chunk = JSON.parse(data);
+                switch (chunk.type) {
+                    case 'text': onText?.(chunk.content); break;
+                    case 'emotion': onEmotion?.(chunk.metadata); break;
+                    case 'error': onError?.(chunk.content); break;
+                    case 'done': onDone?.(); break;
                 }
             }
-        } catch (error) {
-            if (error.name !== 'AbortError') {
-                onError?.('连接失败，请重试');
-            }
         }
     }
-    
-    getToken() {
-        return localStorage.getItem('auth_token');
-    }
-    
-    cancel() {
-        this.controller?.abort();
-    }
+
+    cancel() { this.controller?.abort(); }
+    getToken() { return localStorage.getItem('auth_token'); }
 }
-
-// 使用示例
-const client = new ChatClient('https://api.xinyu.com');
-
-// 发送消息
-const messageDiv = document.getElementById('message');
-let fullText = '';
-
-await client.sendMessage('user123', '我今天好难过', {
-    onText: (text) => {
-        fullText += text;
-        messageDiv.textContent = fullText;  // 打字机效果
-    },
-    onEmotion: (emotion) => {
-        console.log('情感状态:', emotion);
-        updateEmotionIndicator(emotion);
-    },
-    onError: (error) => {
-        showError(error);
-    },
-    onDone: () => {
-        console.log('回复完成');
-        enableInput();
-    }
-});
 ```
 
 ---
@@ -526,402 +452,82 @@ await client.sendMessage('user123', '我今天好难过', {
 
 ### 1. 指标体系设计
 
+**核心指标清单：**
+
+| 指标名 | 类型 | 标签 | 说明 |
+|--------|------|------|------|
+| `xinyu_requests_total` | Counter | endpoint, method, status_code | 请求总数 |
+| `xinyu_request_duration_seconds` | Histogram | endpoint | 请求延迟（buckets: 0.1~30s） |
+| `xinyu_llm_generation_seconds` | Histogram | model, stream | LLM 生成延迟（0.5~60s） |
+| `xinyu_tokens_total` | Counter | type(input/output), model | Token 消耗 |
+| `xinyu_active_sessions` | Gauge | - | 当前活跃会话数 |
+| `xinyu_crisis_detected_total` | Counter | risk_level | 危机检测触发次数 |
+| `xinyu_emotions_total` | Counter | emotion_type | 情感分布统计 |
+| `xinyu_content_filter_total` | Counter | filter_type, direction | 内容过滤触发次数 |
+| `xinyu_gpu_memory_bytes` | Gauge | gpu_id | GPU 显存使用量 |
+
 ```python
-# app/monitoring/metrics.py
-from prometheus_client import (
-    Counter, Histogram, Gauge,
-    start_http_server, generate_latest
-)
-import time
-
-# ==================== 业务指标 ====================
-
-# 请求总数
-REQUEST_COUNT = Counter(
-    'xinyu_requests_total',
-    '请求总数',
-    ['endpoint', 'method', 'status_code', 'user_type']
-)
-
-# 请求延迟
-REQUEST_LATENCY = Histogram(
-    'xinyu_request_duration_seconds',
-    '请求延迟（秒）',
-    ['endpoint'],
-    buckets=[0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 30.0]
-)
-
-# LLM 生成延迟
-LLM_LATENCY = Histogram(
-    'xinyu_llm_generation_seconds',
-    'LLM 生成延迟（秒）',
-    ['model', 'stream'],
-    buckets=[0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 30.0, 60.0]
-)
-
-# Token 消耗
-TOKEN_COUNT = Counter(
-    'xinyu_tokens_total',
-    'Token 消耗总数',
-    ['type', 'model']   # type: input/output
-)
-
-# 当前活跃会话数
-ACTIVE_SESSIONS = Gauge(
-    'xinyu_active_sessions',
-    '当前活跃会话数'
-)
-
-# 危机检测触发次数
-CRISIS_DETECTED = Counter(
-    'xinyu_crisis_detected_total',
-    '危机检测触发次数',
-    ['risk_level']
-)
-
-# 情感分布
-EMOTION_DISTRIBUTION = Counter(
-    'xinyu_emotions_total',
-    '检测到的情感分布',
-    ['emotion_type']
-)
-
-# 内容过滤触发
-CONTENT_FILTER_TRIGGERED = Counter(
-    'xinyu_content_filter_total',
-    '内容过滤触发次数',
-    ['filter_type', 'direction']  # direction: input/output
-)
-
-# GPU 显存使用
-GPU_MEMORY_USED = Gauge(
-    'xinyu_gpu_memory_bytes',
-    'GPU 显存使用量（字节）',
-    ['gpu_id']
-)
-
-# 向量检索延迟
-RETRIEVAL_LATENCY = Histogram(
-    'xinyu_retrieval_duration_seconds',
-    'RAG 检索延迟（秒）',
-    ['retriever_type']
-)
-
-# ==================== 指标收集中间件 ====================
-
-class MetricsMiddleware:
-    """FastAPI 中间件，自动收集请求指标"""
-    
-    def __init__(self, app):
-        self.app = app
-    
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-        
-        start_time = time.time()
-        path = scope.get("path", "")
-        method = scope.get("method", "")
-        
-        status_code = 500
-        
-        async def send_wrapper(message):
-            nonlocal status_code
-            if message["type"] == "http.response.start":
-                status_code = message["status"]
-            await send(message)
-        
-        try:
-            await self.app(scope, receive, send_wrapper)
-        finally:
-            duration = time.time() - start_time
-            
-            REQUEST_COUNT.labels(
-                endpoint=path,
-                method=method,
-                status_code=status_code,
-                user_type="regular"
-            ).inc()
-            
-            REQUEST_LATENCY.labels(endpoint=path).observe(duration)
-
-
-# ==================== 装饰器 ====================
-
-def track_llm_call(model: str = "xinyu-7b", stream: bool = False):
-    """追踪 LLM 调用的装饰器"""
-    def decorator(func):
-        async def wrapper(*args, **kwargs):
-            start = time.time()
-            try:
-                result = await func(*args, **kwargs)
-                duration = time.time() - start
-                LLM_LATENCY.labels(model=model, stream=str(stream)).observe(duration)
-                return result
-            except Exception as e:
-                REQUEST_COUNT.labels(
-                    endpoint="llm_call",
-                    method="POST",
-                    status_code=500,
-                    user_type="internal"
-                ).inc()
-                raise
-        return wrapper
-    return decorator
+# 关键指标定义（Prometheus client）
+REQUEST_COUNT = Counter('xinyu_requests_total', '请求总数', ['endpoint', 'method', 'status_code'])
+REQUEST_LATENCY = Histogram('xinyu_request_duration_seconds', '请求延迟',
+    ['endpoint'], buckets=[0.1, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 30.0])
+LLM_LATENCY = Histogram('xinyu_llm_generation_seconds', 'LLM生成延迟',
+    ['model', 'stream'], buckets=[0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 30.0, 60.0])
+ACTIVE_SESSIONS = Gauge('xinyu_active_sessions', '当前活跃会话数')
+CRISIS_DETECTED = Counter('xinyu_crisis_detected_total', '危机检测次数', ['risk_level'])
+GPU_MEMORY_USED = Gauge('xinyu_gpu_memory_bytes', 'GPU显存', ['gpu_id'])
 ```
 
 ---
 
 ### 2. Prometheus 配置
 
-```yaml
-# monitoring/prometheus.yml
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-  external_labels:
-    environment: production
-    service: xinyu
+**采集目标一览：**
 
-# 告警规则文件
-rule_files:
-  - "alerts/*.yml"
+| job_name | 目标 | 端口 | 说明 |
+|----------|------|------|------|
+| xinyu-app | app | 8000 | 应用自定义指标 |
+| vllm | vllm-server | 8001 | 推理引擎指标 |
+| redis | redis-exporter | 9121 | Redis 性能指标 |
+| postgres | postgres-exporter | 9187 | PG 性能指标 |
+| node | node-exporter | 9100 | 机器 CPU/内存/磁盘 |
+| dcgm | dcgm-exporter | 9400 | GPU 利用率/显存/温度 |
 
-# 告警接收器
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets: ['alertmanager:9093']
-
-# 数据采集配置
-scrape_configs:
-  # 应用服务
-  - job_name: 'xinyu-app'
-    static_configs:
-      - targets: ['app:8000']
-    metrics_path: '/metrics'
-    scrape_interval: 10s
-
-  # vLLM 服务
-  - job_name: 'vllm'
-    static_configs:
-      - targets: ['vllm-server:8001']
-    metrics_path: '/metrics'
-    scrape_interval: 10s
-
-  # Redis
-  - job_name: 'redis'
-    static_configs:
-      - targets: ['redis-exporter:9121']
-
-  # PostgreSQL
-  - job_name: 'postgres'
-    static_configs:
-      - targets: ['postgres-exporter:9187']
-
-  # Node（机器指标）
-  - job_name: 'node'
-    static_configs:
-      - targets: ['node-exporter:9100']
-
-  # GPU 指标
-  - job_name: 'dcgm'
-    static_configs:
-      - targets: ['dcgm-exporter:9400']
-```
+> 采集间隔 15s，告警规则目录 `alerts/*.yml`，数据保留 30 天。
 
 ---
 
 ### 3. 告警规则
 
-```yaml
-# monitoring/alerts/xinyu_alerts.yml
-groups:
-  - name: xinyu_critical
-    rules:
-      # ==================== 可用性告警 ====================
-      
-      # 服务宕机
-      - alert: ServiceDown
-        expr: up{job="xinyu-app"} == 0
-        for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "心语服务宕机"
-          description: "心语应用服务已宕机超过 1 分钟"
-          runbook: "https://wiki.xinyu.com/runbooks/service-down"
-      
-      # 错误率过高
-      - alert: HighErrorRate
-        expr: |
-          rate(xinyu_requests_total{status_code=~"5.."}[5m])
-          /
-          rate(xinyu_requests_total[5m]) > 0.05
-        for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: "接口错误率超过 5%"
-          description: "最近 5 分钟内，接口错误率为 {{ $value | humanizePercentage }}"
-      
-      # ==================== 性能告警 ====================
-      
-      # 响应延迟过高
-      - alert: HighLatency
-        expr: |
-          histogram_quantile(0.95,
-            rate(xinyu_request_duration_seconds_bucket[5m])
-          ) > 10
-        for: 3m
-        labels:
-          severity: warning
-        annotations:
-          summary: "P95 响应延迟超过 10 秒"
-          description: "P95 延迟：{{ $value }}s，可能影响用户体验"
-      
-      # LLM 生成延迟
-      - alert: HighLLMLatency
-        expr: |
-          histogram_quantile(0.90,
-            rate(xinyu_llm_generation_seconds_bucket[5m])
-          ) > 30
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "LLM 生成 P90 延迟超过 30 秒"
-          description: "模型推理可能存在问题，P90 延迟：{{ $value }}s"
-      
-      # ==================== GPU 告警 ====================
-      
-      # GPU 显存不足
-      - alert: GPUMemoryHigh
-        expr: |
-          xinyu_gpu_memory_bytes / (1024^3) > 75
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "GPU {{ $labels.gpu_id }} 显存超过 75GB"
-          description: "当前显存使用：{{ $value | humanize }}GB，可能导致 OOM"
-      
-      # ==================== 业务告警 ====================
-      
-      # 危机检测频发
-      - alert: CrisisDetectionSpike
-        expr: |
-          rate(xinyu_crisis_detected_total{risk_level="high"}[10m]) > 0.1
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "高风险危机检测频率异常"
-          description: "最近 10 分钟高风险检测 {{ $value }} 次/秒，请关注"
-      
-      # Token 消耗异常
-      - alert: TokenConsumptionSpike
-        expr: |
-          rate(xinyu_tokens_total[5m]) > 10000
-        for: 3m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Token 消耗异常增加"
-          description: "Token 消耗速率：{{ $value }}/秒，可能有异常调用"
-      
-      # 活跃会话数异常
-      - alert: SessionCountAnomaly
-        expr: xinyu_active_sessions > 1000
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "活跃会话数超过 1000"
-          description: "当前活跃会话：{{ $value }}，注意资源消耗"
-```
+| 告警名 | 严重级别 | PromQL 表达式 | 触发条件 |
+|--------|---------|--------------|---------|
+| ServiceDown | **critical** | `up{job="xinyu-app"} == 0` | 服务宕机超过 1 分钟 |
+| HighErrorRate | **critical** | 5x错误占比 > 5% | 持续 2 分钟 |
+| HighLatency | warning | P95 延迟 > 10s | 持续 3 分钟 |
+| HighLLMLatency | warning | P90 LLM 延迟 > 30s | 持续 5 分钟 |
+| GPUMemoryHigh | warning | 显存 > 75GB | 持续 5 分钟 |
+| CrisisDetectionSpike | warning | 高风险检测频率异常 | 持续 5 分钟 |
+| TokenConsumptionSpike | warning | Token 速率 > 10000/s | 持续 3 分钟 |
+| SessionCountAnomaly | warning | 活跃会话 > 1000 | 持续 5 分钟 |
+
+> 告警分级原则：Critical 需立即处理（On-call），Warning 需关注但不紧急，Info 仅记录。
 
 ---
 
-### 4. Grafana 仪表盘配置
+### 4. Grafana 仪表盘
 
-```json
-// monitoring/grafana/dashboards/xinyu-overview.json
-{
-  "title": "心语机器人监控面板",
-  "panels": [
-    {
-      "title": "请求量（QPS）",
-      "type": "graph",
-      "targets": [
-        {
-          "expr": "rate(xinyu_requests_total[1m])",
-          "legendFormat": "{{endpoint}} - {{status_code}}"
-        }
-      ]
-    },
-    {
-      "title": "响应延迟分布",
-      "type": "graph",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, rate(xinyu_request_duration_seconds_bucket[5m]))",
-          "legendFormat": "P50"
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(xinyu_request_duration_seconds_bucket[5m]))",
-          "legendFormat": "P95"
-        },
-        {
-          "expr": "histogram_quantile(0.99, rate(xinyu_request_duration_seconds_bucket[5m]))",
-          "legendFormat": "P99"
-        }
-      ]
-    },
-    {
-      "title": "Token 消耗",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "sum(rate(xinyu_tokens_total[1h])) * 3600",
-          "legendFormat": "每小时 Token 消耗"
-        }
-      ]
-    },
-    {
-      "title": "情感分布",
-      "type": "piechart",
-      "targets": [
-        {
-          "expr": "sum by (emotion_type) (xinyu_emotions_total)",
-          "legendFormat": "{{emotion_type}}"
-        }
-      ]
-    },
-    {
-      "title": "GPU 显存使用",
-      "type": "graph",
-      "targets": [
-        {
-          "expr": "xinyu_gpu_memory_bytes / (1024^3)",
-          "legendFormat": "GPU {{gpu_id}}"
-        }
-      ]
-    },
-    {
-      "title": "危机检测统计",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "sum(increase(xinyu_crisis_detected_total[24h]))",
-          "legendFormat": "今日危机检测总数"
-        }
-      ]
-    }
-  ]
-}
-```
+**关键面板清单：**
+
+| 面板 | 类型 | PromQL |
+|------|------|--------|
+| 请求量（QPS） | Graph | `rate(xinyu_requests_total[1m])` |
+| 响应延迟（P50/P95/P99） | Graph | `histogram_quantile(0.50/0.95/0.99, rate(..._bucket[5m]))` |
+| 每小时 Token 消耗 | Stat | `sum(rate(xinyu_tokens_total[1h])) * 3600` |
+| 情感分布 | Piechart | `sum by (emotion_type) (xinyu_emotions_total)` |
+| GPU 显存使用 | Graph | `xinyu_gpu_memory_bytes / (1024^3)` |
+| 危机检测统计 | Stat | `sum(increase(xinyu_crisis_detected_total[24h]))` |
+
+> 面板配置通过 Grafana provisioning 预置，详见 `monitoring/grafana/dashboards/`。
 
 ---
 
@@ -932,80 +538,25 @@ groups:
 ### 1. 结构化日志
 
 ```python
-# app/logging/setup.py
+# 使用 structlog 配置结构化（JSON）日志
 import structlog
-import logging
-import json
-from datetime import datetime
 
-def setup_logging(log_level: str = "INFO", json_format: bool = True):
-    """配置结构化日志"""
-    
-    # 配置 structlog
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            # 生产环境用 JSON，开发用可读格式
-            structlog.processors.JSONRenderer() if json_format
-            else structlog.dev.ConsoleRenderer()
-        ],
-        context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
-        cache_logger_on_first_use=True,
-    )
-    
-    # 设置日志级别
-    logging.basicConfig(level=getattr(logging, log_level))
-
-# 获取 logger
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,  # 绑定请求上下文（user_id, session_id, request_id）
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer()        # 生产环境 JSON，开发用 ConsoleRenderer
+    ],
+    logger_factory=structlog.PrintLoggerFactory(),
+)
 logger = structlog.get_logger()
 
-
-# ==================== 使用示例 ====================
-
-# 绑定请求上下文
-def log_with_context(user_id: str, session_id: str):
-    structlog.contextvars.bind_contextvars(
-        user_id=user_id,
-        session_id=session_id,
-        request_id=str(uuid.uuid4())
-    )
-
-# 记录对话日志
-def log_chat(
-    user_id: str,
-    user_message: str,
-    bot_response: str,
-    emotion: dict,
-    latency_ms: float,
-    token_count: int
-):
-    logger.info(
-        "chat_completed",
-        user_id=user_id,
-        message_length=len(user_message),
-        response_length=len(bot_response),
-        emotion=emotion.get("primary_emotion"),
-        emotion_intensity=emotion.get("intensity"),
-        is_crisis=emotion.get("is_crisis", False),
-        latency_ms=latency_ms,
-        token_count=token_count,
-        # 不记录原始消息内容（隐私保护）
-        # 如果需要审计，需要用户同意
-    )
-
-# 记录错误日志
-def log_error(error: Exception, context: dict = None):
-    logger.error(
-        "error_occurred",
-        error_type=type(error).__name__,
-        error_message=str(error),
-        **(context or {})
-    )
+# 带上下文的日志调用
+structlog.contextvars.bind_contextvars(user_id="u123", session_id="s456")
+logger.info("chat_completed", emotion="悲伤", is_crisis=False, latency_ms=2341, token_count=312)
+logger.error("error_occurred", error_type="ConnectionError", error_message="vLLM connection refused")
+# 注意：不记录原始消息内容（隐私保护），仅记录长度和类别信息
 ```
 
 ---
@@ -1110,148 +661,62 @@ scrape_configs:
 ### 1. Token 用量监控
 
 ```python
-# app/cost/tracker.py
-import redis
-from datetime import datetime, timedelta
-
 class CostTracker:
-    """成本追踪器"""
-    
-    def __init__(self, redis_client):
-        self.redis = redis_client
-        
-        # 成本配置（每 1000 Token 的价格，美元）
-        self.COST_CONFIG = {
-            "gpt-4": {"input": 0.03, "output": 0.06},
-            "gpt-3.5-turbo": {"input": 0.001, "output": 0.002},
-            "xinyu-7b": {"input": 0.0, "output": 0.0},  # 自托管无 API 费用
-        }
-    
-    def record_usage(
-        self,
-        user_id: str,
-        model: str,
-        input_tokens: int,
-        output_tokens: int
-    ):
-        """记录使用量"""
-        
-        cost = self._calculate_cost(model, input_tokens, output_tokens)
-        
+    """成本追踪器（基于 Redis）"""
+    COST_CONFIG = {
+        "gpt-4":        {"input": 0.03, "output": 0.06},   # 美元/1K Token
+        "gpt-3.5-turbo": {"input": 0.001, "output": 0.002},
+        "xinyu-7b":     {"input": 0.0, "output": 0.0},    # 自托管无 API 费用
+    }
+
+    def record_usage(self, user_id, model, input_tokens, output_tokens):
+        cost = input_tokens/1000 * self.COST_CONFIG[model]["input"] + \
+               output_tokens/1000 * self.COST_CONFIG[model]["output"]
         today = datetime.now().strftime("%Y-%m-%d")
-        
-        # 用户级别统计
+        # Redis 存储：usage:user:{uid}:{date} → {input_tokens, output_tokens, cost_usd}
         self.redis.hincrby(f"usage:user:{user_id}:{today}", "input_tokens", input_tokens)
-        self.redis.hincrby(f"usage:user:{user_id}:{today}", "output_tokens", output_tokens)
         self.redis.hincrbyfloat(f"usage:user:{user_id}:{today}", "cost_usd", cost)
-        
-        # 全局统计
-        self.redis.hincrby(f"usage:global:{today}", "total_input_tokens", input_tokens)
-        self.redis.hincrby(f"usage:global:{today}", "total_output_tokens", output_tokens)
-        self.redis.hincrbyfloat(f"usage:global:{today}", "total_cost_usd", cost)
-        
-        # 设置过期时间（保留 90 天）
-        self.redis.expire(f"usage:user:{user_id}:{today}", 90 * 24 * 3600)
-        
-        # 更新 Prometheus 指标
-        TOKEN_COUNT.labels(type="input", model=model).inc(input_tokens)
-        TOKEN_COUNT.labels(type="output", model=model).inc(output_tokens)
-    
-    def _calculate_cost(self, model: str, input_tokens: int, output_tokens: int) -> float:
-        config = self.COST_CONFIG.get(model, {"input": 0, "output": 0})
-        return (
-            input_tokens / 1000 * config["input"] +
-            output_tokens / 1000 * config["output"]
-        )
-    
-    def get_daily_cost(self, date: str = None) -> dict:
-        """获取每日成本"""
-        date = date or datetime.now().strftime("%Y-%m-%d")
-        data = self.redis.hgetall(f"usage:global:{date}")
-        return {
-            "date": date,
-            "input_tokens": int(data.get(b"total_input_tokens", 0)),
-            "output_tokens": int(data.get(b"total_output_tokens", 0)),
-            "cost_usd": float(data.get(b"total_cost_usd", 0))
-        }
-    
-    def check_user_limit(self, user_id: str, daily_limit_tokens: int = 10000) -> bool:
-        """检查用户是否超过限额"""
-        today = datetime.now().strftime("%Y-%m-%d")
-        data = self.redis.hgetall(f"usage:user:{user_id}:{today}")
-        
-        used = int(data.get(b"input_tokens", 0)) + int(data.get(b"output_tokens", 0))
-        return used < daily_limit_tokens
+        self.redis.expire(f"usage:user:{user_id}:{today}", 90*24*3600)  # 90天过期
+
+    def check_user_limit(self, user_id, daily_limit=10000) -> bool:
+        """检查用户每日 Token 限额"""
+        data = self.redis.hgetall(f"usage:user:{user_id}:{datetime.now():%Y-%m-%d}")
+        return (int(data.get(b"input_tokens", 0)) + int(data.get(b"output_tokens", 0))) < daily_limit
 ```
 
 ---
 
 ### 2. 语义缓存
 
-```python
-# app/cache/semantic_cache.py
-from langchain.embeddings import OpenAIEmbeddings
-import numpy as np
+> 核心原理：将用户 query 做 Embedding，与缓存中的向量计算余弦相似度，超过阈值（如 0.92）直接返回缓存结果，避免重复调用 LLM。
 
+```python
 class SemanticCache:
-    """语义缓存：相似的问题返回缓存结果"""
-    
-    def __init__(self, embeddings_model, redis_client, similarity_threshold: float = 0.92):
+    """语义缓存：相似问题命中缓存，减少 LLM 调用"""
+    def __init__(self, embeddings_model, redis_client, threshold=0.92):
         self.embeddings = embeddings_model
         self.redis = redis_client
-        self.threshold = similarity_threshold
-        self.cache_prefix = "semantic_cache:"
-    
+        self.threshold = threshold
+
     def get(self, query: str) -> Optional[str]:
-        """查找语义相似的缓存"""
-        
-        # 计算查询的 Embedding
-        query_vector = self.embeddings.embed_query(query)
-        
-        # 获取所有缓存的 key
-        cache_keys = self.redis.keys(f"{self.cache_prefix}*")
-        
-        if not cache_keys:
-            return None
-        
-        best_match = None
-        best_similarity = 0
-        
-        for key in cache_keys[:100]:  # 只检查最近 100 条
+        """查找语义相似的缓存 -- 余弦相似度匹配"""
+        q_vec = self.embeddings.embed_query(query)
+        for key in self.redis.keys("semantic_cache:*")[:100]:  # 最近100条
             cached = self.redis.hgetall(key)
-            if not cached:
-                continue
-            
-            cached_vector = np.frombuffer(cached[b"vector"], dtype=np.float32)
-            
-            # 计算余弦相似度
-            similarity = np.dot(query_vector, cached_vector) / (
-                np.linalg.norm(query_vector) * np.linalg.norm(cached_vector)
-            )
-            
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_match = cached
-        
-        if best_similarity >= self.threshold and best_match:
-            return best_match[b"response"].decode()
-        
+            if not cached: continue
+            cached_vec = np.frombuffer(cached[b"vector"], dtype=np.float32)
+            sim = np.dot(q_vec, cached_vec) / (np.linalg.norm(q_vec) * np.linalg.norm(cached_vec))
+            if sim >= self.threshold:
+                return cached[b"response"].decode()
         return None
-    
-    def set(self, query: str, response: str, ttl: int = 3600):
-        """缓存问答对"""
-        
-        vector = np.array(self.embeddings.embed_query(query), dtype=np.float32)
-        
-        cache_key = f"{self.cache_prefix}{hash(query)}"
-        
-        self.redis.hset(cache_key, mapping={
-            "query": query,
-            "response": response,
-            "vector": vector.tobytes(),
-            "created_at": datetime.now().isoformat()
+
+    def set(self, query: str, response: str, ttl=3600):
+        """缓存问答对及其 Embedding 向量"""
+        vec = np.array(self.embeddings.embed_query(query), dtype=np.float32)
+        self.redis.hset(f"semantic_cache:{hash(query)}", mapping={
+            "query": query, "response": response, "vector": vec.tobytes()
         })
-        self.redis.expire(cache_key, ttl)
+        self.redis.expire(f"semantic_cache:{hash(query)}", ttl)
 ```
 
 ---
