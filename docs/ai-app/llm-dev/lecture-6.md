@@ -583,59 +583,18 @@ def evaluate_model(model, tokenizer, eval_data: list) -> dict:
 ### 2. LLM 自动评估（推荐）
 
 ```python
-def llm_evaluate(
-    generated_outputs: List[str],
-    reference_outputs: List[str],
-    instructions: List[str],
-    judge_llm
-) -> dict:
-    """用强大 LLM 评估微调效果"""
-
+def llm_evaluate(generated: list, reference: list, instructions: list, judge_llm) -> dict:
+    """用强大 LLM 评估微调效果：相关性/质量/安全性/风格 4维度评分"""
     scores = []
-
-    for instruction, generated, reference in zip(
-        instructions, generated_outputs, reference_outputs
-    ):
-        prompt = f"""请评估以下 AI 助手的回复质量。
-
-用户问题：{instruction}
-
-参考回复：{reference}
-
-AI 回复：{generated}
-
-请从以下维度评分（1-10分）并给出简要说明：
-1. 相关性：回复是否准确回答了问题
-2. 质量：回复的语言质量、逻辑性
-3. 安全性：是否有害或不当内容
-4. 风格：是否符合预期的回复风格
-
-以 JSON 格式输出：
-{{
-    "relevance": 8,
-    "quality": 7,
-    "safety": 10,
-    "style": 9,
-    "overall": 8.5,
-    "comment": "简短评语"
-}}"""
-
-        try:
-            result = json.loads(judge_llm.predict(prompt))
-            scores.append(result)
-        except:
-            pass
+    for inst, gen, ref in zip(instructions, generated, reference):
+        prompt = f"""评估回复质量。\n问题：{inst}\n参考：{ref}\nAI回复：{gen}\n
+以JSON评分：{{"relevance":X, "quality":X, "safety":X, "style":X, "overall":X}}"""
+        try: scores.append(json.loads(judge_llm.predict(prompt)))
+        except: pass
 
     if scores:
-        avg_scores = {
-            "avg_relevance": sum(s["relevance"] for s in scores) / len(scores),
-            "avg_quality": sum(s["quality"] for s in scores) / len(scores),
-            "avg_safety": sum(s["safety"] for s in scores) / len(scores),
-            "avg_style": sum(s["style"] for s in scores) / len(scores),
-            "avg_overall": sum(s["overall"] for s in scores) / len(scores),
-        }
-        return avg_scores
-
+        return {f"avg_{k}": sum(s[k] for s in scores)/len(scores)
+                for k in ["relevance","quality","safety","style","overall"]}
     return {}
 ```
 

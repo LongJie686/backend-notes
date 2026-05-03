@@ -591,109 +591,41 @@ class ChainOfThoughtBuilder:
 
 ```python
 from pydantic import BaseModel, Field, validator
-from typing import List, Optional
-from langchain_openai import ChatOpenAI
 from langchain.output_parsers import PydanticOutputParser
-from langchain.prompts import PromptTemplate
 
-
-# 定义输出结构
+# 定义输出结构（Pydantic 强类型约束）
 class BrandAnalysis(BaseModel):
-    """品牌分析结构"""
     brand_name: str = Field(description="品牌名称")
-    market_share: float = Field(description="市场份额，0-100的数字")
-    yoy_growth: float = Field(description="同比增长率，正负数均可")
-    target_segment: str = Field(description="目标用户群描述，50字以内")
-    core_advantage: str = Field(description="核心竞争优势，50字以内")
+    market_share: float = Field(description="市场份额（0-100）")
+    yoy_growth: float = Field(description="同比增长率")
 
     @validator('market_share')
-    def market_share_must_be_valid(cls, v):
+    def must_be_valid(cls, v):
         if not 0 <= v <= 100:
             raise ValueError('市场份额必须在0-100之间')
         return v
 
-
 class MarketReport(BaseModel):
-    """市场报告结构"""
     report_title: str = Field(description="报告标题")
-    analysis_period: str = Field(description="分析时间段，如'2024年Q1'")
-    market_size: str = Field(description="市场规模，包含数字和单位")
-    brands: List[BrandAnalysis] = Field(description="各品牌分析列表")
-    key_trends: List[str] = Field(
-        description="核心趋势，3-5条",
-        min_items=3,
-        max_items=5
-    )
-    summary: str = Field(description="总结，不超过200字")
-    confidence_level: str = Field(
-        description="分析置信度",
-        regex="^(high|medium|low)$"  # 只允许这三个值
-    )
-    data_sources: List[str] = Field(description="数据来源列表")
+    brands: List[BrandAnalysis] = Field(description="各品牌分析")
+    key_trends: List[str] = Field(description="核心趋势（3-5条）", min_items=3, max_items=5)
+    confidence_level: str = Field(description="置信度", regex="^(high|medium|low)$")
 
-
-# 创建解析器
+# 解析器 + Prompt 模板
 parser = PydanticOutputParser(pydantic_object=MarketReport)
-
-# 构建Prompt
 prompt = PromptTemplate(
-    template="""
-你是一位资深市场分析师。
-
-请分析以下市场数据：
-{market_data}
-
-{format_instructions}
-
-注意：
-1. 严格按照JSON格式输出
-2. 所有字段必须填写
-3. 数字类型不要加引号
-""",
-    input_variables=["market_data"],
+    template="""你是资深市场分析师。分析以下数据：\n{market_data}\n\n{format_instructions}""",
     partial_variables={"format_instructions": parser.get_format_instructions()}
 )
 
-# 使用
-llm = ChatOpenAI(model="gpt-4", temperature=0)
-
+# 带重试的解析
 def analyze_market(market_data: str) -> MarketReport:
-    """分析市场数据，返回结构化结果"""
-
-    formatted_prompt = prompt.format(market_data=market_data)
-
-    # 带重试的解析
-    max_retries = 3
-    for attempt in range(max_retries):
+    for attempt in range(3):
         try:
-            response = llm.invoke(formatted_prompt)
-            result = parser.parse(response.content)
-            return result
+            response = llm.invoke(prompt.format(market_data=market_data))
+            return parser.parse(response.content)
         except Exception as e:
-            if attempt < max_retries - 1:
-                print(f"解析失败（第{attempt+1}次），重试中... 错误：{e}")
-            else:
-                raise ValueError(f"结构化输出解析失败：{e}")
-
-
-# 测试
-market_data = """
-2024年Q1中国手机市场数据：
-- 华为：份额20%，同比增长35%
-- 苹果：份额16%，同比下滑5%
-- 小米：份额18%，同比增长8%
-总市场规模8200万台
-"""
-
-result = analyze_market(market_data)
-print(f"报告标题：{result.report_title}")
-print(f"市场规模：{result.market_size}")
-print(f"\n品牌分析：")
-for brand in result.brands:
-    print(f"  {brand.brand_name}：{brand.market_share}%（同比{brand.yoy_growth:+.1f}%）")
-print(f"\n核心趋势：")
-for trend in result.key_trends:
-    print(f"  - {trend}")
+            if attempt == 2: raise ValueError(f"结构化输出解析失败：{e}")
 ```
 
 ---
@@ -748,77 +680,29 @@ result = retry_parser.parse_with_prompt(
 ### **5. 方案四：自定义JSON提取（最保险）**
 
 ```python
-import json
-import re
-from typing import Optional
+import re, json
 
 def extract_json_robust(text: str) -> Optional[dict]:
-    """
-    从LLM输出中稳健地提取JSON。
-    处理各种边缘情况：
-    - 带markdown代码块的JSON
-    - JSON前后有多余文字
-    - 有轻微格式错误的JSON
-    """
-
+    """从LLM输出中稳健提取JSON -- 4种策略逐级兜底"""
     # 策略1：直接解析
+    try: return json.loads(text.strip())
+    except: pass
+    # 策略2：提取 ```json ... ``` 代码块
+    for m in re.findall(r'```(?:json)?\s*([\s\S]*?)\s*```', text):
+        try: return json.loads(m)
+        except: continue
+    # 策略3：找最外层 {}
+    m = re.search(r'\{[\s\S]*\}', text)
+    if m:
+        try: return json.loads(m.group())
+        except: pass
+    # 策略4：修复单引号、末尾多余逗号后重试
     try:
-        return json.loads(text.strip())
-    except json.JSONDecodeError:
-        pass
-
-    # 策略2：提取代码块中的JSON
-    code_block_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
-    matches = re.findall(code_block_pattern, text)
-    for match in matches:
-        try:
-            return json.loads(match)
-        except json.JSONDecodeError:
-            continue
-
-    # 策略3：找最外层的{}
-    brace_pattern = r'\{[\s\S]*\}'
-    match = re.search(brace_pattern, text)
-    if match:
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            pass
-
-    # 策略4：修复常见格式错误后再解析
-    fixed_text = text
-    # 修复单引号
-    fixed_text = re.sub(r"'([^']*)':", r'"\1":', fixed_text)
-    # 修复末尾多余逗号
-    fixed_text = re.sub(r',\s*([}\]])', r'\1', fixed_text)
-
-    try:
-        match = re.search(brace_pattern, fixed_text)
-        if match:
-            return json.loads(match.group())
-    except json.JSONDecodeError:
-        pass
-
-    return None
-
-
-# 使用
-response_text = """
-好的，这是分析结果：
-
-```json
-{
-  "brand": "华为",
-  "share": 20,
-  "trend": "上升"
-}
-```
-
-以上是基于最新数据的分析。
-"""
-
-result = extract_json_robust(response_text)
-print(result)  # {'brand': '华为', 'share': 20, 'trend': '上升'}
+        fixed = re.sub(r"'([^']*)':", r'"\1":', text)
+        fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
+        m = re.search(r'\{[\s\S]*\}', fixed)
+        return json.loads(m.group()) if m else None
+    except: return None
 ```
 
 ---
@@ -1073,247 +957,36 @@ FEW_SHOT_EXAMPLE = """
 ### **完整Agent代码**
 
 ```python
-from crewai import Agent, Task, Crew
-from crewai_tools import tool
-from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
-from typing import List
-import json
+# 完整Agent代码（小红书内容创作 Crew）
 
-
-# 定义输出结构
-class XiaohongshuPost(BaseModel):
-    title: str = Field(description="标题，30字以内")
-    cover_text: str = Field(description="封面文字，15字以内")
-    body: str = Field(description="正文，300-500字")
-    hashtags: List[str] = Field(description="话题标签，5-8个")
-    title_type: str = Field(description="标题类型")
-    estimated_engagement: str = Field(description="预估互动分析")
-
-
-@tool("趋势话题搜索")
-def search_trending_topics(keyword: str) -> str:
-    """
-    搜索小红书上与关键词相关的热门话题和爆款标题。
-    输入：关键词
-    输出：热门话题列表和爆款标题示例
-    """
-    return f"""
-关键词"{keyword}"相关热门话题：
-
-热门话题标签：
-- #{keyword}技巧（1.2亿浏览）
-- #职场{keyword}（8600万浏览）
-- #{keyword}干货（5400万浏览）
-
-近期爆款标题（点赞1万+）：
-1. "用了这个方法，我的{keyword}效率提升了3倍"（1.8万赞）
-2. "99%的人都不知道的{keyword}秘诀"（1.5万赞）
-3. "入职2年，我是怎么靠{keyword}出圈的"（1.2万赞）
-
-用户最关心的问题：
-- 如何快速掌握
-- 有没有系统方法
-- 实际效果如何
-"""
-
-
-@tool("文案质量评估")
-def evaluate_content_quality(content: str) -> str:
-    """
-    评估文案的质量分数和改进建议。
-    从标题吸引力、内容结构、emoji使用、标签精准度4个维度打分。
-    输入：文案内容（JSON格式）
-    输出：评分报告
-    """
-    return f"""
-文案质量评估报告：
-
-评分维度（满分10分）：
-- 标题吸引力：8/10（有悬念，但可以更口语化）
-- 内容结构：9/10（层次清晰，干货充足）
-- emoji使用：7/10（数量适中，位置合理）
-- 标签精准度：8/10（覆盖热门，有精准标签）
-
-综合评分：8/10
-
-改进建议：
-1. 标题可以加入数字，增加可信度
-2. 开篇钩子可以更贴近痛点场景
-3. 结尾互动问题可以更具体
-
-预估表现：较好，预计收藏率高于平均水平
-"""
-
-
-llm = ChatOpenAI(model="gpt-4", temperature=0.8)
-
-# 创意策略师
+# 3 个 Agent 协作流程：策略 → 创作 → 审核
 strategist = Agent(
     role="小红书内容策略师",
-    goal="分析目标受众和热门趋势，制定最优的内容策略",
-    backstory="""
-    你是一位专注小红书平台的内容策略专家，有5年平台运营经验。
-    你深度理解小红书的算法和用户心理。
-    你的工作是找到最有传播潜力的内容角度。
-    """,
-    tools=[search_trending_topics],
-    llm=llm,
-    verbose=True
+    goal="制定最优内容策略",
+    tools=[search_trending_topics],  # 搜索热门话题
+    llm=ChatOpenAI(model="gpt-4", temperature=0.8)
 )
-
-# 文案创作者
 copywriter = Agent(
     role="小红书爆款文案创作者",
-    goal="创作高质量、高互动率的小红书笔记",
-    backstory=XIAOHONGSHU_SYSTEM,
-    tools=[],
-    llm=llm,
-    verbose=True
+    goal="创作高质量笔记",
+    backstory=XIAOHONGSHU_SYSTEM,  # 前面定义的完整人设
+    llm=ChatOpenAI(model="gpt-4", temperature=0.8)
 )
-
-# 质量审核员
 reviewer = Agent(
     role="内容质量审核官",
-    goal="确保文案质量达到爆款标准，给出改进意见",
-    backstory="""
-    你是一位严格的内容审核专家，见过数千篇小红书爆款文章。
-    你能一眼判断一篇笔记的传播潜力。
-    你的标准：如果你自己不会转发，就不能通过审核。
-    """,
-    tools=[evaluate_content_quality],
-    llm=llm,
-    verbose=True
+    goal="确保文案质量达到爆款标准",
+    tools=[evaluate_content_quality],  # 4维度评分工具
+    llm=ChatOpenAI(model="gpt-4", temperature=0.8)
 )
 
-
-def create_xiaohongshu_crew(topic: str,
-                             audience: str,
-                             key_point: str):
-    """创建小红书内容创作Crew"""
-
-    # 策略任务
-    strategy_task = Task(
-        description=f"""
-        为以下内容制定创作策略：
-        - 主题：{topic}
-        - 目标受众：{audience}
-        - 核心卖点：{key_point}
-
-        请完成：
-        1. 使用"趋势话题搜索"工具，搜索"{topic}"的热门话题
-        2. 分析目标受众的核心痛点
-        3. 确定最佳内容角度（从5种标题类型中选择）
-        4. 推荐3个精准话题标签
-        """,
-        expected_output="""
-        内容策略报告，包含：
-        - 目标受众核心痛点（3条）
-        - 推荐内容角度及理由
-        - 推荐标题类型
-        - 推荐话题标签（5-8个）
-        """,
-        agent=strategist
-    )
-
-    # 创作任务
-    creation_task = Task(
-        description=f"""
-        基于策略报告，创作一篇高质量小红书笔记。
-
-        主题：{topic}
-        受众：{audience}
-        卖点：{key_point}
-
-        严格按照以下JSON格式输出：
-        {{
-          "title": "标题（30字以内）",
-          "cover_text": "封面文字（15字以内）",
-          "body": "正文（300-500字，包含结构）",
-          "hashtags": ["标签1", "标签2", ...],
-          "title_type": "标题类型",
-          "estimated_engagement": "互动预估"
-        }}
-
-        {FEW_SHOT_EXAMPLE}
-
-        只输出JSON，不要有其他内容！
-        """,
-        expected_output="严格的JSON格式文案，包含所有必填字段",
-        agent=copywriter,
-        context=[strategy_task]
-    )
-
-    # 审核任务
-    review_task = Task(
-        description="""
-        审核创作好的文案，使用"文案质量评估"工具进行评分。
-
-        如果评分低于7分，请给出改进后的版本。
-        如果评分高于7分，直接输出最终版本。
-
-        最终输出格式：
-        ```json
-        {
-          "final_post": {
-            "title": "...",
-            "cover_text": "...",
-            "body": "...",
-            "hashtags": [...]
-          },
-          "quality_score": 8.5,
-          "improvement_notes": "改进说明（如果有）"
-        }
-        ```
-        """,
-        expected_output="经过审核的最终文案（JSON格式）及质量评分",
-        agent=reviewer,
-        context=[creation_task]
-    )
-
-    crew = Crew(
-        agents=[strategist, copywriter, reviewer],
-        tasks=[strategy_task, creation_task, review_task],
-        verbose=True
-    )
-
-    return crew
-
-
-# 主程序
-def generate_xiaohongshu_post(topic: str,
-                               audience: str = "职场年轻人",
-                               key_point: str = "实用干货"):
-    """生成小红书文案"""
-    print(f"\n{'='*50}")
-    print(f"生成小红书文案：{topic}")
-    print(f"{'='*50}\n")
-
-    crew = create_xiaohongshu_crew(topic, audience, key_point)
-    result = crew.kickoff()
-
-    # 提取JSON
-    final_post = extract_json_robust(str(result))
-
-    if final_post:
-        post_data = final_post.get('final_post', final_post)
-
-        print("\n=== 生成的小红书文案 ===\n")
-        print(f"[标题] {post_data.get('title', '')}")
-        print(f"[封面] {post_data.get('cover_text', '')}")
-        print(f"\n[正文]")
-        print(post_data.get('body', ''))
-        print(f"\n[标签] {' '.join(post_data.get('hashtags', []))}")
-
-    return result
-
-
-if __name__ == "__main__":
-    result = generate_xiaohongshu_post(
-        topic="如何用AI工具提升工作效率",
-        audience="25-35岁职场人",
-        key_point="亲测有效的5个AI工具"
-    )
+def create_xiaohongshu_crew(topic, audience, key_point):
+    # 策略任务：搜索热门 → 分析痛点 → 选标题类型 → 推荐标签
+    strategy_task = Task(description=f"为'{topic}'(受众:{audience})制定策略，搜索热门话题...", agent=strategist)
+    # 创作任务：基于策略 → 输出JSON格式文案（参考 Few-shot 示例）
+    creation_task = Task(description=f"创作'{topic}'文案，严格JSON格式输出...", agent=copywriter, context=[strategy_task])
+    # 审核任务：评分 < 7 分则改进，否则直接通过
+    review_task = Task(description="审核文案，使用评估工具评分...", agent=reviewer, context=[creation_task])
+    return Crew(agents=[strategist, copywriter, reviewer], tasks=[strategy_task, creation_task, review_task])
 ```
 
 ---
@@ -1323,142 +996,25 @@ if __name__ == "__main__":
 ### **1. Prompt版本管理系统**
 
 ```python
-import json
-import hashlib
-from datetime import datetime
-from pathlib import Path
-
-
 class PromptVersionManager:
-    """
-    Prompt版本管理系统
-    支持版本记录、回滚、效果追踪
-    """
+    """Prompt版本管理 -- 版本记录、效果追踪、对比"""
 
-    def __init__(self, storage_dir: str = "./prompt_versions"):
+    def __init__(self, storage_dir="./prompt_versions"):
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(exist_ok=True)
-        self.versions_file = self.storage_dir / "versions.json"
-        self.versions = self._load_versions()
+        self.versions = {}  # prompt_name → [{version_id, content, description, metrics: {scores, avg_score}}]
 
-    def save_version(self,
-                     prompt_name: str,
-                     prompt_content: str,
-                     description: str = "",
-                     tags: list = None) -> str:
-        """保存一个Prompt版本"""
+    def save_version(self, prompt_name, content, description="") -> str:
+        """保存版本，version_id = md5(content).hexdigest()[:8]"""
+        pass
 
-        # 生成版本ID
-        version_id = hashlib.md5(
-            prompt_content.encode()
-        ).hexdigest()[:8]
+    def record_score(self, prompt_name, version_id, score, notes=""):
+        """记录测试分数，自动更新 avg_score"""
+        pass
 
-        version_data = {
-            "version_id": version_id,
-            "prompt_name": prompt_name,
-            "content": prompt_content,
-            "description": description,
-            "tags": tags or [],
-            "created_at": datetime.now().isoformat(),
-            "metrics": {
-                "test_count": 0,
-                "avg_score": 0,
-                "scores": []
-            }
-        }
-
-        if prompt_name not in self.versions:
-            self.versions[prompt_name] = []
-
-        self.versions[prompt_name].append(version_data)
-        self._save_versions()
-
-        print(f"[OK] 版本已保存：{prompt_name} v{version_id}")
-        return version_id
-
-    def get_version(self, prompt_name: str,
-                    version_id: str = None) -> dict:
-        """获取指定版本（不填则返回最新版）"""
-
-        versions = self.versions.get(prompt_name, [])
-        if not versions:
-            return None
-
-        if version_id:
-            for v in versions:
-                if v['version_id'] == version_id:
-                    return v
-            return None
-
-        return versions[-1]  # 返回最新版本
-
-    def record_score(self,
-                     prompt_name: str,
-                     version_id: str,
-                     score: float,
-                     notes: str = ""):
-        """记录测试分数"""
-
-        for v in self.versions.get(prompt_name, []):
-            if v['version_id'] == version_id:
-                v['metrics']['scores'].append({
-                    "score": score,
-                    "notes": notes,
-                    "timestamp": datetime.now().isoformat()
-                })
-                v['metrics']['test_count'] += 1
-                v['metrics']['avg_score'] = sum(
-                    s['score'] for s in v['metrics']['scores']
-                ) / len(v['metrics']['scores'])
-
-                self._save_versions()
-                print(f"[OK] 分数已记录：{score}分")
-                return
-
-    def compare_versions(self, prompt_name: str) -> str:
-        """对比所有版本的效果"""
-
-        versions = self.versions.get(prompt_name, [])
-        if not versions:
-            return "没有找到该Prompt的版本"
-
-        report = f"\n=== {prompt_name} 版本对比 ===\n"
-
-        for v in sorted(versions,
-                        key=lambda x: x['metrics']['avg_score'],
-                        reverse=True):
-            score = v['metrics']['avg_score']
-            count = v['metrics']['test_count']
-            report += f"\nv{v['version_id']} | {v['description']}\n"
-            report += f"  平均分：{score:.1f} | 测试次数：{count}\n"
-            report += f"  创建时间：{v['created_at'][:10]}\n"
-
-        return report
-
-    def _load_versions(self) -> dict:
-        if self.versions_file.exists():
-            with open(self.versions_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return {}
-
-    def _save_versions(self):
-        with open(self.versions_file, 'w', encoding='utf-8') as f:
-            json.dump(self.versions, f, ensure_ascii=False, indent=2)
-
-
-# 使用
-pm = PromptVersionManager()
-
-v1_id = pm.save_version(
-    prompt_name="xiaohongshu_system",
-    prompt_content=XIAOHONGSHU_SYSTEM,
-    description="基础版本，包含角色定义和格式规范"
-)
-
-pm.record_score("xiaohongshu_system", v1_id, 7.5, "标题吸引力不足")
-pm.record_score("xiaohongshu_system", v1_id, 8.0, "整体不错")
-
-print(pm.compare_versions("xiaohongshu_system"))
+    def compare_versions(self, prompt_name) -> str:
+        """按 avg_score 降序，输出所有版本对比报告"""
+        pass
 ```
 
 ---
@@ -1466,148 +1022,33 @@ print(pm.compare_versions("xiaohongshu_system"))
 ### **2. A/B测试框架**
 
 ```python
-import random
-from typing import Callable
-
-
 class PromptABTester:
-    """Prompt A/B测试框架"""
+    """Prompt A/B测试框架 -- 核心逻辑"""
 
-    def __init__(self, llm, evaluator: Callable = None):
-        self.llm = llm
-        self.evaluator = evaluator or self._default_evaluator
-        self.results = {}
-
-    def run_test(self,
-                 test_name: str,
-                 prompt_a: str,
-                 prompt_b: str,
-                 test_inputs: list,
-                 n_runs: int = 5) -> dict:
-        """
-        对两个Prompt版本进行A/B测试
-
-        prompt_a: 版本A的Prompt
-        prompt_b: 版本B的Prompt
-        test_inputs: 测试输入列表
-        n_runs: 每个输入运行次数
-        """
-        print(f"\n开始A/B测试：{test_name}")
-        print(f"测试输入数量：{len(test_inputs)}，每个运行{n_runs}次")
-
-        scores_a = []
-        scores_b = []
-
-        for i, test_input in enumerate(test_inputs):
-            print(f"\n测试输入 {i+1}/{len(test_inputs)}：{test_input[:50]}...")
-
-            for run in range(n_runs):
+    def run_test(self, test_name, prompt_a, prompt_b, test_inputs: list, n_runs=5) -> dict:
+        """对两个Prompt版本进行A/B测试：每个输入运行n_runs次，用LLM评分（1-10分）"""
+        scores_a, scores_b = [], []
+        for test_input in test_inputs:
+            for _ in range(n_runs):
                 # 随机决定先测A还是B（避免顺序偏差）
                 if random.random() > 0.5:
-                    output_a = self._run_prompt(prompt_a, test_input)
-                    output_b = self._run_prompt(prompt_b, test_input)
+                    scores_a.append(self._evaluate(prompt_a, test_input))
+                    scores_b.append(self._evaluate(prompt_b, test_input))
                 else:
-                    output_b = self._run_prompt(prompt_b, test_input)
-                    output_a = self._run_prompt(prompt_a, test_input)
+                    scores_b.append(self._evaluate(prompt_b, test_input))
+                    scores_a.append(self._evaluate(prompt_a, test_input))
 
-                score_a = self.evaluator(test_input, output_a)
-                score_b = self.evaluator(test_input, output_b)
-
-                scores_a.append(score_a)
-                scores_b.append(score_b)
-
-                print(f"  Run {run+1}: A={score_a:.1f}, B={score_b:.1f}")
-
-        # 统计结果
-        avg_a = sum(scores_a) / len(scores_a)
-        avg_b = sum(scores_b) / len(scores_b)
-
+        avg_a, avg_b = sum(scores_a)/len(scores_a), sum(scores_b)/len(scores_b)
         winner = "A" if avg_a > avg_b else "B"
         improvement = abs(avg_a - avg_b) / min(avg_a, avg_b) * 100
+        return {"winner": winner, "improvement": f"{improvement:.1f}%",
+                "avg_a": avg_a, "avg_b": avg_b}
 
-        result = {
-            "test_name": test_name,
-            "avg_score_a": avg_a,
-            "avg_score_b": avg_b,
-            "winner": winner,
-            "improvement": f"{improvement:.1f}%",
-            "recommendation": f"版本{winner}更优，提升{improvement:.1f}%"
-        }
-
-        self.results[test_name] = result
-        self._print_report(result)
-
-        return result
-
-    def _run_prompt(self, prompt: str, test_input: str) -> str:
-        """运行Prompt"""
-        full_prompt = f"{prompt}\n\n输入：{test_input}"
-        response = self.llm.invoke(full_prompt)
-        return response.content
-
-    def _default_evaluator(self, input_text: str, output_text: str) -> float:
-        """
-        默认评估器：用LLM评分（1-10分）
-        实际项目中应该用人工评分或专业评估模型
-        """
-        eval_prompt = f"""
-        请对以下AI输出进行质量评分（1-10分）：
-
-        输入：{input_text}
-        输出：{output_text}
-
-        评分标准：
-        - 相关性（1-3分）：回答是否切题
-        - 质量（1-3分）：内容是否有价值
-        - 格式（1-2分）：格式是否规范
-        - 完整性（1-2分）：是否完整回答
-
-        只输出数字分数（如：8.5），不要有其他内容：
-        """
-
-        try:
-            response = self.llm.invoke(eval_prompt)
-            score = float(response.content.strip())
-            return min(max(score, 1), 10)
-        except:
-            return 5.0
-
-    def _print_report(self, result: dict):
-        print(f"\n{'='*40}")
-        print(f"A/B测试结果：{result['test_name']}")
-        print(f"{'='*40}")
-        print(f"版本A平均分：{result['avg_score_a']:.2f}")
-        print(f"版本B平均分：{result['avg_score_b']:.2f}")
-        print(f"获胜版本：{result['winner']}")
-        print(f"提升幅度：{result['improvement']}")
-        print(f"建议：{result['recommendation']}")
-
-
-# 使用
-llm = ChatOpenAI(model="gpt-4", temperature=0)
-tester = PromptABTester(llm=llm)
-
-result = tester.run_test(
-    test_name="小红书标题生成",
-    prompt_a="""
-    你是小红书博主，请为以下主题生成一个吸引人的标题。
-    要求：30字以内。
-    """,
-    prompt_b="""
-    你是拥有50万粉丝的小红书博主"效率女神Echo"。
-    请使用以下标题公式之一，为主题生成标题：
-    - 冲突型："我靠这个方法，从X变成Y"
-    - 数字型："N个被99%人忽视的X技巧"
-    - 痛点型："遇到X问题？根源在这里！"
-    要求：30字以内，有吸引力，口语化。
-    """,
-    test_inputs=[
-        "如何用AI工具提升工作效率",
-        "职场新人如何快速成长",
-        "早起习惯的养成方法"
-    ],
-    n_runs=3
-)
+    def _evaluate(self, prompt: str, test_input: str) -> float:
+        """用 LLM 评分：相关性 1-3 + 质量 1-3 + 格式 1-2 + 完整性 1-2"""
+        response = self.llm.invoke(f"{prompt}\n\n输入：{test_input}")
+        # 实际项目中用人工评分或专业评估模型
+        return self._llm_score(test_input, response.content)
 ```
 
 ---
@@ -1646,177 +1087,30 @@ result = tester.run_test(
 ### **SFT数据集构造**
 
 ```python
-import json
-from typing import List, Dict
-
-
 class SFTDatasetBuilder:
-    """
-    SFT（有监督微调）数据集构建器
-    """
+    """SFT（有监督微调）数据集构建器 -- 核心方法"""
 
-    def __init__(self, output_file: str = "sft_dataset.jsonl"):
+    def __init__(self, output_file="sft_dataset.jsonl"):
         self.output_file = output_file
-        self.samples = []
+        self.samples = []  # [{instruction, input, output, system}]
 
-    def add_sample(self,
-                   instruction: str,
-                   input_text: str,
-                   output_text: str,
-                   system: str = ""):
-        """
-        添加一个训练样本
+    def add_sample(self, instruction, input_text="", output_text="", system=""):
+        """手动添加高质量样本"""
+        self.samples.append({"instruction": instruction, "input": input_text, "output": output_text, "system": system})
 
-        instruction: 任务指令
-        input_text: 用户输入
-        output_text: 期望输出（高质量）
-        system: System Prompt
-        """
-        sample = {
-            "instruction": instruction,
-            "input": input_text,
-            "output": output_text,
-            "system": system
-        }
-        self.samples.append(sample)
-
-    def add_conversation_sample(self,
-                                messages: List[Dict],
-                                system: str = ""):
-        """
-        添加多轮对话样本
-
-        messages: [
-            {"role": "user", "content": "..."},
-            {"role": "assistant", "content": "..."},
-            ...
-        ]
-        """
-        sample = {
-            "conversations": messages,
-            "system": system
-        }
-        self.samples.append(sample)
-
-    def generate_from_existing_outputs(self,
-                                       llm,
-                                       instructions: List[str],
-                                       system_prompt: str,
-                                       quality_threshold: float = 7.0):
-        """
-        从LLM的高质量输出中自动生成训练数据
-        （用GPT-4生成数据来训练更小的模型）
-        """
-        print(f"开始生成{len(instructions)}个训练样本...")
-
-        for i, instruction in enumerate(instructions):
-            print(f"  生成 {i+1}/{len(instructions)}...")
-
-            # 用高质量模型生成输出
-            response = llm.invoke(
-                f"System: {system_prompt}\n\nUser: {instruction}"
-            )
-            output = response.content
-
-            # 质量评估（简单版）
-            quality_score = self._assess_quality(instruction, output)
-
-            if quality_score >= quality_threshold:
-                self.add_sample(
-                    instruction=instruction,
-                    input_text="",
-                    output_text=output,
-                    system=system_prompt
-                )
-                print(f"    [OK] 质量分数：{quality_score:.1f}，已添加")
-            else:
-                print(f"    [X] 质量分数：{quality_score:.1f}，已过滤")
-
-        print(f"\n生成完成！有效样本：{len(self.samples)}/{len(instructions)}")
-
-    def _assess_quality(self, instruction: str, output: str) -> float:
-        """简单质量评估"""
-        score = 5.0
-
-        # 长度合理
-        if 100 <= len(output) <= 2000:
-            score += 1
-
-        # 包含结构化内容
-        if any(marker in output for marker in ['##', '1.', '-', '*']):
-            score += 1
-
-        # 没有明显拒绝
-        if not any(phrase in output for phrase in
-                   ['无法', '抱歉', '不能帮', 'I cannot']):
-            score += 1
-
-        # 与指令相关（简单判断）
-        keywords = instruction.split()[:5]
-        if any(kw in output for kw in keywords):
-            score += 1
-
-        return min(score, 10)
+    def generate_from_existing_outputs(self, llm, instructions: list, system_prompt: str, quality_threshold=7.0):
+        """用 GPT-4 生成数据来训练更小模型 -- 质量评分低于阈值则过滤"""
+        for instruction in instructions:
+            output = llm.invoke(f"System: {system_prompt}\n\nUser: {instruction}").content
+            score = self._assess_quality(instruction, output)  # 长度/结构化/无拒绝/相关性 4维度评分
+            if score >= quality_threshold:
+                self.add_sample(instruction=instruction, output_text=output, system=system_prompt)
 
     def save(self):
-        """保存为JSONL格式"""
+        """保存为 JSONL 格式"""
         with open(self.output_file, 'w', encoding='utf-8') as f:
-            for sample in self.samples:
-                f.write(json.dumps(sample, ensure_ascii=False) + '\n')
-
-        print(f"\n[OK] 数据集已保存：{self.output_file}")
-        print(f"   共 {len(self.samples)} 条样本")
-
-    def get_statistics(self):
-        """输出数据集统计"""
-        if not self.samples:
-            print("数据集为空")
-            return
-
-        output_lengths = [len(s.get('output', ''))
-                          for s in self.samples]
-
-        print(f"\n=== 数据集统计 ===")
-        print(f"总样本数：{len(self.samples)}")
-        print(f"平均输出长度：{sum(output_lengths)/len(output_lengths):.0f}字")
-        print(f"最短输出：{min(output_lengths)}字")
-        print(f"最长输出：{max(output_lengths)}字")
-
-
-# 使用示例
-builder = SFTDatasetBuilder("xiaohongshu_sft.jsonl")
-
-# 手动添加高质量样本
-builder.add_sample(
-    instruction="写一篇关于早起习惯的小红书笔记",
-    input_text="",
-    output_text="""
-{
-  "title": "坚持早起60天，我的人生发生了这些变化",
-  "body": "曾经的我，是个爬不起来的夜猫子\n...",
-  "hashtags": ["#早起", "#自律", "#生活方式"]
-}
-""",
-    system=XIAOHONGSHU_SYSTEM
-)
-
-# 自动生成样本
-instructions = [
-    "写一篇关于读书方法的小红书笔记",
-    "写一篇关于健身入门的小红书笔记",
-    "写一篇关于理财入门的小红书笔记"
-]
-
-llm = ChatOpenAI(model="gpt-4", temperature=0.8)
-builder.generate_from_existing_outputs(
-    llm=llm,
-    instructions=instructions,
-    system_prompt=XIAOHONGSHU_SYSTEM,
-    quality_threshold=6.5
-)
-
-builder.get_statistics()
-builder.save()
+            for s in self.samples:
+                f.write(json.dumps(s, ensure_ascii=False) + '\n')
 ```
 
 ---
