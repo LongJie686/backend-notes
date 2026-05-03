@@ -270,15 +270,14 @@ order_db_3
 ```
 
 **示例：**
-```java
-// 4个分片
-int shardCount = 4;
-int shardIndex = (int)(userId % shardCount);
+```python
+shard_count = 4
+shard_index = user_id % shard_count
 
-// userId=1001 -> 1001 % 4 = 1 -> 分片1
-// userId=1002 -> 1002 % 4 = 2 -> 分片2
-// userId=1003 -> 1003 % 4 = 3 -> 分片3
-// userId=1004 -> 1004 % 4 = 0 -> 分片0
+# userId=1001 -> 1001 % 4 = 1 -> 分片1
+# userId=1002 -> 1002 % 4 = 2 -> 分片2
+# userId=1003 -> 1003 % 4 = 3 -> 分片3
+# userId=1004 -> 1004 % 4 = 0 -> 分片0
 ```
 
 **优点：** 数据分布均匀、路由简单
@@ -313,32 +312,41 @@ order_info_2: orderId 2000001 ~ 3000000
 **缺点：** 数据分布可能不均匀、实现复杂
 
 **代码示例：**
-```java
-public class ConsistentHash {
-    private static final int VIRTUAL_NODES = 150;
-    private final TreeMap<Long, String> ring = new TreeMap<>();
+```python
+import hashlib
+from bisect import bisect
 
-    public void addNode(String node) {
-        for (int i = 0; i < VIRTUAL_NODES; i++) {
-            long hash = hash(node + "-virtual-" + i);
-            ring.put(hash, node);
-        }
-    }
+class ConsistentHash:
+    def __init__(self, virtual_nodes: int = 150):
+        self.virtual_nodes = virtual_nodes
+        self.ring: list[int] = []       # 排序的hash值
+        self.nodes: dict[int, str] = {} # hash -> node
 
-    public String getNode(String key) {
-        if (ring.isEmpty()) return null;
-        long hash = hash(key);
-        Map.Entry<Long, String> entry = ring.ceilingEntry(hash);
-        if (entry == null) {
-            entry = ring.firstEntry();
-        }
-        return entry.getValue();
-    }
+    def _hash(self, key: str) -> int:
+        """MurmurHash 简化版，实际项目建议用 mmh3 库"""
+        return int(hashlib.md5(key.encode()).hexdigest(), 16)
 
-    private long hash(String key) {
-        return Hashing.murmur3_32().hashString(key, Charsets.UTF_8).padToLong();
-    }
-}
+    def add_node(self, node: str) -> None:
+        for i in range(self.virtual_nodes):
+            h = self._hash(f"{node}-virtual-{i}")
+            idx = bisect(self.ring, h)
+            self.ring.insert(idx, h)
+            self.nodes[h] = node
+
+    def remove_node(self, node: str) -> None:
+        for i in range(self.virtual_nodes):
+            h = self._hash(f"{node}-virtual-{i}")
+            self.ring.remove(h)
+            del self.nodes[h]
+
+    def get_node(self, key: str) -> str | None:
+        if not self.ring:
+            return None
+        h = self._hash(key)
+        idx = bisect(self.ring, h)
+        if idx == len(self.ring):
+            idx = 0
+        return self.nodes[self.ring[idx]]
 ```
 
 ### 4. 分片策略对比
@@ -394,14 +402,15 @@ user_id分布均匀
 索引表：按order_id -> user_id（通过order_id找到user_id，再找主表）
 ```
 
-```java
-// 查询流程
-public Order getByOrderNo(String orderNo) {
-    // 1. 查索引表（按order_no查user_id）
-    Long userId = orderIndexDao.getUserIdByOrderNo(orderNo);
-    // 2. 用user_id定位分片，查主表
-    return orderDao.getByOrderNoAndUserId(orderNo, userId);
-}
+```python
+# 查询流程
+def get_by_order_no(order_no: str) -> dict | None:
+    # 1. 查索引表（按order_no查user_id）
+    user_id = order_index_dao.get_user_id_by_order_no(order_no)
+    if not user_id:
+        return None
+    # 2. 用user_id定位分片，查主表
+    return order_dao.get_by_order_no_and_user_id(order_no, user_id)
 ```
 
 ### 热点问题
@@ -411,17 +420,19 @@ public Order getByOrderNo(String orderNo) {
 **解决方案：**
 
 **方案 1：热点数据单独处理**
-```java
-if (isHotUser(userId)) {
-    return getHotUserShard(userId);
-}
-return getNormalShard(userId);
+```python
+def get_shard(user_id: int) -> str:
+    if is_hot_user(user_id):
+        return get_hot_user_shard(user_id)
+    return get_normal_shard(user_id)
 ```
 
 **方案 2：分片键加随机后缀**
-```java
-String shardKey = userId + "_" + ThreadLocalRandom.current().nextInt(10);
-int shardIndex = shardKey.hashCode() % shardCount;
+```python
+import random
+
+shard_key = f"{user_id}_{random.randint(0, 9)}"
+shard_index = hash(shard_key) % shard_count
 ```
 
 **方案 3：本地缓存**
@@ -469,25 +480,30 @@ CREATE TABLE `id_segment` (
 );
 ```
 
-```java
-public class SegmentIdGenerator {
-    private long currentId;
-    private long maxId;
-    private final int step = 1000;
+```python
+import threading
 
-    public synchronized long nextId() {
-        if (currentId >= maxId) {
-            fetchSegment();
-        }
-        return currentId++;
-    }
+class SegmentIdGenerator:
+    def __init__(self, step: int = 1000):
+        self.step = step
+        self.current_id = 0
+        self.max_id = 0
+        self._lock = threading.Lock()
 
-    private void fetchSegment() {
-        // 乐观锁更新 max_id
-        // UPDATE id_segment SET max_id = max_id + step, version = version + 1
-        // WHERE biz_type = 'order' AND version = #{version}
-    }
-}
+    def next_id(self) -> int:
+        with self._lock:
+            if self.current_id >= self.max_id:
+                self._fetch_segment()
+            self.current_id += 1
+            return self.current_id
+
+    def _fetch_segment(self) -> None:
+        """乐观锁更新 max_id"""
+        # UPDATE id_segment SET max_id = max_id + step, version = version + 1
+        # WHERE biz_type = 'order' AND version = :old_version
+        segment = id_segment_dao.fetch_and_increment("order", self.step)
+        self.current_id = segment["max_id"] - self.step
+        self.max_id = segment["max_id"]
 ```
 
 **美团 Leaf 就是这个方案的生产实现。**
@@ -512,64 +528,67 @@ public class SegmentIdGenerator {
 **QPS上限：** 每毫秒 4096 x 1000ms = 400万 ID/秒
 
 **代码实现：**
-```java
-public class SnowflakeIdGenerator {
-    private final long epoch = 1577836800000L; // 2020-01-01
+```python
+import time
+import threading
 
-    private final long workerIdBits = 5L;
-    private final long datacenterIdBits = 5L;
-    private final long sequenceBits = 12L;
 
-    private final long maxWorkerId = ~(-1L << workerIdBits);       // 31
-    private final long maxDatacenterId = ~(-1L << datacenterIdBits); // 31
-    private final long maxSequence = ~(-1L << sequenceBits);         // 4095
+class SnowflakeIdGenerator:
+    def __init__(self, worker_id: int, datacenter_id: int):
+        self.epoch = 1577836800000  # 2020-01-01
 
-    private final long workerIdShift = sequenceBits;                 // 12
-    private final long datacenterIdShift = sequenceBits + workerIdBits; // 17
-    private final long timestampShift = sequenceBits + workerIdBits + datacenterIdBits; // 22
+        self.worker_id_bits = 5
+        self.datacenter_id_bits = 5
+        self.sequence_bits = 12
 
-    private final long workerId;
-    private final long datacenterId;
-    private long lastTimestamp = -1L;
-    private long sequence = 0L;
+        self.max_worker_id = ~(-1 << self.worker_id_bits)         # 31
+        self.max_datacenter_id = ~(-1 << self.datacenter_id_bits) # 31
+        self.max_sequence = ~(-1 << self.sequence_bits)           # 4095
 
-    public SnowflakeIdGenerator(long workerId, long datacenterId) {
-        this.workerId = workerId;
-        this.datacenterId = datacenterId;
-    }
+        self.worker_id_shift = self.sequence_bits                 # 12
+        self.datacenter_id_shift = self.sequence_bits + self.worker_id_bits  # 17
+        self.timestamp_shift = self.sequence_bits + self.worker_id_bits + self.datacenter_id_bits  # 22
 
-    public synchronized long nextId() {
-        long currentTimestamp = System.currentTimeMillis();
+        if worker_id > self.max_worker_id or worker_id < 0:
+            raise ValueError(f"worker_id 范围: 0~{self.max_worker_id}")
+        if datacenter_id > self.max_datacenter_id or datacenter_id < 0:
+            raise ValueError(f"datacenter_id 范围: 0~{self.max_datacenter_id}")
 
-        if (currentTimestamp < lastTimestamp) {
-            throw new RuntimeException("时钟回拨，拒绝生成ID");
-        }
+        self.worker_id = worker_id
+        self.datacenter_id = datacenter_id
+        self.last_timestamp = -1
+        self.sequence = 0
+        self._lock = threading.Lock()
 
-        if (currentTimestamp == lastTimestamp) {
-            sequence = (sequence + 1) & maxSequence;
-            if (sequence == 0) {
-                currentTimestamp = waitNextMillis(lastTimestamp);
-            }
-        } else {
-            sequence = 0L;
-        }
+    def _current_millis(self) -> int:
+        return int(time.time() * 1000)
 
-        lastTimestamp = currentTimestamp;
+    def _wait_next_millis(self, last_timestamp: int) -> int:
+        timestamp = self._current_millis()
+        while timestamp <= last_timestamp:
+            timestamp = self._current_millis()
+        return timestamp
 
-        return ((currentTimestamp - epoch) << timestampShift)
-                | (datacenterId << datacenterIdShift)
-                | (workerId << workerIdShift)
-                | sequence;
-    }
+    def next_id(self) -> int:
+        with self._lock:
+            current_timestamp = self._current_millis()
 
-    private long waitNextMillis(long lastTimestamp) {
-        long timestamp = System.currentTimeMillis();
-        while (timestamp <= lastTimestamp) {
-            timestamp = System.currentTimeMillis();
-        }
-        return timestamp;
-    }
-}
+            if current_timestamp < self.last_timestamp:
+                raise RuntimeError("时钟回拨，拒绝生成ID")
+
+            if current_timestamp == self.last_timestamp:
+                self.sequence = (self.sequence + 1) & self.max_sequence
+                if self.sequence == 0:
+                    current_timestamp = self._wait_next_millis(self.last_timestamp)
+            else:
+                self.sequence = 0
+
+            self.last_timestamp = current_timestamp
+
+            return ((current_timestamp - self.epoch) << self.timestamp_shift) \
+                | (self.datacenter_id << self.datacenter_id_shift) \
+                | (self.worker_id << self.worker_id_shift) \
+                | self.sequence
 ```
 
 ### 时钟回拨问题
@@ -603,22 +622,20 @@ public class SnowflakeIdGenerator {
 
 #### 方案 1：全局排序归并（适合小数据量）
 
-```java
-// 查询第2页（skip=10, limit=10）
-// 每个分片要查前20条（skip + limit）
-int skip = 10;
-int limit = 10;
+```python
+# 查询第2页（skip=10, limit=10）
+# 每个分片要查前20条（skip + limit）
+skip, limit = 10, 10
 
-List<Order> shard0Orders = query("order_db_0", "status=1 ORDER BY create_time DESC LIMIT 0, 20");
-List<Order> shard1Orders = query("order_db_1", "status=1 ORDER BY create_time DESC LIMIT 0, 20");
-List<Order> shard2Orders = query("order_db_2", "status=1 ORDER BY create_time DESC LIMIT 0, 20");
-List<Order> shard3Orders = query("order_db_3", "status=1 ORDER BY create_time DESC LIMIT 0, 20");
+shard_results = []
+for i in range(4):
+    rows = query(f"order_db_{i}",
+        "status=1 ORDER BY create_time DESC LIMIT 0, {0}".format(skip + limit))
+    shard_results.extend(rows)
 
-// 应用层合并排序
-List<Order> allOrders = merge(shard0Orders, shard1Orders, shard2Orders, shard3Orders);
-allOrders.sort(Comparator.comparing(Order::getCreateTime).reversed());
-
-return allOrders.subList(skip, skip + limit);
+# 应用层合并排序
+all_orders = sorted(shard_results, key=lambda o: o["create_time"], reverse=True)
+page = all_orders[skip:skip + limit]
 ```
 
 **问题：** 第 100 页 -> 每个分片要查前 1010 条 -> 越翻页越慢
@@ -627,18 +644,18 @@ return allOrders.subList(skip, skip + limit);
 
 **原理：** 不用 LIMIT offset，而是用时间戳/ID做游标。
 
-```java
-// 第1页
-List<Order> firstPage = query(
+```python
+# 第1页
+first_page = query(
     "status=1 AND create_time < NOW() ORDER BY create_time DESC LIMIT 10"
-);
+)
 
-// 第2页（用第1页最后一条的时间做游标）
-Order lastOrder = firstPage.get(firstPage.size() - 1);
-List<Order> secondPage = query(
-    "status=1 AND create_time < ? ORDER BY create_time DESC LIMIT 10",
-    lastOrder.getCreateTime()
-);
+# 第2页（用第1页最后一条的时间做游标）
+last_order = first_page[-1]
+second_page = query(
+    "status=1 AND create_time < %s ORDER BY create_time DESC LIMIT 10",
+    (last_order["create_time"],)
+)
 ```
 
 **优点：** 每个分片只返回 pageSize 条数据，性能不随翻页增加而下降
@@ -659,67 +676,71 @@ CREATE TABLE order_index (
 );
 ```
 
-```java
-public List<Order> getOrdersByStatus(int status, int page, int pageSize) {
-    // 1. 查索引表（不跨分片）
-    List<OrderIndex> indexes = orderIndexDao.query(
-        "status = ? ORDER BY create_time DESC LIMIT ?, ?",
-        status, (page-1) * pageSize, pageSize
-    );
+```python
+from collections import defaultdict
 
-    // 2. 根据user_id和id，查各分片主表
-    Map<Integer, List<Long>> shardOrders = new HashMap<>();
-    for (OrderIndex index : indexes) {
-        int shardIndex = (int)(index.getUserId() % 4);
-        shardOrders.computeIfAbsent(shardIndex, k -> new ArrayList<>())
-                   .add(index.getId());
-    }
+def get_orders_by_status(status: int, page: int, page_size: int) -> list[dict]:
+    # 1. 查索引表（不跨分片）
+    offset = (page - 1) * page_size
+    indexes = order_index_dao.query(
+        "status = %s ORDER BY create_time DESC LIMIT %s, %s",
+        (status, offset, page_size)
+    )
 
-    List<Order> result = new ArrayList<>();
-    for (Map.Entry<Integer, List<Long>> entry : shardOrders.entrySet()) {
-        List<Order> orders = query("order_db_" + entry.getKey(),
-            "id IN (" + join(entry.getValue()) + ")");
-        result.addAll(orders);
-    }
+    # 2. 根据user_id和id，查各分片主表
+    shard_orders = defaultdict(list)
+    for idx in indexes:
+        shard_index = idx["user_id"] % 4
+        shard_orders[shard_index].append(idx["id"])
 
-    result.sort(Comparator.comparing(Order::getCreateTime).reversed());
-    return result;
-}
+    result = []
+    for shard_index, order_ids in shard_orders.items():
+        placeholders = ",".join(["%s"] * len(order_ids))
+        orders = query(
+            f"order_db_{shard_index}",
+            f"id IN ({placeholders})",
+            tuple(order_ids)
+        )
+        result.extend(orders)
+
+    result.sort(key=lambda o: o["create_time"], reverse=True)
+    return result
 ```
 
 ### 2. 跨分片聚合问题
 
 **方案 1：应用层合并**
-```java
-Map<Integer, Long> result = new HashMap<>();
-for (Map<Integer, Long> stats : Arrays.asList(shard0Stats, shard1Stats, shard2Stats, shard3Stats)) {
-    stats.forEach((status, cnt) ->
-        result.merge(status, cnt, Long::sum)
-    );
-}
+```python
+from collections import Counter
+
+all_stats = Counter()
+for shard in range(4):
+    shard_stats = query(f"order_db_{shard}", "SELECT status, COUNT(*) FROM orders GROUP BY status")
+    for status, cnt in shard_stats:
+        all_stats[status] += cnt
 ```
 
 **方案 2：异步统计（推荐）**
-```java
-@Consumer("order.status.changed")
-public void onStatusChanged(OrderStatusChangedEvent event) {
-    orderStatsDao.increment(event.getNewStatus(), 1);
-    orderStatsDao.decrement(event.getOldStatus(), 1);
-}
+```python
+# 订单状态变更时异步更新统计表
+def on_status_changed(event: dict) -> None:
+    order_stats_dao.increment(event["new_status"], 1)
+    order_stats_dao.decrement(event["old_status"], 1)
 ```
 
 ### 3. 跨库 Join 问题
 
 **方案 1：应用层拼装（最常用）**
-```java
-// 1. 查订单
-List<Order> orders = orderDao.getByStatus(1);
-// 2. 收集user_id
-Set<Long> userIds = orders.stream().map(Order::getUserId).collect(Collectors.toSet());
-// 3. 批量查用户
-Map<Long, User> userMap = userDao.getByIds(userIds).stream()
-    .collect(Collectors.toMap(User::getId, u -> u));
-// 4. 拼装结果
+```python
+# 1. 查订单
+orders = order_dao.get_by_status(1)
+# 2. 收集user_id
+user_ids = {o["user_id"] for o in orders}
+# 3. 批量查用户
+user_map = {u["id"]: u for u in user_dao.get_by_ids(user_ids)}
+# 4. 拼装结果
+for order in orders:
+    order["user"] = user_map.get(order["user_id"])
 ```
 
 **方案 2：字段冗余** -- 下单时冗余用户名，查询时不需要 join
@@ -761,24 +782,19 @@ Confirm：确认操作（实际执行）
 Cancel：撤销操作（释放预留）
 ```
 
-```java
-public class InventoryTCC {
-    @TccTry
-    public boolean tryDeduct(Long productId, int quantity) {
-        inventoryDao.freeze(productId, quantity);
-        return true;
-    }
+```python
+class InventoryTCC:
+    def try_deduct(self, product_id: int, quantity: int) -> bool:
+        """Try: 冻结库存"""
+        return inventory_dao.freeze(product_id, quantity)
 
-    @TccConfirm
-    public void confirmDeduct(Long productId, int quantity) {
-        inventoryDao.deductFrozen(productId, quantity);
-    }
+    def confirm_deduct(self, product_id: int, quantity: int) -> None:
+        """Confirm: 实际扣减冻结库存"""
+        inventory_dao.deduct_frozen(product_id, quantity)
 
-    @TccCancel
-    public void cancelDeduct(Long productId, int quantity) {
-        inventoryDao.unfreeze(productId, quantity);
-    }
-}
+    def cancel_deduct(self, product_id: int, quantity: int) -> None:
+        """Cancel: 解冻库存"""
+        inventory_dao.unfreeze(product_id, quantity)
 ```
 
 **三大问题：**
@@ -801,44 +817,47 @@ T3失败 -> C3(补偿T3) -> C2(补偿T2) -> C1(补偿T1)
 
 **原理：** 利用本地数据库事务 + 消息队列实现跨服务的最终一致性。
 
-```java
-// 服务A：下单
-@Transactional
-public void createOrder(Order order) {
-    orderDao.insert(order);
+```python
+from apscheduler.schedulers.background import BackgroundScheduler
 
-    LocalMessage msg = new LocalMessage();
-    msg.setTopic("inventory.deduct");
-    msg.setBody(JSON.toJSONString(new DeductRequest(order)));
-    msg.setStatus("INIT");
-    localMessageDao.insert(msg);
-    // 事务提交：order和message同时成功或失败
-}
 
-// 后台扫描线程
-@Scheduled(fixedRate = 1000)
-public void scan() {
-    List<LocalMessage> messages = localMessageDao.findByStatus("INIT", 100);
-    for (LocalMessage msg : messages) {
-        try {
-            mq.send(msg.getTopic(), msg.getBody());
-            msg.setStatus("SENT");
-        } catch (Exception e) {
-            msg.setRetryCount(msg.getRetryCount() + 1);
+# 服务A：下单
+def create_order(order: dict) -> None:
+    """下单 + 本地消息表在同一事务"""
+    with db.transaction() as conn:
+        order_dao.insert(conn, order)
+
+        local_msg = {
+            "topic": "inventory.deduct",
+            "body": json.dumps({"order_id": order["id"], "product_id": order["product_id"]}),
+            "status": "INIT",
         }
-        localMessageDao.update(msg);
-    }
-}
+        local_message_dao.insert(conn, local_msg)
 
-// 服务B：扣库存
-@Consumer("inventory.deduct")
-public void onDeductMessage(DeductRequest request) {
-    if (inventoryDao.isDeducted(request.getOrderId())) {
-        return;  // 幂等
-    }
-    inventoryDao.deduct(request.getProductId(), request.getQuantity());
-    inventoryDao.markDeducted(request.getOrderId());
-}
+
+# 后台扫描线程
+def scan_pending_messages() -> None:
+    messages = local_message_dao.find_by_status("INIT", limit=100)
+    for msg in messages:
+        try:
+            mq.send(msg["topic"], msg["body"])
+            msg["status"] = "SENT"
+        except Exception:
+            msg["retry_count"] += 1
+        local_message_dao.update(msg)
+
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(scan_pending_messages, 'interval', seconds=1)
+scheduler.start()
+
+
+# 服务B：扣库存
+def on_deduct_message(request: dict) -> None:
+    if inventory_dao.is_deducted(request["order_id"]):
+        return  # 幂等
+    inventory_dao.deduct(request["product_id"], request["quantity"])
+    inventory_dao.mark_deducted(request["order_id"])
 ```
 
 ### 分布式事务方案对比
@@ -871,59 +890,53 @@ public void onDeductMessage(DeductRequest request) {
 
 #### 阶段 1：双写准备
 
-```java
-public void createOrder(Order order) {
-    newOrderDao.insert(order);   // 写新库（分库分表）
-    oldOrderDao.insert(order);   // 同时写旧库（兜底）
-}
+```python
+def create_order(order: dict) -> None:
+    new_order_dao.insert(order)   # 写新库（分库分表）
+    old_order_dao.insert(order)   # 同时写旧库（兜底）
 ```
 
 #### 阶段 2：全量数据迁移
 
-```java
-public void migrateAll() {
-    long lastId = 0;
-    int batchSize = 1000;
+```python
+def migrate_all() -> None:
+    last_id = 0
+    batch_size = 1000
 
-    while (true) {
-        List<Order> orders = oldOrderDao.getAfter(lastId, batchSize);
-        if (orders.isEmpty()) break;
+    while True:
+        orders = old_order_dao.get_after(last_id, batch_size)
+        if not orders:
+            break
 
-        for (Order order : orders) {
-            int shardIndex = (int)(order.getUserId() % 4);
-            newOrderDao.insert("order_db_" + shardIndex, order);
-        }
+        for order in orders:
+            shard_index = order["user_id"] % 4
+            new_order_dao.insert(f"order_db_{shard_index}", order)
 
-        lastId = orders.get(orders.size() - 1).getId();
-    }
-}
+        last_id = orders[-1]["id"]
 ```
 
 #### 阶段 3：数据校验
 
-```java
-public void validate() {
-    List<Long> sampleIds = oldOrderDao.randomSample(1000);
-    int inconsistentCount = 0;
-    for (Long id : sampleIds) {
-        Order oldOrder = oldOrderDao.getById(id);
-        Order newOrder = newOrderDao.getById(id);
-        if (!oldOrder.equals(newOrder)) {
-            inconsistentCount++;
-        }
-    }
-    log.info("不一致率: {}/{}", inconsistentCount, sampleIds.size());
-}
+```python
+def validate() -> None:
+    sample_ids = old_order_dao.random_sample(1000)
+    inconsistent = 0
+    for order_id in sample_ids:
+        old_order = old_order_dao.get_by_id(order_id)
+        new_order = new_order_dao.get_by_id(order_id)
+        if old_order != new_order:
+            inconsistent += 1
+    logger.info(f"不一致率: {inconsistent}/{len(sample_ids)}")
 ```
 
 #### 阶段 4：灰度切读
 
-```java
-// 先10%用户走新库
-if (userId % 10 == 0) {
-    return newOrderDao.getById(id);
-}
-return oldOrderDao.getById(id);
+```python
+# 先10%用户走新库
+def get_order(order_id: int, user_id: int) -> dict | None:
+    if user_id % 10 == 0:
+        return new_order_dao.get_by_id(order_id)
+    return old_order_dao.get_by_id(order_id)
 ```
 
 #### 阶段 5：切写
@@ -1080,8 +1093,8 @@ rules:
 所有跨库操作都用 2PC -> 性能极差 -> 死锁频繁
 
 ### 坑 4：查询没有带分片键
-```java
-orderDao.getByOrderNo(orderNo); // 没带user_id -> 扫描所有分片
+```python
+order_dao.get_by_order_no(order_no)  # 没带user_id -> 扫描所有分片
 ```
 
 ### 坑 5：数据迁移没有校验

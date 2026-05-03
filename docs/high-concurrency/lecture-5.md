@@ -29,18 +29,62 @@
 | 令牌桶 | 恒定速率放入令牌 | 允许突发 | 参数调优 | 通用 |
 | 漏桶 | 恒定速率流出 | 强制平滑 | 无突发 | 削峰 |
 
-### Sentinel限流
+### Python 限流实现
 
-```java
-@GetMapping("/order/create")
-@SentinelResource(value = "createOrder", blockHandler = "handleBlock")
-public Result createOrder(@RequestParam Long userId) {
-    return orderService.createOrder(userId);
-}
+#### 令牌桶
 
-public Result handleBlock(Long userId, BlockException ex) {
-    return Result.error("当前访问人数过多，请稍后再试");
-}
+```python
+import time
+import threading
+
+
+class TokenBucket:
+    """令牌桶限流器"""
+    def __init__(self, rate: int, capacity: int):
+        self.rate = rate             # 每秒生成令牌数
+        self.capacity = capacity     # 桶容量
+        self.tokens = capacity       # 当前令牌数
+        self.last_time = time.time()
+        self._lock = threading.Lock()
+
+    def acquire(self) -> bool:
+        """获取一个令牌，成功返回True"""
+        with self._lock:
+            now = time.time()
+            # 计算新生成的令牌
+            elapsed = now - self.last_time
+            self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
+            self.last_time = now
+
+            if self.tokens >= 1:
+                self.tokens -= 1
+                return True
+            return False
+```
+
+#### FastAPI 限流中间件
+
+```python
+from fastapi import FastAPI, Request, HTTPException
+from functools import wraps
+
+token_bucket = TokenBucket(rate=1000, capacity=2000)
+
+
+def rate_limit(func):
+    """接口限流装饰器"""
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        if not token_bucket.acquire():
+            raise HTTPException(status_code=429, detail="当前访问人数过多，请稍后再试")
+        return await func(*args, **kwargs)
+    return wrapper
+
+
+@app.post("/order/create")
+@rate_limit
+async def create_order(user_id: int):
+    return order_service.create_order(user_id)
 ```
 
 ---
@@ -63,23 +107,87 @@ public Result handleBlock(Long userId, BlockException ex) {
 正常   熔断   探测   恢复
 ```
 
-### Hystrix熔断
+### Python 熔断器实现
 
-```java
-@HystrixCommand(
-    fallbackMethod = "getUserFallback",
-    commandProperties = {
-        @HystrixProperty(name = "execution.isolation.thread.timeoutInMilliseconds", value = "3000"),
-        @HystrixProperty(name = "circuitBreaker.errorThresholdPercentage", value = "50")
-    }
-)
-public User getUser(Long userId) {
-    return remoteClient.getUser(userId);
-}
+```python
+import time
+import threading
+from collections import deque
+from functools import wraps
 
-public User getUserFallback(Long userId) {
-    return User.getDefault();
-}
+
+class CircuitBreaker:
+    """熔断器"""
+    def __init__(self, failure_threshold: int = 5,
+                 timeout: float = 60, half_open_limit: int = 3):
+        self.failure_threshold = failure_threshold  # 失败阈值
+        self.timeout = timeout                       # 熔断恢复时间
+        self.half_open_limit = half_open_limit       # 半开状态放的请求数
+        self.failures = deque()
+        self.state = "CLOSED"   # CLOSED / OPEN / HALF_OPEN
+        self.last_open_time = 0
+        self.half_open_count = 0
+        self._lock = threading.Lock()
+
+    def call(self, func, *args, **kwargs):
+        with self._lock:
+            if self.state == "OPEN":
+                if time.time() - self.last_open_time > self.timeout:
+                    self.state = "HALF_OPEN"
+                    self.half_open_count = 0
+                else:
+                    raise CircuitBreakerOpenError("熔断器已打开")
+
+            if self.state == "HALF_OPEN":
+                self.half_open_count += 1
+                if self.half_open_count > self.half_open_limit:
+                    raise CircuitBreakerOpenError("半开状态请求已达上限")
+
+        try:
+            result = func(*args, **kwargs)
+            with self._lock:
+                if self.state == "HALF_OPEN":
+                    self.state = "CLOSED"
+                    self.failures.clear()
+            return result
+        except Exception:
+            with self._lock:
+                now = time.time()
+                self.failures.append(now)
+                # 清理过期的失败记录（60秒窗口）
+                while self.failures and self.failures[0] < now - 60:
+                    self.failures.popleft()
+                if len(self.failures) >= self.failure_threshold:
+                    self.state = "OPEN"
+                    self.last_open_time = now
+            raise
+
+
+def circuit_breaker(fallback_func=None):
+    """熔断装饰器"""
+    def decorator(func):
+        breaker = CircuitBreaker(failure_threshold=5, timeout=60)
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return breaker.call(func, *args, **kwargs)
+            except CircuitBreakerOpenError:
+                if fallback_func:
+                    return fallback_func(*args, **kwargs)
+                raise
+        return wrapper
+    return decorator
+
+
+# 使用示例
+def get_user_fallback(user_id: int) -> dict:
+    return {"id": user_id, "name": "默认用户"}
+
+
+@circuit_breaker(fallback_func=get_user_fallback)
+def get_user(user_id: int) -> dict:
+    return remote_client.get_user(user_id)
 ```
 
 ---
@@ -96,17 +204,41 @@ public User getUserFallback(Long userId) {
 
 ### 降级开关
 
-```java
-@GetMapping("/product/detail")
-public Product getProductDetail(Long productId) {
-    Product product = productService.getProduct(productId);
+```python
+from fastapi import FastAPI
+from functools import wraps
 
-    if (!FeatureToggle.isOn("comment")) {
-        product.setComments(Collections.emptyList());
-    }
+app = FastAPI()
 
-    return product;
+# 功能开关（可用 Redis/配置中心动态控制）
+feature_toggles = {
+    "comment": True,
+    "recommend": True,
+    "like": True,
 }
+
+
+def feature_toggle(name: str):
+    """功能开关装饰器"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            if not feature_toggles.get(name, True):
+                return {"code": 200, "data": [], "message": f"{name} 已降级"}
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+@app.get("/product/detail")
+async def get_product_detail(product_id: int):
+    product = product_service.get_product(product_id)
+
+    # 评论功能未开启时返回空
+    if not feature_toggles.get("comment"):
+        product["comments"] = []
+
+    return product
 ```
 
 ---
@@ -123,8 +255,8 @@ public Product getProductDetail(Long productId) {
 
 ## 练习题
 
-- [ ] 练习1：使用Sentinel实现接口限流
-- [ ] 练习2：实现降级开关
+- [ ] 练习1：实现令牌桶限流器并接入 FastAPI 中间件
+- [ ] 练习2：实现熔断器和降级开关
 - [ ] 练习3：设计一个秒杀系统的限流方案
 
 ---
