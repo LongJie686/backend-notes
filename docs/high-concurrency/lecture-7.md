@@ -12,13 +12,6 @@
 - 系统有1亿用户同时在刷
 - **如何在毫秒内返回正确的内容？**
 
-这一讲会带你彻底搞懂：
-- 推模式、拉模式、推拉结合的区别和选型
-- 大V发帖的写扩散问题怎么解决
-- 未读数系统怎么设计
-- 计数系统（点赞、评论、粉丝数）怎么设计
-- 大厂的实际做法
-
 ---
 
 ## 一、信息流系统的核心概念
@@ -83,14 +76,6 @@
 → 太慢了
 ```
 
-**难点3：实时性**
-
-```
-大V刚发的内容
-→ 粉丝刷新后立刻要看到
-→ 不能有太长延迟
-```
-
 ---
 
 ## 二、三种模式深度剖析
@@ -148,94 +133,68 @@ Score: 发布时间戳
 
 **代码实现：**
 
-```java
-// 发布帖子（写扩散）
-public void publishPost(Long userId, Post post) {
-    // 1. 保存帖子到DB
-    postDao.insert(post);
+```python
+from concurrent.futures import ThreadPoolExecutor
+import redis
 
-    // 2. 查询所有粉丝
-    List<Long> followers = followDao.getFollowers(userId);
+executor = ThreadPoolExecutor(max_workers=10)
 
-    // 3. 推送到所有粉丝的收件箱（异步）
-    executor.submit(() -> {
-        pushToFollowers(post, followers);
-    });
-}
+# 发布帖子（写扩散）
+def publish_post(user_id: int, post: dict) -> None:
+    # 1. 保存帖子到DB
+    post_dao.insert(post)
 
-private void pushToFollowers(Post post, List<Long> followers) {
-    String score = String.valueOf(post.getCreateTime().getTime());
-    String postId = String.valueOf(post.getId());
+    # 2. 查询所有粉丝
+    followers = follow_dao.get_followers(user_id)
 
-    // 批量推送（分批，避免一次太多）
-    int batchSize = 100;
-    for (int i = 0; i < followers.size(); i += batchSize) {
-        List<Long> batch = followers.subList(i,
-            Math.min(i + batchSize, followers.size()));
+    # 3. 推送到所有粉丝的收件箱（异步）
+    executor.submit(push_to_followers, post, followers)
 
-        // Pipeline批量写Redis（减少网络往返）
-        redis.executePipelined((RedisCallback<?>) connection -> {
-            for (Long followerId : batch) {
-                String key = "feed:inbox:" + followerId;
-                connection.zAdd(key.getBytes(),
-                    Double.parseDouble(score),
-                    postId.getBytes());
 
-                // 只保留最新1000条（防止收件箱无限增长）
-                connection.zRemRangeByRank(key.getBytes(), 0, -1001);
+def push_to_followers(post: dict, followers: list[int]) -> None:
+    """批量推送到粉丝收件箱"""
+    timestamp = post["create_time"].timestamp()
+    post_id = str(post["id"])
 
-                // 设置过期时间（7天）
-                connection.expire(key.getBytes(), 7 * 24 * 3600);
-            }
-            return null;
-        });
+    batch_size = 100
+    pipe = redis.pipeline()
 
-        log.info("推送进度: {}/{}", i + batchSize, followers.size());
-    }
-}
+    for i in range(0, len(followers), batch_size):
+        batch = followers[i: i + batch_size]
+        for follower_id in batch:
+            key = f"feed:inbox:{follower_id}"
+            pipe.zadd(key, {post_id: timestamp})
+            # 只保留最新1000条
+            pipe.zremrangebyrank(key, 0, -1001)
+            # 设置过期时间（7天）
+            pipe.expire(key, 7 * 24 * 3600)
 
-// 读取首页信息流
-public List<Post> getHomeFeed(Long userId, int page, int pageSize) {
-    String key = "feed:inbox:" + userId;
-    int start = page * pageSize;
-    int end = start + pageSize - 1;
+        pipe.execute()
+        pipe = redis.pipeline()
 
-    // 1. 从收件箱读取帖子ID（按时间倒序）
-    Set<String> postIds = redis.zrevrange(key, start, end);
 
-    if (postIds.isEmpty()) {
-        return Collections.emptyList();
-    }
+# 读取首页信息流
+def get_home_feed(user_id: int, page: int, page_size: int) -> list[dict]:
+    key = f"feed:inbox:{user_id}"
+    start = page * page_size
+    end = start + page_size - 1
 
-    // 2. 批量查帖子详情
-    List<Long> ids = postIds.stream()
-        .map(Long::valueOf)
-        .collect(Collectors.toList());
+    # 1. 从收件箱读取帖子ID（按时间倒序）
+    post_ids = redis.zrevrange(key, start, end)
 
-    return postDao.getByIds(ids);
-}
+    if not post_ids:
+        return []
+
+    # 2. 批量查帖子详情
+    post_ids_int = [int(pid) for pid in post_ids]
+    return post_dao.get_by_ids(post_ids_int)
 ```
 
-**优点：**
+**优点：** 读性能极好 → 只读自己的收件箱 → 一次Redis查询 → 毫秒级响应
 
-```
-读性能极好
-→ 只读自己的收件箱
-→ 一次Redis查询
-→ 毫秒级响应
-```
+**缺点：** 写放大严重 → 大V发一条要写1000万次 → 延迟高、存储大
 
-**缺点：**
-
-```
-写放大严重
-→ 大V（1000万粉丝）发一条内容
-→ 要写1000万次
-→ 延迟高，存储大
-→ Redis内存压力大
-```
-
-**适用场景：** 粉丝数量不多（<10万），对读性能要求极高，普通社交网络
+**适用场景：** 粉丝不多（<10万），普通社交网络
 
 ---
 
@@ -261,7 +220,6 @@ Score: 发布时间戳
 
 ```
 用户B发了一条帖子（postId=1001）
-
 → 只写自己的发件箱（1次写）
   ZADD feed:outbox:B {timestamp} 1001
 ```
@@ -271,106 +229,58 @@ Score: 发布时间戳
 ```
 用户A刷新首页（关注了B、C、D等1000人）
 
-→ 查A的关注列表：[B, C, D, ...]
-
-→ 从每个人的发件箱拉取最新N条：
-  ZREVRANGE feed:outbox:B 0 19
-  ZREVRANGE feed:outbox:C 0 19
-  ZREVRANGE feed:outbox:D 0 19
-  ... (1000次Redis查询)
-
-→ 内存中合并排序（归并排序）
-→ 返回最新20条
+→ 查A的关注列表 → 从每个人的发件箱拉取最新N条（1000次查询）
+→ 内存中合并排序 → 返回最新20条
 ```
 
 **代码实现：**
 
-```java
-// 发布帖子（只写自己的发件箱）
-public void publishPost(Long userId, Post post) {
-    // 1. 保存到DB
-    postDao.insert(post);
+```python
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
-    // 2. 写自己的发件箱（1次操作）
-    String outboxKey = "feed:outbox:" + userId;
-    redis.zadd(outboxKey, post.getCreateTime().getTime(),
-        String.valueOf(post.getId()));
+# 发布帖子（只写自己的发件箱）
+def publish_post(user_id: int, post: dict) -> None:
+    post_dao.insert(post)
+    outbox_key = f"feed:outbox:{user_id}"
+    redis.zadd(outbox_key, {str(post["id"]): post["create_time"].timestamp()})
+    redis.zremrangebyrank(outbox_key, 0, -1001)  # 只保留最近1000条
 
-    // 只保留最近1000条
-    redis.zremrangeByRank(outboxKey, 0, -1001);
-}
 
-// 读取首页信息流（读扩散）
-public List<Post> getHomeFeed(Long userId, int page, int pageSize) {
-    // 1. 获取关注列表
-    List<Long> followingIds = followDao.getFollowing(userId);
+# 读取首页信息流（读扩散）
+def get_home_feed(user_id: int, page: int, page_size: int) -> list[dict]:
+    following_ids = follow_dao.get_following(user_id)
+    if not following_ids:
+        return []
 
-    if (followingIds.isEmpty()) {
-        return Collections.emptyList();
-    }
+    fetch_count = page_size * 3
+    all_post_ids: list[int] = []
 
-    // 2. 并行从每个人的发件箱拉取内容
-    int fetchCount = pageSize * 3;
+    # 并行从每个人的发件箱拉取内容
+    def fetch_from_outbox(follow_id: int) -> list[int]:
+        outbox_key = f"feed:outbox:{follow_id}"
+        return [int(pid) for pid in redis.zrevrange(outbox_key, 0, fetch_count - 1)]
 
-    List<CompletableFuture<List<String>>> futures = followingIds.stream()
-        .map(followId -> CompletableFuture.supplyAsync(() -> {
-            String outboxKey = "feed:outbox:" + followId;
-            return new ArrayList<>(redis.zrevrange(outboxKey, 0, fetchCount - 1));
-        }, executor))
-        .collect(Collectors.toList());
+    futures = {executor.submit(fetch_from_outbox, fid): fid for fid in following_ids}
+    for future in futures:
+        try:
+            all_post_ids.extend(future.result(timeout=0.2))
+        except FutureTimeoutError:
+            pass  # 超时跳过
 
-    // 3. 等待所有结果
-    List<String> allPostIds = new ArrayList<>();
-    for (CompletableFuture<List<String>> future : futures) {
-        try {
-            allPostIds.addAll(future.get(200, TimeUnit.MILLISECONDS));
-        } catch (TimeoutException e) {
-            log.warn("发件箱查询超时，跳过");
-        }
-    }
+    if not all_post_ids:
+        return []
 
-    if (allPostIds.isEmpty()) {
-        return Collections.emptyList();
-    }
+    # 批量查帖子详情 + 按时间排序 + 分页
+    all_posts = post_dao.get_by_ids(all_post_ids)
+    all_posts.sort(key=lambda p: p["create_time"], reverse=True)
 
-    // 4. 批量查帖子详情
-    List<Post> allPosts = postDao.getByIds(
-        allPostIds.stream().map(Long::valueOf).collect(Collectors.toList())
-    );
-
-    // 5. 按时间排序
-    allPosts.sort(Comparator.comparing(Post::getCreateTime).reversed());
-
-    // 6. 分页截取
-    int start = page * pageSize;
-    if (start >= allPosts.size()) {
-        return Collections.emptyList();
-    }
-    return allPosts.subList(start, Math.min(start + pageSize, allPosts.size()));
-}
+    start = page * page_size
+    return all_posts[start:start + page_size]
 ```
 
-**优点：**
-
-```
-写性能极好
-→ 只写自己的发件箱
-→ 1次操作
-→ 大V发内容不会有压力
-存储空间小
-→ 每条内容只存一份
-```
-
-**缺点：**
-
-```
-读性能差
-→ 关注1000人 → 1000次查询 → 归并排序
-→ 关注越多越慢
-→ 大量Redis查询，延迟高
-```
-
-**适用场景：** 关注数量少（<100人），写操作极频繁，内容量极大的场景
+**优点：** 写性能极好、大V无压力
+**缺点：** 读性能差 → 关注越多越慢
+**适用场景：** 关注少、写操作频繁
 
 ---
 
@@ -390,123 +300,71 @@ public List<Post> getHomeFeed(Long userId, int page, int pageSize) {
 
 **什么叫"大V"？** 粉丝数 > 阈值（比如：10万）的用户
 
-**写流程：**
-
-```
-普通用户B（1000粉丝）发帖：
-→ 写自己的发件箱
-→ 推送到所有1000个粉丝的收件箱（推模式）
-
-大V C（1000万粉丝）发帖：
-→ 只写自己的发件箱（不推送）
-→ 等粉丝来拉取（拉模式）
-```
-
-**读流程：**
-
-```
-用户A刷新首页（关注了普通用户B、大V C、大V D）：
-
-→ 从自己的收件箱读（已有普通用户推过来的内容）
-  ZREVRANGE feed:inbox:A 0 99
-
-→ 从关注的大V的发件箱拉（C、D）
-  ZREVRANGE feed:outbox:C 0 19
-  ZREVRANGE feed:outbox:D 0 19
-
-→ 合并排序
-→ 返回最新20条
-```
-
 **代码实现：**
 
-```java
-// 发布帖子（推拉结合）
-public void publishPost(Long userId, Post post) {
-    // 1. 保存到DB
-    postDao.insert(post);
+```python
+BIG_V_THRESHOLD = 100_000
 
-    // 2. 写自己的发件箱（所有人都写）
-    writeToOutbox(userId, post);
 
-    // 3. 判断是否是普通用户
-    long followerCount = followDao.getFollowerCount(userId);
+def publish_post(user_id: int, post: dict) -> None:
+    """发布帖子（推拉结合）"""
+    post_dao.insert(post)
 
-    if (followerCount <= BIG_V_THRESHOLD) {
-        // 普通用户：推模式
-        List<Long> followers = followDao.getFollowers(userId);
-        asyncPushToFollowers(post, followers);
-    }
-    // 大V不推送，等粉丝来拉
-}
+    # 写自己的发件箱（所有人都写）
+    write_to_outbox(user_id, post)
 
-// 读取首页信息流（推拉结合）
-public List<Post> getHomeFeed(Long userId, int page, int pageSize) {
-    // 1. 读自己的收件箱（来自普通用户的推送）
-    List<PostEntry> inboxPosts = readFromInbox(userId, pageSize * 2);
+    # 判断是否是普通用户
+    follower_count = follow_dao.get_follower_count(user_id)
 
-    // 2. 拉取关注的大V的最新内容
-    List<Long> bigVIds = getFollowingBigVs(userId);
-    List<PostEntry> bigVPosts = pullFromBigVs(bigVIds, pageSize);
+    if follower_count <= BIG_V_THRESHOLD:
+        # 普通用户：推模式
+        followers = follow_dao.get_followers(user_id)
+        executor.submit(push_to_followers, post, followers)
 
-    // 3. 合并
-    List<PostEntry> allPosts = new ArrayList<>();
-    allPosts.addAll(inboxPosts);
-    allPosts.addAll(bigVPosts);
 
-    // 4. 去重（同一个帖子可能出现两次）
-    allPosts = dedup(allPosts);
+def get_home_feed(user_id: int, page: int, page_size: int) -> list[dict]:
+    """读取首页信息流（推拉结合）"""
+    # 1. 读自己的收件箱（来自普通用户的推送）
+    inbox_posts = read_from_inbox(user_id, page_size * 2)
 
-    // 5. 按时间排序
-    allPosts.sort(Comparator.comparing(PostEntry::getTimestamp).reversed());
+    # 2. 拉取关注的大V的最新内容
+    big_v_ids = _get_following_big_vs(user_id)
+    big_v_posts = _pull_from_big_vs(big_v_ids, page_size)
 
-    // 6. 截取
-    int start = page * pageSize;
-    List<PostEntry> pageData = allPosts.subList(
-        Math.min(start, allPosts.size()),
-        Math.min(start + pageSize, allPosts.size())
-    );
+    # 3. 合并 + 去重 + 排序
+    all_posts = {p["id"]: p for p in (inbox_posts + big_v_posts)}.values()
+    sorted_posts = sorted(all_posts, key=lambda p: p["create_time"], reverse=True)
 
-    // 7. 批量查帖子详情
-    return enrichWithDetails(pageData);
-}
+    start = page * page_size
+    return list(sorted_posts)[start:start + page_size]
 
-private List<PostEntry> pullFromBigVs(List<Long> bigVIds, int pageSize) {
-    if (bigVIds.isEmpty()) {
-        return Collections.emptyList();
-    }
 
-    // 并行拉取（有超时控制）
-    List<CompletableFuture<List<PostEntry>>> futures = bigVIds.stream()
-        .map(bigVId -> CompletableFuture.supplyAsync(() -> {
-            return readFromOutbox(bigVId, pageSize);
-        }, executor).orTimeout(100, TimeUnit.MILLISECONDS)
-         .exceptionally(e -> Collections.emptyList()))
-        .collect(Collectors.toList());
+def _get_following_big_vs(user_id: int) -> list[int]:
+    """获取关注列表中的大V"""
+    following = follow_dao.get_following(user_id)
+    return [
+        fid for fid in following
+        if int(redis.get(f"user:follower:count:{fid}") or 0) > BIG_V_THRESHOLD
+    ]
 
-    return futures.stream()
-        .flatMap(f -> {
-            try {
-                return f.get().stream();
-            } catch (Exception e) {
-                return Stream.empty();
-            }
-        })
-        .collect(Collectors.toList());
-}
 
-// 判断是否是大V
-private List<Long> getFollowingBigVs(Long userId) {
-    List<Long> following = followDao.getFollowing(userId);
+def _pull_from_big_vs(big_v_ids: list[int], page_size: int) -> list[dict]:
+    """并行拉取大V内容"""
+    if not big_v_ids:
+        return []
 
-    return following.stream()
-        .filter(id -> {
-            String countKey = "user:follower:count:" + id;
-            String count = redis.get(countKey);
-            return count != null && Long.parseLong(count) > BIG_V_THRESHOLD;
-        })
-        .collect(Collectors.toList());
-}
+    def fetch_one(big_v_id: int) -> list[dict]:
+        return read_from_outbox(big_v_id, page_size)
+
+    all_posts = []
+    futures = {executor.submit(fetch_one, vid): vid for vid in big_v_ids}
+    for future in futures:
+        try:
+            all_posts.extend(future.result(timeout=0.1))
+        except Exception:
+            pass
+
+    return all_posts
 ```
 
 ---
@@ -525,16 +383,6 @@ private List<Long> getFollowingBigVs(Long userId) {
 
 ---
 
-### 何时用什么模式？
-
-```
-用户数 < 100万，且没有大V → 推模式
-只有大V，粉丝少关注多 → 拉模式
-大型社交平台，有普通用户也有大V → 推拉结合
-```
-
----
-
 ## 三、Feed流的缓存策略
 
 ### 冷热数据分层
@@ -542,103 +390,85 @@ private List<Long> getFollowingBigVs(Long userId) {
 ```
 热数据（最近7天的内容）→ Redis
 温数据（7天~1个月）→ MySQL（有索引）
-冷数据（1个月以前）→ 归档存储（MySQL Archive / HBase）
+冷数据（1个月以前）→ 归档存储
 ```
 
 **收件箱设计：**
 
-```java
-private static final int INBOX_MAX_SIZE = 1000;
+```python
+INBOX_MAX_SIZE = 1000
 
-private void addToInbox(Long userId, Long postId, long timestamp) {
-    String key = "feed:inbox:" + userId;
+def add_to_inbox(user_id: int, post_id: int, timestamp: float) -> None:
+    key = f"feed:inbox:{user_id}"
+    redis.zadd(key, {str(post_id): timestamp})
 
-    redis.zadd(key, timestamp, String.valueOf(postId));
+    size = redis.zcard(key)
+    if size > INBOX_MAX_SIZE:
+        redis.zremrangebyrank(key, 0, size - INBOX_MAX_SIZE - 1)
 
-    long size = redis.zcard(key);
-    if (size > INBOX_MAX_SIZE) {
-        redis.zremrangeByRank(key, 0, size - INBOX_MAX_SIZE - 1);
-    }
-
-    redis.expire(key, 7 * 24 * 3600);
-}
+    redis.expire(key, 7 * 24 * 3600)
 ```
 
 ---
 
 ### 用户长期不登录的处理
 
-```java
-public List<Post> getHomeFeed(Long userId, int page, int pageSize) {
-    String inboxKey = "feed:inbox:" + userId;
+```python
+def get_home_feed(user_id: int, page: int, page_size: int) -> list[dict]:
+    inbox_key = f"feed:inbox:{user_id}"
 
-    if (!redis.exists(inboxKey)) {
-        // 收件箱为空（长期未登录）→ 重建
-        rebuildInbox(userId);
-    }
+    if not redis.exists(inbox_key):
+        # 收件箱为空（长期未登录）→ 重建
+        rebuild_inbox(user_id)
 
-    return readFromInbox(userId, page, pageSize);
-}
+    return read_from_inbox(user_id, page, page_size)
 
-private void rebuildInbox(Long userId) {
-    log.info("重建收件箱: userId={}", userId);
 
-    List<Long> following = followDao.getFollowing(userId);
-    String inboxKey = "feed:inbox:" + userId;
+def rebuild_inbox(user_id: int) -> None:
+    """重建收件箱"""
+    following = follow_dao.get_following(user_id)
+    inbox_key = f"feed:inbox:{user_id}"
 
-    redis.executePipelined((RedisCallback<?>) connection -> {
-        for (Long followId : following) {
-            List<Post> recentPosts = postDao.getRecentByUserId(followId, 20);
-            for (Post post : recentPosts) {
-                connection.zAdd(inboxKey.getBytes(),
-                    post.getCreateTime().getTime(),
-                    String.valueOf(post.getId()).getBytes());
-            }
-        }
-        return null;
-    });
+    pipe = redis.pipeline()
+    for follow_id in following:
+        recent_posts = post_dao.get_recent_by_user_id(follow_id, 20)
+        for post in recent_posts:
+            pipe.zadd(inbox_key, {str(post["id"]): post["create_time"].timestamp()})
+    pipe.execute()
 
-    redis.zremrangeByRank(inboxKey, 0, -(INBOX_MAX_SIZE + 1));
-    redis.expire(inboxKey, 7 * 24 * 3600);
-}
+    redis.zremrangebyrank(inbox_key, 0, -(INBOX_MAX_SIZE + 1))
+    redis.expire(inbox_key, 7 * 24 * 3600)
 ```
 
 ---
 
 ### 关注/取关时的处理
 
-```java
-public void follow(Long userId, Long targetId) {
-    followDao.insert(userId, targetId);
-    redis.incr("user:following:count:" + userId);
-    redis.incr("user:follower:count:" + targetId);
+```python
+def follow(user_id: int, target_id: int) -> None:
+    follow_dao.insert(user_id, target_id)
+    redis.incr(f"user:following:count:{user_id}")
+    redis.incr(f"user:follower:count:{target_id}")
 
-    long targetFollowerCount = getFollowerCount(targetId);
+    target_follower_count = int(redis.get(f"user:follower:count:{target_id}") or 0)
 
-    if (targetFollowerCount <= BIG_V_THRESHOLD) {
-        // 普通用户：拉取最近内容推入收件箱
-        List<Post> recentPosts = postDao.getRecentByUserId(targetId, 50);
-        String inboxKey = "feed:inbox:" + userId;
-        for (Post post : recentPosts) {
-            redis.zadd(inboxKey, post.getCreateTime().getTime(),
-                String.valueOf(post.getId()));
-        }
-    }
-}
+    if target_follower_count <= BIG_V_THRESHOLD:
+        # 普通用户：拉取最近内容推入收件箱
+        recent_posts = post_dao.get_recent_by_user_id(target_id, 50)
+        inbox_key = f"feed:inbox:{user_id}"
+        for post in recent_posts:
+            redis.zadd(inbox_key, {str(post["id"]): post["create_time"].timestamp()})
 
-public void unfollow(Long userId, Long targetId) {
-    followDao.delete(userId, targetId);
-    redis.decr("user:following:count:" + userId);
-    redis.decr("user:follower:count:" + targetId);
 
-    List<Long> postIds = postDao.getPostIdsByUserId(targetId);
-    if (!postIds.isEmpty()) {
-        String inboxKey = "feed:inbox:" + userId;
-        String[] members = postIds.stream()
-            .map(String::valueOf).toArray(String[]::new);
-        redis.zrem(inboxKey, members);
-    }
-}
+def unfollow(user_id: int, target_id: int) -> None:
+    follow_dao.delete(user_id, target_id)
+    redis.decr(f"user:following:count:{user_id}")
+    redis.decr(f"user:follower:count:{target_id}")
+
+    post_ids = post_dao.get_post_ids_by_user_id(target_id)
+    if post_ids:
+        inbox_key = f"feed:inbox:{user_id}"
+        redis.zrem(inbox_key, *[str(pid) for pid in post_ids])
 ```
 
 ---
@@ -668,38 +498,36 @@ unread:{userId}:follow     → 新关注未读
 unread:{userId}:msg:{conv} → 某个会话的未读数
 ```
 
-**代码实现：**
+```python
+# 收到新消息
+def on_new_message(receiver_id: int, msg_type: str, conversation_id: int = None) -> None:
+    redis.incr(f"unread:{receiver_id}:total")
+    redis.incr(f"unread:{receiver_id}:{msg_type}")
+    if conversation_id is not None:
+        redis.incr(f"unread:{receiver_id}:msg:{conversation_id}")
+    redis.expire(f"unread:{receiver_id}:total", 30 * 24 * 3600)
 
-```java
-// 收到新消息
-public void onNewMessage(Long receiverId, String type, Long conversationId) {
-    redis.incr("unread:" + receiverId + ":total");
-    redis.incr("unread:" + receiverId + ":" + type);
-    if (conversationId != null) {
-        redis.incr("unread:" + receiverId + ":msg:" + conversationId);
+
+# 用户打开APP
+def get_unread_count(user_id: int) -> dict:
+    pipe = redis.pipeline()
+    for t in ("total", "comment", "at", "like", "follow"):
+        pipe.get(f"unread:{user_id}:{t}")
+    results = pipe.execute()
+
+    return {
+        "total": int(results[0] or 0),
+        "comment": int(results[1] or 0),
+        "at": int(results[2] or 0),
+        "like": int(results[3] or 0),
+        "follow": int(results[4] or 0),
     }
-    redis.expire("unread:" + receiverId + ":total", 30 * 24 * 3600);
-}
 
-// 用户打开APP
-public UnreadCount getUnreadCount(Long userId) {
-    UnreadCount count = new UnreadCount();
-    List<Object> results = redis.executePipelined((RedisCallback<?>) connection -> {
-        connection.get(("unread:" + userId + ":total").getBytes());
-        connection.get(("unread:" + userId + ":comment").getBytes());
-        connection.get(("unread:" + userId + ":at").getBytes());
-        connection.get(("unread:" + userId + ":like").getBytes());
-        connection.get(("unread:" + userId + ":follow").getBytes());
-        return null;
-    });
-    // 解析结果...
-}
 
-// 清零
-public void markAsRead(Long userId, String type) {
-    redis.set("unread:" + userId + ":" + type, "0");
-    recalcTotal(userId);
-}
+# 清零
+def mark_as_read(user_id: int, msg_type: str) -> None:
+    redis.set(f"unread:{user_id}:{msg_type}", "0")
+    recalc_total(user_id)
 ```
 
 ---
@@ -707,8 +535,6 @@ public void markAsRead(Long userId, String type) {
 ### 会话未读数的精确设计
 
 **IM系统中最复杂的场景。**
-
-**关键概念：**
 
 ```
 每个会话维护：
@@ -720,36 +546,34 @@ A的未读数 = maxSeq - readSeq_A
 B的未读数 = maxSeq - readSeq_B
 ```
 
-```java
-// 发送消息
-@Transactional
-public void sendMessage(Long senderId, Long receiverId, String content) {
-    String conversationId = buildConversationId(senderId, receiverId);
+```python
+def send_message(sender_id: int, receiver_id: int, content: str) -> None:
+    conversation_id = f"{min(sender_id, receiver_id)}_{max(sender_id, receiver_id)}"
 
-    String seqKey = "conv:seq:" + conversationId;
-    long seq = redis.incr(seqKey);
+    seq_key = f"conv:seq:{conversation_id}"
+    seq = redis.incr(seq_key)
 
-    Message msg = new Message();
-    msg.setConversationId(conversationId);
-    msg.setSenderId(senderId);
-    msg.setContent(content);
-    msg.setSeq(seq);
-    messageDao.insert(msg);
+    message = {
+        "conversation_id": conversation_id,
+        "sender_id": sender_id,
+        "content": content,
+        "seq": seq,
+    }
+    message_dao.insert(message)
 
-    redis.set("conv:maxSeq:" + conversationId, String.valueOf(seq));
-    redis.incr("unread:" + receiverId + ":msg:" + conversationId);
-    redis.incr("unread:" + receiverId + ":total");
-}
+    redis.set(f"conv:maxSeq:{conversation_id}", seq)
+    redis.incr(f"unread:{receiver_id}:msg:{conversation_id}")
+    redis.incr(f"unread:{receiver_id}:total")
 
-// 标记已读
-public void markRead(Long userId, String conversationId) {
-    String maxSeq = redis.get("conv:maxSeq:" + conversationId);
-    if (maxSeq == null) return;
 
-    redis.set("userRead:" + userId + ":" + conversationId, maxSeq);
-    redis.set("unread:" + userId + ":msg:" + conversationId, "0");
-    recalcTotalUnread(userId);
-}
+def mark_read(user_id: int, conversation_id: str) -> None:
+    max_seq = redis.get(f"conv:maxSeq:{conversation_id}")
+    if max_seq is None:
+        return
+
+    redis.set(f"userRead:{user_id}:{conversation_id}", max_seq)
+    redis.set(f"unread:{user_id}:msg:{conversation_id}", "0")
+    recalc_total_unread(user_id)
 ```
 
 ---
@@ -758,177 +582,146 @@ public void markRead(Long userId, String conversationId) {
 
 **Redis宕机 → 未读数丢失 → 重启后全部变成0**
 
-**解决方案：**
-
 **方案1：定期持久化到DB**
 
-```java
-@Scheduled(fixedRate = 60000)
-public void persistUnreadCount() {
-    Set<String> keys = redis.keys("unread:*:total");
-    for (String key : keys) {
-        Long userId = extractUserId(key);
-        String count = redis.get(key);
-        if (count != null) {
-            userUnreadDao.upsert(userId, Long.parseLong(count));
-        }
-    }
-}
+```python
+from apscheduler.schedulers.background import BackgroundScheduler
+
+
+def persist_unread_count() -> None:
+    """每分钟持久化未读数"""
+    keys = redis.keys("unread:*:total")
+    if not keys:
+        return
+    for key in keys:
+        user_id = extract_user_id(key)
+        count = redis.get(key)
+        if count is not None:
+            user_unread_dao.upsert(user_id, int(count))
+
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(persist_unread_count, 'interval', seconds=60)
+scheduler.start()
 ```
 
-**方案2：允许近似**
-- 点赞、评论等非关键场景：精度要求不高
-- IM消息关键场景：需要可靠存储（MySQL），Redis只做加速
+**方案2：允许近似** -- 点赞、评论等非关键场景精度要求不高；IM消息关键场景以DB为准，Redis只做加速
 
 ---
 
 ## 五、计数系统设计
 
-### 常见计数场景
-
-```
-内容类：帖子点赞数、评论数、转发数、收藏数、阅读数
-用户类：粉丝数、关注数、获赞总数
-互动类：私信未读数、消息未读数
-```
-
----
-
 ### Redis计数器
 
-```java
-public class CounterService {
+```python
+class CounterService:
+    @staticmethod
+    def _build_key(type_: str, id_: int) -> str:
+        return f"count:{type_}:{id_}"
 
-    public long increment(String type, Long id) {
-        return redis.incr(buildKey(type, id));
-    }
+    def increment(self, type_: str, id_: int) -> int:
+        return redis.incr(self._build_key(type_, id_))
 
-    public long decrement(String type, Long id) {
-        return redis.decr(buildKey(type, id));
-    }
+    def decrement(self, type_: str, id_: int) -> int:
+        return redis.decr(self._build_key(type_, id_))
 
-    public long getCount(String type, Long id) {
-        String key = buildKey(type, id);
-        String value = redis.get(key);
-        if (value != null) {
-            return Long.parseLong(value);
-        }
-        // 缓存未命中，从DB加载
-        long count = loadFromDB(type, id);
-        redis.set(key, String.valueOf(count));
-        return count;
-    }
+    def get_count(self, type_: str, id_: int) -> int:
+        key = self._build_key(type_, id_)
+        value = redis.get(key)
+        if value is not None:
+            return int(value)
+        # 缓存未命中，从DB加载
+        count = counter_dao.load(type_, id_)
+        redis.set(key, count)
+        return count
 
-    public Map<Long, Long> batchGetCount(String type, List<Long> ids) {
-        List<Object> values = redis.executePipelined((RedisCallback<?>) connection -> {
-            for (Long id : ids) {
-                connection.get(buildKey(type, id).getBytes());
-            }
-            return null;
-        });
-        Map<Long, Long> result = new HashMap<>();
-        for (int i = 0; i < ids.size(); i++) {
-            Object value = values.get(i);
-            result.put(ids.get(i), value == null ? 0L : Long.parseLong(value.toString()));
-        }
-        return result;
-    }
-
-    private String buildKey(String type, Long id) {
-        return "count:" + type + ":" + id;
-    }
-}
+    def batch_get_count(self, type_: str, ids: list[int]) -> dict[int, int]:
+        pipe = redis.pipeline()
+        for id_ in ids:
+            pipe.get(self._build_key(type_, id_))
+        values = pipe.execute()
+        return {ids[i]: int(v or 0) for i, v in enumerate(values)}
 ```
 
 ---
 
 ### 点赞去重（用Set记录）
 
-```java
-public boolean like(Long userId, Long postId) {
-    String likeKey = "post:liked:users:" + postId;
-    String countKey = "count:like:" + postId;
+```python
+LUA_LIKE = """
+if redis.call('sismember', KEYS[1], ARGV[1]) == 1 then
+    return 0
+end
+redis.call('sadd', KEYS[1], ARGV[1])
+redis.call('incr', KEYS[2])
+return 1
+"""
 
-    // Lua脚本原子操作
-    String script =
-        "if redis.call('sismember', KEYS[1], ARGV[1]) == 1 then " +
-        "    return 0; " +
-        "end; " +
-        "redis.call('sadd', KEYS[1], ARGV[1]); " +
-        "redis.call('incr', KEYS[2]); " +
-        "return 1;";
+LUA_UNLIKE = """
+if redis.call('sismember', KEYS[1], ARGV[1]) == 0 then
+    return 0
+end
+redis.call('srem', KEYS[1], ARGV[1])
+redis.call('decr', KEYS[2])
+return 1
+"""
 
-    Long result = redis.execute(
-        new DefaultRedisScript<>(script, Long.class),
-        Arrays.asList(likeKey, countKey),
-        String.valueOf(userId)
-    );
 
-    return result != null && result == 1L;
-}
+def like(user_id: int, post_id: int) -> bool:
+    like_key = f"post:liked:users:{post_id}"
+    count_key = f"count:like:{post_id}"
+    return redis.eval(LUA_LIKE, 2, like_key, count_key, str(user_id)) == 1
 
-public boolean unlike(Long userId, Long postId) {
-    String likeKey = "post:liked:users:" + postId;
-    String countKey = "count:like:" + postId;
 
-    String script =
-        "if redis.call('sismember', KEYS[1], ARGV[1]) == 0 then " +
-        "    return 0; " +
-        "end; " +
-        "redis.call('srem', KEYS[1], ARGV[1]); " +
-        "redis.call('decr', KEYS[2]); " +
-        "return 1;";
-
-    Long result = redis.execute(
-        new DefaultRedisScript<>(script, Long.class),
-        Arrays.asList(likeKey, countKey),
-        String.valueOf(userId)
-    );
-
-    return result != null && result == 1L;
-}
+def unlike(user_id: int, post_id: int) -> bool:
+    like_key = f"post:liked:users:{post_id}"
+    count_key = f"count:like:{post_id}"
+    return redis.eval(LUA_UNLIKE, 2, like_key, count_key, str(user_id)) == 1
 ```
 
 ---
 
 ### 阅读数防刷（滑动窗口）
 
-```java
-public void addView(Long userId, Long postId) {
-    String viewKey = "post:viewed:" + postId + ":" + userId;
+```python
+def add_view(user_id: int, post_id: int) -> None:
+    view_key = f"post:viewed:{post_id}:{user_id}"
 
-    Boolean isNew = redis.setnx(viewKey, "1");
-
-    if (Boolean.TRUE.equals(isNew)) {
-        redis.expire(viewKey, 3600);  // 1小时内不重复计
-        redis.incr("count:view:" + postId);
-        redis.sadd("counter:dirty", "count:view:" + postId);
-    }
-}
+    is_new = redis.set(view_key, "1", nx=True)
+    if is_new:
+        redis.expire(view_key, 3600)  # 1小时内不重复计
+        redis.incr(f"count:view:{post_id}")
+        redis.sadd("counter:dirty", f"count:view:{post_id}")
 ```
 
 ---
 
 ### 计数器的持久化
 
-```java
-// 每10秒同步到DB
-@Scheduled(fixedRate = 10000)
-public void syncCountsToDB() {
-    Set<String> dirtyKeys = redis.smembers("counter:dirty");
-    if (dirtyKeys.isEmpty()) return;
+```python
+def sync_counts_to_db() -> None:
+    """每10秒同步到DB"""
+    dirty_keys = redis.smembers("counter:dirty")
+    if not dirty_keys:
+        return
 
-    List<CounterUpdate> updates = new ArrayList<>();
-    for (String key : dirtyKeys) {
-        String value = redis.get(key);
-        if (value != null) {
-            updates.add(parseKey(key, Long.parseLong(value)));
-        }
-    }
+    updates = []
+    pipe = redis.pipeline()
+    for key in dirty_keys:
+        pipe.get(key)
+    values = pipe.execute()
 
-    counterDao.batchUpdate(updates);
-    redis.srem("counter:dirty", dirtyKeys.toArray(new String[0]));
-}
+    for key, value in zip(dirty_keys, values):
+        if value is not None:
+            type_, id_ = parse_key(key)
+            updates.append({"type": type_, "id": id_, "count": int(value)})
+
+    if updates:
+        counter_dao.batch_update(updates)
+        redis.srem("counter:dirty", *dirty_keys)
+
+
+scheduler.add_job(sync_counts_to_db, 'interval', seconds=10)
 ```
 
 ---
@@ -950,71 +743,64 @@ public void syncCountsToDB() {
 
 ### 解决方案：时间戳游标
 
-```java
-public FeedPage getHomeFeed(Long userId, Long lastTimestamp, int pageSize) {
-    String inboxKey = "feed:inbox:" + userId;
+```python
+def get_home_feed(user_id: int, last_timestamp: float | None, page_size: int) -> dict:
+    """时间戳游标翻页"""
+    inbox_key = f"feed:inbox:{user_id}"
 
-    Set<Tuple> tuples;
+    if last_timestamp is None:
+        # 第一页
+        tuples = redis.zrevrange(inbox_key, 0, page_size - 1, withscores=True)
+    else:
+        # 后续页面：游标翻页
+        tuples = redis.zrevrangebyscore(
+            inbox_key, last_timestamp - 1, 0,
+            start=0, num=page_size, withscores=True
+        )
 
-    if (lastTimestamp == null) {
-        tuples = redis.zrevrangeWithScores(inboxKey, 0, pageSize - 1);
-    } else {
-        tuples = redis.zrevrangeByScoreWithScores(
-            inboxKey,
-            lastTimestamp - 1,
-            0,
-            0,
-            pageSize
-        );
+    if not tuples:
+        return {"posts": [], "last_timestamp": None, "has_more": False}
+
+    post_ids = [int(t[0]) for t in tuples]
+    new_last_timestamp = min(t[1] for t in tuples)
+
+    posts = post_dao.get_by_ids(post_ids)
+    return {
+        "posts": posts,
+        "last_timestamp": new_last_timestamp,
+        "has_more": len(posts) == page_size,
     }
-
-    if (tuples.isEmpty()) {
-        return FeedPage.empty();
-    }
-
-    List<Long> postIds = tuples.stream()
-        .map(t -> Long.valueOf(t.getElement()))
-        .collect(Collectors.toList());
-
-    long newLastTimestamp = (long) tuples.stream()
-        .mapToDouble(Tuple::getScore)
-        .min()
-        .orElse(0);
-
-    List<Post> posts = postDao.getByIds(postIds);
-    return FeedPage.of(posts, newLastTimestamp, posts.size() == pageSize);
-}
 ```
 
 ---
 
 ## 七、大V的写扩散控制
 
-```java
-public void onBigVPost(Long bigVId, Post post) {
-    writeToOutbox(bigVId, post);  // 只写发件箱
+```python
+def on_big_v_post(big_v_id: int, post: dict) -> None:
+    write_to_outbox(big_v_id, post)  # 只写发件箱
 
-    // 异步：只给"活跃粉丝"推送（不是所有粉丝）
-    executor.submit(() -> {
-        List<Long> activeFollowers = getActiveFollowers(bigVId);  // 7天内登录
-        for (List<Long> batch : partition(activeFollowers, 1000)) {
-            pushToFollowerBatch(post, batch);
-            Thread.sleep(10);
-        }
-    });
-}
+    # 异步：只给"活跃粉丝"推送
+    executor.submit(_push_to_active_followers, big_v_id, post)
 
-// 缓存大V判断
-public boolean isBigV(Long userId) {
-    String key = "user:isBigV:" + userId;
-    String cached = redis.get(key);
-    if (cached != null) return "1".equals(cached);
 
-    long followerCount = followerCountDao.getCount(userId);
-    boolean bigV = followerCount >= BIG_V_THRESHOLD;
-    redis.setex(key, 3600, bigV ? "1" : "0");
-    return bigV;
-}
+def _push_to_active_followers(big_v_id: int, post: dict) -> None:
+    active_followers = get_active_followers(big_v_id)  # 7天内登录的粉丝
+    for batch in chunked(active_followers, 1000):
+        push_to_follower_batch(post, batch)
+        time.sleep(0.01)  # 控制推送速率
+
+
+def is_big_v(user_id: int) -> bool:
+    key = f"user:isBigV:{user_id}"
+    cached = redis.get(key)
+    if cached is not None:
+        return cached == b"1"
+
+    follower_count = follower_count_dao.get_count(user_id)
+    is_big = follower_count >= BIG_V_THRESHOLD
+    redis.setex(key, 3600, "1" if is_big else "0")
+    return is_big
 ```
 
 ---
@@ -1050,13 +836,11 @@ public boolean isBigV(Long userId) {
 
 ### 1. 推模式和拉模式的区别？
 
-**标准回答：**
-
 ```
 推模式（写扩散）：
 → 发布时写入所有粉丝收件箱
 → 读时只读自己收件箱（快）
-→ 大V写放大严重（1000万粉丝 = 1000万次写）
+→ 大V写放大严重
 
 拉模式（读扩散）：
 → 发布时只写自己发件箱
@@ -1069,11 +853,7 @@ public boolean isBigV(Long userId) {
 → 读时合并
 ```
 
----
-
 ### 2. 微博大V发微博，如何处理1000万粉丝的推送？
-
-**标准回答：**
 
 ```
 不推送给所有粉丝：
@@ -1083,43 +863,26 @@ public boolean isBigV(Long userId) {
 4. 分批推送，控制速率
 ```
 
----
-
 ### 3. 未读数系统怎么设计？
-
-**标准回答：**
 
 ```
 用Redis计数器：INCR unread:{userId}:{type}
 用户打开APP：Pipeline批量读取所有类型的未读数
-用户查看：SET unread:{userId}:{type} 0
-
 持久化：定时任务同步到DB
-Redis宕机后从DB恢复
 关键场景（IM消息）以DB为准，Redis加速
 ```
 
----
-
 ### 4. 点赞数怎么防止重复计数？
 
-**标准回答：**
-
 ```
-用Redis Set记录点赞用户：
-post:liked:users:{postId}
-
+用Redis Set记录点赞用户：post:liked:users:{postId}
 点赞时Lua脚本原子操作：
 1. SISMEMBER检查是否已点赞
 2. 未点赞 → SADD + INCR
 3. 已点赞 → 返回失败
 ```
 
----
-
 ### 5. 用户长期不登录，再登录怎么处理？
-
-**标准回答：**
 
 ```
 收件箱过期（Redis TTL到期）
@@ -1129,16 +892,11 @@ post:liked:users:{postId}
 → 正常显示
 ```
 
----
-
 ### 6. 信息流翻页为什么用时间戳游标，不用LIMIT OFFSET？
-
-**标准回答：**
 
 ```
 LIMIT OFFSET：
-→ 翻页期间新内容插入
-→ 数据后移 → 重复或遗漏
+→ 翻页期间新内容插入 → 数据后移 → 重复或遗漏
 
 时间戳游标：
 → 以最后一条的时间戳为起点
@@ -1164,25 +922,15 @@ LIMIT OFFSET：
 ## 十一、练习题
 
 ### 练习1：推拉结合
-
-设计社交平台信息流系统：普通用户（粉丝<10万）推模式，大V（粉丝>=10万）拉模式
-
-要求：画出写流程、读流程，关注大V后历史内容如何处理
+设计社交平台信息流系统：普通用户推模式，大V拉模式。画出写流程、读流程。
 
 ### 练习2：未读数
-
-设计微博未读数系统：评论/@我的/新粉丝/私信
-
-要求：Redis Key设计、写操作、读操作、清零、Redis宕机恢复
+设计微博未读数系统：评论/@我的/新粉丝/私信。设计Key、读写操作、Redis宕机恢复。
 
 ### 练习3：计数系统
-
-设计帖子点赞系统：显示点赞数、去重、取消点赞、持久化
-
-要求：数据结构、点赞Lua脚本、取消点赞、持久化方案
+设计帖子点赞系统：显示点赞数、去重、取消点赞、持久化。
 
 ### 练习4：思考题
-
 **为什么微博/抖音的信息流，有时候刷新会看到"重复的内容"？**
 
 ---
@@ -1190,5 +938,3 @@ LIMIT OFFSET：
 ## 十二、下讲预告
 
 **第 8 讲：分布式服务治理——注册发现、分布式锁、链路追踪**
-
-会讲：服务注册发现原理、分布式锁三种实现、Redisson看门狗、链路追踪TraceID传递、配置中心、API网关。
