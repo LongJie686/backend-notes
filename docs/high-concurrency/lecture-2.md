@@ -67,7 +67,7 @@ Redis：单机 10 万 QPS，需要 1 台，成本低
    |
 [3. Nginx 缓存] <- 页面缓存、接口缓存
    |
-[4. 应用层本地缓存] <- Caffeine/Guava Cache
+[4. 应用层本地缓存] <- cachetools / lru_cache
    |
 [5. 分布式缓存] <- Redis/Memcached
    |
@@ -111,15 +111,20 @@ server {
 }
 ```
 
-### 4. 应用层本地缓存（Caffeine）
+### 4. 应用层本地缓存（cachetools）
 
-```java
-Cache<String, User> userCache = Caffeine.newBuilder()
-    .maximumSize(10_000)
-    .expireAfterWrite(10, TimeUnit.MINUTES)
-    .build();
+```python
+from cachetools import TTLCache
 
-User user = userCache.get(userId, key -> userDao.getById(key));
+user_cache = TTLCache(maxsize=10_000, ttl=600)
+
+def get_user(user_id: int) -> dict | None:
+    if user_id in user_cache:
+        return user_cache[user_id]
+    user = user_dao.get_by_id(user_id)
+    if user:
+        user_cache[user_id] = user
+    return user
 ```
 
 | 优点 | 缺点 |
@@ -157,27 +162,25 @@ User user = userCache.get(userId, key -> userDao.getById(key));
 2. 未命中 -> 查数据库 -> 写入缓存 -> 返回
 ```
 
-```java
-public User getUser(Long userId) {
-    String cacheKey = "user:" + userId;
-    User user = redis.get(cacheKey);
-    if (user != null) return user;
+```python
+def get_user(user_id: int) -> dict | None:
+    cache_key = f"user:{user_id}"
+    user = redis.get(cache_key)
+    if user:
+        return json.loads(user)
 
-    user = userDao.getById(userId);
-    if (user != null) {
-        redis.setex(cacheKey, 600, user);
-    }
-    return user;
-}
+    user = user_dao.get_by_id(user_id)
+    if user:
+        redis.setex(cache_key, 600, json.dumps(user))
+    return user
 ```
 
 **写流程：先更新 DB，再删除缓存（推荐）**
 
-```java
-public void updateUser(User user) {
-    userDao.update(user);
-    redis.del("user:" + user.getId());
-}
+```python
+def update_user(user: dict) -> None:
+    user_dao.update(user)
+    redis.delete(f"user:{user['id']}")
 ```
 
 为什么删除而不是更新？并发更新可能导致缓存和 DB 不一致。删除后下次读时自动加载最新数据。
@@ -195,13 +198,15 @@ public void updateUser(User user) {
 
 解决并发读写导致的不一致：
 
-```java
-public void updateUser(User user) {
-    redis.del(cacheKey);          // 第一次删除
-    userDao.update(user);
-    // 异步延迟删除
-    executor.schedule(() -> redis.del(cacheKey), 500, TimeUnit.MILLISECONDS);
-}
+```python
+import threading
+
+def update_user(user: dict) -> None:
+    cache_key = f"user:{user['id']}"
+    redis.delete(cache_key)        # 第一次删除
+    user_dao.update(user)
+    # 异步延迟删除
+    threading.Timer(0.5, lambda: redis.delete(cache_key)).start()
 ```
 
 延迟时间 = 读操作 P99 耗时 + 100ms。
@@ -220,10 +225,10 @@ public void updateUser(User user) {
 
 写操作只更新缓存，异步批量写回数据库：
 
-```java
-// 点赞 -- 只更新 Redis
-redis.incr("article:like:" + articleId);
-// 定时任务每10秒批量刷 DB
+```python
+# 点赞 -- 只更新 Redis
+redis.incr(f"article:like:{article_id}")
+# 定时任务每10秒批量刷 DB
 ```
 
 写入性能极高，但数据可能丢失，一致性最弱。适用：计数器、访问统计。
@@ -250,22 +255,25 @@ redis.incr("article:like:" + articleId);
 
 #### 方案 1：延迟双删 + 过期时间（兜底）
 
-```java
-redis.del(cacheKey);
-userDao.update(user);
-executor.schedule(() -> redis.del(cacheKey), 500, TimeUnit.MILLISECONDS);
-// 即使双重删除都失败，过期时间也能保证最终一致
+```python
+redis.delete(cache_key)
+user_dao.update(user)
+threading.Timer(0.5, lambda: redis.delete(cache_key)).start()
+# 即使双重删除都失败，过期时间也能保证最终一致
 ```
 
 #### 方案 2：删除缓存重试机制
 
-```java
-public void updateUser(User user) {
-    userDao.update(user);
-    if (!redis.del(cacheKey)) {
-        retryQueue.offer(new DelCacheTask(cacheKey));  // 失败放入重试队列
-    }
-}
+```python
+from queue import Queue
+
+retry_queue: Queue = Queue()
+
+def update_user(user: dict) -> None:
+    cache_key = f"user:{user['id']}"
+    user_dao.update(user)
+    if not redis.delete(cache_key):
+        retry_queue.put({"key": cache_key, "retry": 3})  # 失败放入重试队列
 ```
 
 #### 方案 3：消息队列异步删除
@@ -305,13 +313,12 @@ public void updateUser(User user) {
 
 #### 解决方案 1：缓存空值
 
-```java
-User user = userDao.getById(userId);
-if (user != null) {
-    redis.setex(cacheKey, 600, JSON.toJSONString(user));
-} else {
-    redis.setex(cacheKey, 60, "null");  // 空值过期时间短一些
-}
+```python
+user = user_dao.get_by_id(user_id)
+if user:
+    redis.setex(cache_key, 600, json.dumps(user))
+else:
+    redis.setex(cache_key, 60, "null")  # 空值过期时间短一些
 ```
 
 #### 解决方案 2：布隆过滤器
@@ -321,15 +328,22 @@ if (user != null) {
                       -> 一定不存在 -> 直接返回
 ```
 
-```java
-RBloomFilter<Long> bloomFilter = redisson.getBloomFilter("user:bloom");
-bloomFilter.tryInit(10_000_000L, 0.01);  // 1000万数据，1%误判率
+```python
+from pybloom_live import BloomFilter
 
-// 查询前先过滤
-if (!bloomFilter.contains(userId)) return null;
+bloom = BloomFilter(capacity=10_000_000, error_rate=0.01)
 
-// 新增用户时加入
-bloomFilter.add(user.getId());
+def get_user(user_id: int) -> dict | None:
+    if str(user_id) not in bloom:
+        return None
+
+    user = redis.get(f"user:{user_id}")
+    if user:
+        return json.loads(user)
+    return user_dao.get_by_id(user_id)
+
+# 新增用户时加入
+bloom.add(str(user.id))
 ```
 
 特点：
@@ -350,43 +364,56 @@ bloomFilter.add(user.getId());
 
 缓存失效时只让一个线程查 DB，其他线程等待：
 
-```java
-public User getUser(Long userId) {
-    User user = redis.get(cacheKey);
-    if (user != null) return user;
+```python
+import threading
 
-    RLock lock = redisson.getLock("lock:" + cacheKey);
-    try {
-        lock.lock(10, TimeUnit.SECONDS);
-        user = redis.get(cacheKey);  // 双重检查
-        if (user != null) return user;
+_lock = threading.Lock()
 
-        user = userDao.getById(userId);
-        if (user != null) redis.setex(cacheKey, 600, user);
-        return user;
-    } finally {
-        lock.unlock();
-    }
-}
+def get_user(user_id: int) -> dict | None:
+    cache_key = f"user:{user_id}"
+    user = redis.get(cache_key)
+    if user:
+        return json.loads(user)
+
+    with _lock:
+        user = redis.get(cache_key)  # 双重检查
+        if user:
+            return json.loads(user)
+
+        user = user_dao.get_by_id(user_id)
+        if user:
+            redis.setex(cache_key, 600, json.dumps(user))
+        return user
 ```
+
+> **分布式环境**需要用 Redis 分布式锁（`SET lock_key value NX EX 10`），因为 threading.Lock 只在单进程内有效。
 
 #### 解决方案 2：逻辑过期
 
 缓存永不过期，在值里存过期时间字段：
 
-```java
-class CacheValue {
-    Object data;
-    Long expireTime;
-}
+```python
+import time
 
-// 读取时检查逻辑过期
-if (cacheValue.getExpireTime() > System.currentTimeMillis()) {
-    return cacheValue.getData();  // 未过期
-}
-// 已过期 -> 异步更新，返回旧数据（降级）
-executor.submit(() -> loadAndCache(userId));
-return cacheValue.getData();
+def set_with_logic_expire(key: str, data: dict, expire_sec: int) -> None:
+    """存储时附带逻辑过期时间"""
+    value = json.dumps({
+        "data": data,
+        "expire_at": time.time() + expire_sec
+    })
+    redis.set(key, value)  # 物理永不过期
+
+def get_with_logic_expire(key: str) -> dict | None:
+    raw = redis.get(key)
+    if not raw:
+        return None
+    cache_value = json.loads(raw)
+    if cache_value["expire_at"] > time.time():
+        return cache_value["data"]  # 未过期
+
+    # 已过期 -> 异步更新，返回旧数据（降级）
+    threading.Thread(target=load_and_cache, args=(key,)).start()
+    return cache_value["data"]
 ```
 
 用户体验好（返回旧数据比等待强），但有短时间不一致。
@@ -395,10 +422,13 @@ return cacheValue.getData();
 
 缓存年龄超过 80% 生命周期时，异步刷新：
 
-```java
-if (age > ttl * 0.8) {
-    executor.submit(() -> loadAndCache(userId));
-}
+```python
+def should_refresh(cache_value: dict, ttl: int) -> bool:
+    age = time.time() - cache_value["created_at"]
+    return age > ttl * 0.8
+
+if should_refresh(cache_value, ttl):
+    threading.Thread(target=load_and_cache, args=(key,)).start()
 ```
 
 ### 3. 缓存雪崩（Cache Avalanche）
@@ -411,9 +441,11 @@ if (age > ttl * 0.8) {
 
 **解决：过期时间加随机值**
 
-```java
-int expire = 3600 + new Random().nextInt(600);  // 3600~4200秒
-redis.setex(cacheKey, expire, value);
+```python
+import random
+
+expire = 3600 + random.randint(0, 600)  # 3600~4200秒
+redis.setex(cache_key, expire, value)
 ```
 
 #### 场景 2：Redis 宕机
@@ -424,7 +456,7 @@ redis.setex(cacheKey, expire, value);
 |------|------|
 | Redis 高可用 | 主从 + 哨兵（小规模）/ Cluster（大规模） |
 | 多级缓存 | Redis 挂了，本地缓存兜底 |
-| 限流降级 | Sentinel/Hystrix 熔断，保护 DB |
+| 限流降级 | 熔断保护 DB |
 | 请求合并 | 10ms 内的相同请求合并成一个批量查询 |
 
 ### 三大问题对比
@@ -433,7 +465,7 @@ redis.setex(cacheKey, expire, value);
 |------|------|---------|
 | **穿透** | 查不存在的数据 | 布隆过滤器、缓存空值 |
 | **击穿** | 热点 Key 过期 | 互斥锁、逻辑过期 |
-| **雪崩** | 大量 Key 同时失效 | 过期时间加随机、高可用、多级缓存 |
+| **缓存雪崩** | 大量 Key 同时失效 | 过期时间加随机、高可用、多级缓存 |
 
 ---
 
@@ -485,21 +517,22 @@ redis.setex(cacheKey, expire, value);
 
 **1. 本地缓存（最有效）**
 
-```java
-Cache<String, Object> hotKeyCache = Caffeine.newBuilder()
-    .maximumSize(1000)
-    .expireAfterWrite(10, TimeUnit.SECONDS)
-    .build();
+```python
+from cachetools import TTLCache
+
+hot_key_cache = TTLCache(maxsize=1000, ttl=10)
 ```
 
 10 万 QPS 中 99.9% 被本地缓存拦截。
 
 **2. Key 拆分（多副本）**
 
-```java
-// 一个热点 Key 拆成 10 个副本
-int random = ThreadLocalRandom.current().nextInt(10);
-redis.get("hot:key:" + random);
+```python
+import random
+
+# 一个热点 Key 拆成 10 个副本
+idx = random.randint(0, 9)
+redis.get(f"hot:key:{idx}")
 ```
 
 **3. 读写分离** -- 读请求打从库，分散压力。
@@ -526,21 +559,23 @@ redis.get("hot:key:" + random);
 
 **1. 拆分**
 
-```java
-// 大 List 分页存储
-lpush("comment:1001:1", ...)  // 第1页
-lpush("comment:1001:2", ...)  // 第2页
+```python
+# 大 List 分页存储
+redis.lpush("comment:1001:1", *page1_items)
+redis.lpush("comment:1001:2", *page2_items)
 
-// 大 Hash 分组
-hset("user:1001:info:base", field, value)
-hset("user:1001:info:extend", field, value)
+# 大 Hash 分组
+redis.hset("user:1001:info:base", mapping=base_fields)
+redis.hset("user:1001:info:extend", mapping=extend_fields)
 ```
 
 **2. 压缩**
 
-```java
-byte[] compressed = gzip(JSON.toJSONString(value));
-redis.set(key, compressed);
+```python
+import gzip, json
+
+compressed = gzip.compress(json.dumps(value).encode())
+redis.set(key, compressed)
 ```
 
 **3. 异步删除（Redis 4.0+）**
@@ -571,7 +606,7 @@ QPS 10 万，P99 < 50ms，更新频率低。
 
 百万 QPS，防超卖。
 
-**预热：** `redis.set("stock:" + activityId, stock)`
+**预热：** `redis.set(f"stock:{activity_id}", stock)`
 
 **扣减（Lua 脚本保证原子性）：**
 
@@ -591,16 +626,21 @@ end
 
 点赞数、评论数、阅读数。
 
-```java
-// 点赞（Set 去重 + incr 计数）
-if (!redis.sismember("user:like:" + userId, articleId)) {
-    redis.sadd("user:like:" + userId, articleId);
-    redis.incr("article:like:" + articleId);
-}
+```python
+# 点赞（Set 去重 + incr 计数）
+def like_article(user_id: int, article_id: int) -> bool:
+    if not redis.sismember(f"user:like:{user_id}", article_id):
+        redis.sadd(f"user:like:{user_id}", article_id)
+        redis.incr(f"article:like:{article_id}")
+        return True
+    return False
 
-// 定时落库（每5分钟）
-@Scheduled(cron = "0 */5 * * * ?")
-public void syncToDB() { ... }
+# 定时落库（每5分钟，使用 APScheduler）
+from apscheduler.schedulers.background import BackgroundScheduler
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(sync_likes_to_db, 'interval', minutes=5)
+scheduler.start()
 ```
 
 ---
