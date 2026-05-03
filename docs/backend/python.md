@@ -138,7 +138,6 @@ asyncio.run(main())
 
 ```python
 import asyncio, aiohttp
-
 async def fetch_many(urls: list[str]) -> list[str]:
     async with aiohttp.ClientSession() as session:
         tasks = [fetch(session, u) for u in urls]
@@ -264,28 +263,21 @@ def transaction(db_conn):
 ### 1. dataclass
 
 ```python
-from dataclasses import dataclass, field
-
 @dataclass
 class User:
-    name: str
-    age: int
+    name: str; age: int
     email: str | None = None
     tags: list[str] = field(default_factory=list)
 
 user = User(name="张三", age=25)
-print(user)  # User(name='张三', age=25, email=None, tags=[])
 ```
 
 ### 2. Pydantic（API 开发必备）
 
 ```python
-from pydantic import BaseModel, Field
-
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
-    email: str
-    age: int = Field(..., ge=0, le=150)
+    email: str; age: int = Field(..., ge=0, le=150)
 
 class UserResponse(BaseModel):
     id: int; name: str; email: str
@@ -365,18 +357,12 @@ class NotFoundError(AppError):
         super().__init__(f"{resource} 不存在: {rid}", "NOT_FOUND", 404)
 
 class ValidationError(AppError):
-    def __init__(self, msg):
-        super().__init__(msg, "VALIDATION_ERROR", 400)
+    def __init__(self, msg): super().__init__(msg, "VALIDATION_ERROR", 400)
 ```
 
 ### 2. 全局异常处理（FastAPI）
 
 ```python
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-
-app = FastAPI()
-
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError):
     return JSONResponse(status_code=exc.status, content={"code": exc.code, "message": exc.message})
@@ -390,7 +376,6 @@ async def app_error_handler(request: Request, exc: AppError):
 
 ```python
 import logging, sys
-
 logger = logging.getLogger("app")
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler(sys.stdout)
@@ -574,9 +559,8 @@ original = {"name": "张三", "scores": [90, 85, 92], "info": {"age": 25}}
 
 shallow = original.copy()           # 浅拷贝：嵌套层仍共享
 deep = copy.deepcopy(original)      # 深拷贝：完全独立
-
 shallow["scores"].append(88)
-print(original["scores"])   # [90, 85, 92, 88] —— 被污染
+print(original["scores"])  # [90, 85, 92, 88] —— 被污染
 ```
 
 | 操作 | 第一层 | 嵌套层 | 适用场景 |
@@ -652,10 +636,6 @@ class Singleton:
         if self._instance is None:
             self._instance = self._cls(*args, **kwargs)
         return self._instance
-
-@Singleton
-class Database:
-    def __init__(self, url): self.url = url
 ```
 
 #### 4.4 常见装饰器使用场景
@@ -735,21 +715,15 @@ result = await loop.run_in_executor(pool, cpu_task, data)
 #### 6.2 关键示例
 
 ```python
-from functools import lru_cache
-import math
-
-# join >> + ；局部变量快于全局查找
+# join >> + ；局部变量快过全局；lru_cache：O(2^n) → O(n)；生成器：内存恒定
 sqrt = math.sqrt
 result = "".join(str(sqrt(n)) for n in numbers)
 
-# lru_cache：斐波那契 O(2^n) → O(n)
 @lru_cache(maxsize=None)
 def fib(n): return n if n < 2 else fib(n-1) + fib(n-2)
 
-# 生成器：大数据集内存恒定
-def process_lines(path):
-    with open(path) as f:
-        yield from (process(line) for line in f)
+for item in (process(line) for line in open("huge.csv")):
+    save_to_db(item)  # 内存恒定
 ```
 
 ---
@@ -869,18 +843,16 @@ sender.send("欢迎注册")
 ```python
 # 核心：接口定义算法族，运行时注入不同策略
 class VIPPricing:
-    def calculate(self, p): return p * 0.8
+    calc = lambda self, p: p * 0.8
 class RegularPricing:
-    def calculate(self, p): return p
+    calc = lambda self, p: p
 
 class Order:
-    def __init__(self, price, strategy):
-        self.price = price; self.strategy = strategy
-    def final_price(self):
-        return self.strategy.calculate(self.price)
+    def __init__(self, price, strategy): self.price = price; self.strategy = strategy
+    def final_price(self): return self.strategy.calc(self.price)
 
 order = Order(100, VIPPricing())
-order.strategy = RegularPricing()  # 运行时切换
+order.strategy = RegularPricing()  # 运行时切换策略
 ```
 
 ---

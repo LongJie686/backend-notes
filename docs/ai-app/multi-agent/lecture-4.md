@@ -122,132 +122,41 @@ tool_schema = {
 ### 4. OpenAI 原生 Function Calling 实战
 
 ```python
-import json
-import openai
+import json, openai
 
 client = openai.OpenAI()
 
-# 定义工具
-tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_weather",
-            "description": "获取指定城市的实时天气信息",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "city": {
-                        "type": "string",
-                        "description": "城市名称"
-                    }
-                },
-                "required": ["city"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "calculate",
-            "description": "执行数学计算",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "expression": {
-                        "type": "string",
-                        "description": "数学表达式，如：100 * 50 + 300"
-                    }
-                },
-                "required": ["expression"]
-            }
-        }
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "获取指定城市的实时天气信息",
+        "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}
     }
-]
+}]
 
-# 工具的真实实现
-def get_weather(city: str) -> dict:
-    """真实的天气查询（这里用模拟数据）"""
-    weather_data = {
-        "北京": {"temp": 15, "weather": "晴", "wind": "北风3级"},
-        "上海": {"temp": 22, "weather": "多云", "wind": "东南风2级"},
-        "广州": {"temp": 28, "weather": "阴", "wind": "南风2级"},
-    }
-    return weather_data.get(city, {"error": f"未找到{city}的天气数据"})
-
-def calculate(expression: str) -> dict:
-    """安全的数学计算"""
-    try:
-        # 安全限制：只允许数字和运算符
-        allowed = set('0123456789+-*/()., ')
-        if not all(c in allowed for c in expression):
-            return {"error": "不支持的字符"}
-        result = eval(expression)
-        return {"result": result}
-    except Exception as e:
-        return {"error": str(e)}
-
-# 工具路由
-def execute_tool(tool_name: str, tool_args: dict) -> str:
-    """执行工具并返回结果"""
+def execute_tool(tool_name, tool_args):
+    """工具路由：根据 tool_name 调用对应的真实函数"""
     if tool_name == "get_weather":
-        result = get_weather(**tool_args)
-    elif tool_name == "calculate":
-        result = calculate(**tool_args)
-    else:
-        result = {"error": f"未知工具：{tool_name}"}
-    return json.dumps(result, ensure_ascii=False)
+        return json.dumps(get_weather(**tool_args), ensure_ascii=False)
 
-# 完整的对话流程
 def chat_with_tools(user_message: str) -> str:
-    """支持工具调用的对话"""
+    """支持工具调用的对话循环"""
     messages = [{"role": "user", "content": user_message}]
-
     while True:
-        # 发送给LLM
         response = client.chat.completions.create(
-            model="gpt-4",
-            messages=messages,
-            tools=tools,
-            tool_choice="auto"
-        )
-
-        message = response.choices[0].message
-
-        # 判断是否需要调用工具
-        if message.tool_calls:
-            messages.append(message)
-
-            for tool_call in message.tool_calls:
-                tool_name = tool_call.function.name
-                tool_args = json.loads(tool_call.function.arguments)
-
-                print(f"  调用工具：{tool_name}，参数：{tool_args}")
-
-                tool_result = execute_tool(tool_name, tool_args)
-                print(f"  工具结果：{tool_result}")
-
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": tool_result
-                })
+            model="gpt-4", messages=messages, tools=tools, tool_choice="auto")
+        msg = response.choices[0].message
+        if msg.tool_calls:
+            messages.append(msg)
+            for tc in msg.tool_calls:
+                result = execute_tool(tc.function.name, json.loads(tc.function.arguments))
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
         else:
-            return message.content
-
-# 测试
-print("测试1：天气查询")
-result = chat_with_tools("今天北京和上海哪个更热？")
-print(f"最终答案：{result}\n")
-
-print("测试2：数学计算")
-result = chat_with_tools("帮我算一下：如果每月存5000元，一年能存多少？")
-print(f"最终答案：{result}\n")
-
-print("测试3：混合使用")
-result = chat_with_tools("北京今天温度多少？再帮我算一下华氏温度")
-print(f"最终答案：{result}")
+            return msg.content
 ```
+
+核心流程：定义工具 Schema → LLM 返回 `tool_calls` → 代码执行真实函数 → 将结果追加到 messages → 循环直到 LLM 输出文本答案。
 
 ---
 
@@ -434,108 +343,47 @@ def safe_db_tool(
 
 #### 方式 1：@tool 装饰器（最简单）
 
+适用于简单工具，只需装饰一个函数：
+
 ```python
 from crewai_tools import tool
 
 @tool("网络搜索")
 def web_search(query: str) -> str:
-    """
-    搜索互联网上的最新信息。
-    适用于：新闻、实时数据、市场信息
-    输入：搜索关键词
-    输出：相关搜索结果
-    """
+    """搜索互联网上的最新信息。输入：搜索关键词。输出：相关搜索结果。"""
     import requests
-
-    headers = {"X-API-KEY": "your_serper_key"}
-    payload = {"q": query, "num": 5, "gl": "cn", "hl": "zh-cn"}
-
-    response = requests.post(
-        "https://google.serper.dev/search",
-        json=payload,
-        headers=headers
-    )
-
-    results = response.json().get('organic', [])
-    if not results:
-        return f"没有找到'{query}'的相关结果"
-
-    output = f"搜索'{query}'的结果：\n\n"
-    for i, r in enumerate(results[:3], 1):
-        output += f"{i}. {r['title']}\n"
-        output += f"   {r.get('snippet', '')}\n"
-        output += f"   来源：{r['link']}\n\n"
-
-    return output
+    resp = requests.post("https://google.serper.dev/search",
+                         json={"q": query}, headers={"X-API-KEY": "key"})
+    results = resp.json().get('organic', [])
+    return "\n".join(f"{r['title']}\n  {r.get('snippet', '')}" for r in results[:3])
 ```
 
 #### 方式 2：继承 BaseTool（最灵活）
 
+适用于需要自定义参数 schema 的复杂工具：
+
 ```python
 from crewai_tools import BaseTool
 from pydantic import BaseModel, Field
-from typing import Type
 
 class WebScraperInput(BaseModel):
     url: str = Field(description="要抓取的网页URL")
-    extract_type: str = Field(
-        default="text",
-        description="提取类型：text(纯文本)、links(链接)、tables(表格)"
-    )
+    extract_type: str = Field(default="text", description="text/links/tables")
 
 class WebScraperTool(BaseTool):
-    """网页内容抓取工具"""
-
     name: str = "网页抓取"
-    description: str = """
-    抓取指定网页的内容。
-    适用于：获取特定网页的详细内容
-    不适用于：需要登录的页面、动态渲染的页面
-    """
+    description: str = "抓取指定网页的内容。适用于获取特定网页详细内容。"
     args_schema: Type[BaseModel] = WebScraperInput
 
     def _run(self, url: str, extract_type: str = "text") -> str:
-        import requests
-        from bs4 import BeautifulSoup
-
-        try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-            response = requests.get(url, headers=headers, timeout=10)
-            response.encoding = 'utf-8'
-
-            soup = BeautifulSoup(response.text, 'html.parser')
-
-            if extract_type == "text":
-                for tag in soup(['script', 'style', 'nav', 'footer']):
-                    tag.decompose()
-                text = soup.get_text(separator='\n', strip=True)
-                return text[:2000] + ("..." if len(text) > 2000 else "")
-
-            elif extract_type == "links":
-                links = []
-                for a in soup.find_all('a', href=True)[:20]:
-                    links.append(f"- {a.text.strip()}: {a['href']}")
-                return "\n".join(links)
-
-            elif extract_type == "tables":
-                tables = []
-                for table in soup.find_all('table')[:3]:
-                    rows = []
-                    for row in table.find_all('tr'):
-                        cols = [td.get_text(strip=True)
-                                for td in row.find_all(['td', 'th'])]
-                        rows.append(' | '.join(cols))
-                    tables.append('\n'.join(rows))
-                return '\n\n'.join(tables)
-
-        except requests.Timeout:
-            return f"访问 {url} 超时，请稍后重试"
-        except Exception as e:
-            return f"抓取失败：{str(e)}"
-
-web_scraper = WebScraperTool()
+        import requests; from bs4 import BeautifulSoup
+        soup = BeautifulSoup(requests.get(url, timeout=10).text, 'html.parser')
+        if extract_type == "text":
+            for tag in soup(['script', 'style', 'nav']): tag.decompose()
+            return soup.get_text(separator='\n', strip=True)[:2000]
+        elif extract_type == "links":
+            return "\n".join(f"- {a.text.strip()}: {a['href']}"
+                           for a in soup.find_all('a', href=True)[:20])
 ```
 
 #### 方式 3：使用 CrewAI 内置工具
