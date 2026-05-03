@@ -841,67 +841,21 @@ print(result)  # {'brand': '华为', 'share': 20, 'trend': '上升'}
 ### **2. 文心一言适配技巧**
 
 ```python
-import qianfan
-from langchain.llms.base import LLM
-from typing import Optional, List
-
 class WenxinLLM(LLM):
-    """文心一言完整适配器"""
-
+    """文心一言适配器 -- 核心差异：system消息要单独传，结尾加'只输出JSON'"""
     model_name: str = "ERNIE-4.0-8K"
     temperature: float = 0.7
-    top_p: float = 0.8
 
-    def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
+    def _call(self, prompt: str, stop=None) -> str:
         chat = qianfan.ChatCompletion()
-
-        # 文心特有：system消息要单独传
-        response = chat.do(
-            model=self.model_name,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=self.temperature,
-            top_p=self.top_p
-        )
+        response = chat.do(model=self.model_name, messages=[{"role": "user", "content": prompt}],
+                          temperature=self.temperature, top_p=0.8)
         return response['result']
 
-    @property
-    def _llm_type(self) -> str:
-        return "wenxin"
-
-
-# 文心的Prompt特殊技巧
-WENXIN_SYSTEM_TIPS = """
-文心一言的Prompt优化技巧：
-
-1. JSON输出：在结尾加"请只输出JSON，不要有其他内容"
-2. 角色激活：用"你现在是..."比"你是..."效果更好
-3. 格式控制：用<output>标签包裹输出示例更有效
-4. 中文优先：用中文写Prompt比英文效果好
-5. 明确否定：把"不要做X"写成"你只需要做Y，无需做X"
-"""
-
+# 文心 JSON 输出优化提示
 def wenxin_json_prompt(task: str, json_schema: dict) -> str:
-    """针对文心优化的JSON输出Prompt"""
-    import json
-    schema_str = json.dumps(json_schema, ensure_ascii=False, indent=2)
-
-    return f"""
-你现在是一位专业的数据分析师。
-
-任务：
-{task}
-
-请严格按照以下JSON格式输出分析结果：
-<output>
-{schema_str}
-</output>
-
-注意事项：
-1. 只输出JSON内容，不要有任何解释或说明
-2. 所有字段必须填写，不能为空
-3. 字符串类型加双引号，数字不加引号
-4. 输出的JSON必须可以直接被Python的json.loads()解析
-"""
+    """针对文心优化的JSON输出Prompt -- 用<output>标签包裹、结尾强调只输出JSON"""
+    return f"""任务：{task}\n<output>\n{json.dumps(json_schema, ensure_ascii=False, indent=2)}\n</output>\n只输出JSON，不要有其他内容。"""
 ```
 
 ---
@@ -909,51 +863,21 @@ def wenxin_json_prompt(task: str, json_schema: dict) -> str:
 ### **3. 通义千问适配技巧**
 
 ```python
-from dashscope import Generation
-from langchain.llms.base import LLM
-
 class TongyiLLM(LLM):
-    """通义千问完整适配器"""
-
+    """通义千问适配器 -- system+user 分离，长上下文支持好"""
     model_name: str = "qwen-max"
     temperature: float = 0.7
 
-    def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
+    def _call(self, prompt: str, stop=None) -> str:
         response = Generation.call(
             model=self.model_name,
-            messages=[
-                {
-                    'role': 'system',
-                    'content': '你是一位专业的AI助手，擅长结构化分析和报告撰写。'
-                },
-                {
-                    'role': 'user',
-                    'content': prompt
-                }
-            ],
-            temperature=self.temperature,
-            result_format='message'
+            messages=[{"role": "system", "content": "你是一位专业AI助手"},
+                      {"role": "user", "content": prompt}],
+            temperature=self.temperature, result_format='message'
         )
-
         if response.status_code == 200:
             return response.output.choices[0].message.content
-        else:
-            raise Exception(f"通义API错误：{response.message}")
-
-    @property
-    def _llm_type(self) -> str:
-        return "tongyi"
-
-
-# 通义的Prompt特殊技巧
-TONGYI_TIPS = """
-通义千问Prompt优化：
-
-1. 长文本：通义支持超长上下文，可以一次性传入更多背景
-2. 代码任务：通义的代码能力强，Prompt中可以要求输出可执行代码
-3. 角色扮演：通义对角色扮演响应好，Backstory可以写更详细
-4. 结构化：用===分隔不同部分，比markdown标题更稳定
-"""
+        raise Exception(f"通义API错误：{response.message}")
 ```
 
 ---
@@ -962,120 +886,40 @@ TONGYI_TIPS = """
 
 ```python
 class ModelAgnosticPromptBuilder:
-    """
-    模型无关的Prompt构建器
-    同一套Prompt逻辑，自动适配不同模型
-    """
+    """模型无关的Prompt构建器 -- 同一套逻辑，自动适配不同模型"""
 
     MODEL_CONFIGS = {
-        "gpt-4": {
-            "json_prefix": "请严格输出以下JSON格式：",
-            "json_suffix": "",
-            "role_prefix": "你是",
-            "step_prefix": "Step",
-            "temperature": 0.0  # GPT-4 JSON输出建议temperature=0
-        },
-        "wenxin": {
-            "json_prefix": "请只输出JSON，格式如下：\n<output>",
-            "json_suffix": "</output>",
-            "role_prefix": "你现在是",
-            "step_prefix": "步骤",
-            "temperature": 0.1
-        },
-        "tongyi": {
-            "json_prefix": "=== 输出格式 ===\n",
-            "json_suffix": "=== 输出结束 ===",
-            "role_prefix": "你是",
-            "step_prefix": "第",
-            "temperature": 0.1
-        },
-        "glm-4": {
-            "json_prefix": "输出格式（JSON）：",
-            "json_suffix": "只输出JSON，不要有其他内容。",
-            "role_prefix": "你是",
-            "step_prefix": "步骤",
-            "temperature": 0.2
-        }
+        "gpt-4":  {"role_prefix": "你是",  "json_prefix": "请严格输出以下JSON格式：",
+                   "json_suffix": "",     "temperature": 0.0},
+        "wenxin": {"role_prefix": "你现在是", "json_prefix": "请只输出JSON：\n<output>",
+                   "json_suffix": "</output>", "temperature": 0.1},
+        "tongyi": {"role_prefix": "你是",  "json_prefix": "=== 输出格式 ===\n",
+                   "json_suffix": "=== 输出结束 ===", "temperature": 0.1},
+        "glm-4":  {"role_prefix": "你是",  "json_prefix": "输出格式（JSON）：",
+                   "json_suffix": "只输出JSON，不要有其他内容。", "temperature": 0.2}
     }
 
-    def __init__(self, model_type: str = "gpt-4"):
-        self.config = self.MODEL_CONFIGS.get(model_type,
-                                              self.MODEL_CONFIGS["gpt-4"])
-        self.model_type = model_type
+    def __init__(self, model_type="gpt-4"):
+        self.config = self.MODEL_CONFIGS[model_type]
 
-    def build_json_prompt(self,
-                          role: str,
-                          task: str,
-                          json_schema: dict,
-                          examples: list = None) -> str:
-        """构建JSON输出的Prompt"""
-        import json
-
-        parts = []
-
-        # 角色
-        parts.append(f"{self.config['role_prefix']}{role}。")
-        parts.append("")
-
-        # 任务
-        parts.append(f"任务：{task}")
-        parts.append("")
-
-        # JSON格式
+    def build_json_prompt(self, role: str, task: str, json_schema: dict) -> str:
+        """构建JSON输出Prompt：角色 + 任务 + 格式 + 约束"""
+        cfg = self.config
         schema_str = json.dumps(json_schema, ensure_ascii=False, indent=2)
-        parts.append(self.config['json_prefix'])
-        parts.append(schema_str)
-        if self.config['json_suffix']:
-            parts.append(self.config['json_suffix'])
-        parts.append("")
+        return f"""{cfg['role_prefix']}{role}。
 
-        # Few-shot示例
-        if examples:
-            parts.append("参考示例：")
-            for i, ex in enumerate(examples, 1):
-                parts.append(f"示例{i}：")
-                parts.append(json.dumps(ex, ensure_ascii=False, indent=2))
-                parts.append("")
+任务：{task}
 
-        # 通用约束
-        parts.append("要求：")
-        parts.append("- 所有字段必须填写")
-        parts.append("- 数字不加引号")
-        parts.append("- 确保JSON格式正确")
+{cfg['json_prefix']}
+{schema_str}
+{cfg['json_suffix']}
 
-        return "\n".join(parts)
+要求：
+- 所有字段必须填写
+- 数字不加引号
+- 确保JSON格式正确"""
 
-    def get_temperature(self) -> float:
-        """获取推荐temperature"""
-        return self.config['temperature']
-
-
-# 使用
-builder_gpt = ModelAgnosticPromptBuilder("gpt-4")
-builder_wenxin = ModelAgnosticPromptBuilder("wenxin")
-
-schema = {
-    "brand": "品牌名称",
-    "share": 20.5,
-    "trend": "上升/下降/持平"
-}
-
-prompt_gpt = builder_gpt.build_json_prompt(
-    role="市场分析师",
-    task="分析华为的市场份额",
-    json_schema=schema
-)
-
-prompt_wenxin = builder_wenxin.build_json_prompt(
-    role="市场分析师",
-    task="分析华为的市场份额",
-    json_schema=schema
-)
-
-print("GPT-4 Prompt：")
-print(prompt_gpt)
-print("\n文心 Prompt：")
-print(prompt_wenxin)
+# GPT-4 JSON 输出建议 temperature=0，文心/通义 0.1，GLM-4 0.2
 ```
 
 ---
