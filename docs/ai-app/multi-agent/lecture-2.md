@@ -514,100 +514,13 @@ print("\n报告已保存到 market_report.md")
 
 ### Step 6: 完整代码
 
-```python
-import os
-from crewai import Agent, Task, Crew, Process
-from crewai_tools import tool
-from langchain_openai import ChatOpenAI
+将以上 Step 1-5 的代码整合即为完整可运行脚本，核心结构：
 
-# 配置
-os.environ["OPENAI_API_KEY"] = "your_key"
-
-# 定义工具
-@tool("市场搜索")
-def simple_search(query: str) -> str:
-    """搜索市场信息"""
-    return f"""
-    搜索关键词：{query}
-
-    结果：
-    1. 2024年Q1中国手机市场份额：
-       华为：20%、小米：18%、OPPO：15%、vivo：14%、苹果：16%
-
-    2. 价格分布：
-       1000-2000元：35%、2000-4000元：40%、4000元以上：25%
-
-    3. 主要趋势：
-       高端化、折叠屏增长、AI成为卖点
-    """
-
-# 初始化 LLM
-llm = ChatOpenAI(model="gpt-4", temperature=0.7)
-
-# 定义 Agent
-researcher = Agent(
-    role="市场研究员",
-    goal="搜集手机市场的全面数据",
-    backstory="10年经验的市场研究专家，擅长数据搜集和验证",
-    tools=[simple_search],
-    llm=llm,
-    verbose=True
-)
-
-analyst = Agent(
-    role="数据分析师",
-    goal="提炼商业洞察",
-    backstory="MBA背景的战略分析师，擅长趋势分析",
-    llm=llm,
-    verbose=True
-)
-
-writer = Agent(
-    role="报告撰写者",
-    goal="撰写专业研究报告",
-    backstory="顶级咨询公司资深分析师，文笔专业",
-    llm=llm,
-    verbose=True
-)
-
-# 定义 Task
-research_task = Task(
-    description="调研2024年中国手机市场的市场份额、价格分布、技术趋势",
-    expected_output="结构化的调研数据，包含市场格局、价格分布、技术趋势",
-    agent=researcher
-)
-
-analysis_task = Task(
-    description="分析竞争格局、价格策略、技术趋势",
-    expected_output="深度分析报告，包含竞争格局、价格策略、技术趋势分析",
-    agent=analyst,
-    context=[research_task]
-)
-
-writing_task = Task(
-    description="撰写《2024年中国手机市场调研报告》，包含市场概况、竞争格局、价格分析、技术趋势、未来展望",
-    expected_output="3000-5000字的专业研报（Markdown格式）",
-    agent=writer,
-    context=[research_task, analysis_task]
-)
-
-# 组建 Crew
-crew = Crew(
-    agents=[researcher, analyst, writer],
-    tasks=[research_task, analysis_task, writing_task],
-    process=Process.sequential,
-    verbose=True
-)
-
-# 执行
-if __name__ == "__main__":
-    result = crew.kickoff()
-
-    with open("market_report.md", "w", encoding="utf-8") as f:
-        f.write(result)
-
-    print("\n报告已生成！")
 ```
+配置 API Key → 定义工具 → 定义 Agent（3个）→ 定义 Task（3个）→ 组建 Crew → kickoff()
+```
+
+完整代码约 100 行，详见各步骤的代码片段。
 
 ---
 
@@ -665,35 +578,24 @@ CrewAI 默认用 OpenAI，但可以轻松换成国产模型。
 
 ### 方案1：用文心一言
 
+实现 `LLM` 基类的 `_call` 和 `_llm_type` 方法即可适配：
+
 ```python
 from langchain.llms.base import LLM
 import qianfan
 
 class WenxinLLM(LLM):
-    """文心一言适配器"""
-
     def _call(self, prompt: str, stop=None) -> str:
-        chat = qianfan.ChatCompletion()
-        response = chat.do(
+        return qianfan.ChatCompletion().do(
             model="ERNIE-4.0-8K",
             messages=[{"role": "user", "content": prompt}]
-        )
-        return response['result']
+        )['result']
 
     @property
     def _llm_type(self) -> str:
         return "wenxin"
 
-# 使用
 llm = WenxinLLM()
-researcher = Agent(
-    role="市场研究员",
-    goal="...",
-    backstory="...",
-    llm=llm,
-    tools=[simple_search],
-    verbose=True
-)
 ```
 
 ### 方案2：用通义千问
@@ -912,92 +814,21 @@ writing_task = Task(
 
 ## 八、生产级优化
 
-### 优化1：加入错误处理
+### 优化1：错误处理 + 重试
 
-```python
-def safe_kickoff(crew, max_retries=3):
-    """带重试的执行"""
-    for i in range(max_retries):
-        try:
-            result = crew.kickoff()
-            return result
-        except Exception as e:
-            print(f"执行失败（第{i+1}次），错误：{e}")
-            if i == max_retries - 1:
-                raise
-            print("重试中...")
-```
+`crew.kickoff()` 外层包裹 try/except，失败后自动重试（建议 3 次），间隔可使用递增等待。
 
-### 优化2：加入日志记录
+### 优化2：日志记录
 
-```python
-import logging
-from datetime import datetime
+使用 Python `logging` 模块，同时输出到文件和控制台，记录 Crew 执行的开始/结束时间。
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler(f'crew_{datetime.now():%Y%m%d_%H%M%S}.log'),
-        logging.StreamHandler()
-    ]
-)
+### 优化3：成本监控
 
-logging.info("开始执行 Crew")
-result = crew.kickoff()
-logging.info("Crew 执行完成")
-```
+用 `tiktoken` 统计每次调用的 Token 消耗，按 GPT-4 定价（输入 $0.03/1K、输出 $0.06/1K）估算费用。
 
-### 优化3：加入成本监控
+### 优化4：缓存
 
-```python
-import tiktoken
-
-def count_tokens(text, model="gpt-4"):
-    """统计 Token 数"""
-    encoding = tiktoken.encoding_for_model(model)
-    return len(encoding.encode(text))
-
-def estimate_cost(input_tokens, output_tokens, model="gpt-4"):
-    """估算成本（GPT-4 定价）"""
-    input_cost = input_tokens / 1000 * 0.03   # $0.03/1K tokens
-    output_cost = output_tokens / 1000 * 0.06  # $0.06/1K tokens
-    return input_cost + output_cost
-```
-
-### 优化4：加入缓存
-
-```python
-import hashlib
-import json
-import os
-
-def get_cache_key(task_description):
-    return hashlib.md5(task_description.encode()).hexdigest()
-
-def load_cache(cache_key):
-    cache_file = f"cache/{cache_key}.json"
-    if os.path.exists(cache_file):
-        with open(cache_file, 'r') as f:
-            return json.load(f)['result']
-    return None
-
-def save_cache(cache_key, result):
-    os.makedirs("cache", exist_ok=True)
-    with open(f"cache/{cache_key}.json", 'w') as f:
-        json.dump({'result': result}, f)
-
-# 使用
-cache_key = get_cache_key(research_task.description)
-cached_result = load_cache(cache_key)
-
-if cached_result:
-    print("使用缓存结果")
-    result = cached_result
-else:
-    result = crew.kickoff()
-    save_cache(cache_key, result)
-```
+对 Task 的 description 做 MD5 哈希作为缓存 key，结果存为 JSON 文件。相同任务直接返回缓存，避免重复调用 LLM。
 
 ---
 

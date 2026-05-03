@@ -385,21 +385,17 @@ def require_step_permission(operation_type):
 
 ```python
 from fastapi import Depends, HTTPException, Request
-from functools import wraps
 
 # 依赖注入：获取当前用户
-async def get_current_user(request: Request) -> User:
+async def get_current_user(request: Request):
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(status_code=401, detail="未登录")
-    user = await User.get_or_none(id=user_id)
-    if not user:
-        raise HTTPException(status_code=401, detail="用户不存在")
-    return user
+    return await User.get_or_none(id=user_id)
 
 # 依赖注入：角色检查
 def require_roles(*role_names: str):
-    async def check(user: User = Depends(get_current_user)):
+    async def check(user=Depends(get_current_user)):
         user_roles = {r.title for r in await user.roles.all()}
         if not user_roles.intersection(set(role_names)):
             raise HTTPException(status_code=403, detail=f"需要角色: {role_names}")
@@ -408,7 +404,7 @@ def require_roles(*role_names: str):
 
 # 使用
 @app.get("/admin/dashboard")
-async def admin_dashboard(user: User = Depends(require_roles("老板", "管理员"))):
+async def admin_dashboard(user=Depends(require_roles("老板", "管理员"))):
     return {"message": f"欢迎 {user.username}"}
 ```
 
