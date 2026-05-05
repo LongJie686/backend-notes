@@ -103,7 +103,9 @@
       "Bash(cp -r \"E:/bishe/static/\"* \"E:/Project/ecommerce-microservices/frontend/\")",
       "Bash(cp \"E:/bishe/templates/\"*.html \"E:/Project/ecommerce-microservices/frontend/\")",
       "mcp__chart__generate_spreadsheet",
-      "mcp__filesystem__read_text_file"
+      "mcp__filesystem__read_text_file",
+      "Bash(docker compose *)",
+      "Bash(start \"\" \"C:\\\\Program Files\\\\Docker\\\\Docker\\\\Docker Desktop.exe\")"
     ]
   }
 }
