@@ -115,7 +115,9 @@
       "Bash(mysql -u root -proot -e \"SELECT 1 AS test\")",
       "Bash(PYTHONPATH=\"E:\\\\Project\\\\ecommerce-microservices;E:\\\\Project\\\\ecommerce-microservices\\\\services\\\\user\" DATABASE_URL=\"mysql+pymysql://root:wylj99@localhost:3306/ecommerce_user\" REDIS_URL=\"redis://localhost:6379/0\" JWT_SECRET=\"bench-test-secret\" python -c \"from app.config import settings; print\\('Config OK:', settings.service_name\\)\")",
       "Bash(PYTHONPATH=\"E:\\\\Project\\\\ecommerce-microservices;E:\\\\Project\\\\ecommerce-microservices\\\\services\\\\user\" DATABASE_URL=\"mysql+pymysql://root:wylj99@localhost:3306/ecommerce_user\" REDIS_URL=\"redis://localhost:6379/0\" JWT_SECRET=\"bench-test-secret\" timeout 5 python -m uvicorn app.main:app --host 0.0.0.0 --port 8002)",
-      "Bash(findstr \":8001 :8002 :8003 :8004\")"
+      "Bash(findstr \":8001 :8002 :8003 :8004\")",
+      "Bash(PYTHONPATH=\"E:\\\\Project\\\\ecommerce-microservices;E:\\\\Project\\\\ecommerce-microservices\\\\services\\\\user\" DATABASE_URL=\"mysql+pymysql://root:wylj99@localhost:3306/ecommerce_user\" REDIS_URL=\"redis://localhost:6379/0\" JWT_SECRET=\"bench-test-secret\" python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --no-access-log)",
+      "Bash(PYTHONPATH=\"E:\\\\Project\\\\ecommerce-microservices;E:\\\\Project\\\\ecommerce-microservices\\\\services\\\\product\" DATABASE_URL=\"mysql+pymysql://root:wylj99@localhost:3306/ecommerce_product\" REDIS_URL=\"redis://localhost:6379/1\" python -m uvicorn app.main:app --host 0.0.0.0 --port 8003 --no-access-log)"
     ]
   }
 }
