@@ -117,7 +117,10 @@
       "Bash(PYTHONPATH=\"E:\\\\Project\\\\ecommerce-microservices;E:\\\\Project\\\\ecommerce-microservices\\\\services\\\\user\" DATABASE_URL=\"mysql+pymysql://root:wylj99@localhost:3306/ecommerce_user\" REDIS_URL=\"redis://localhost:6379/0\" JWT_SECRET=\"bench-test-secret\" timeout 5 python -m uvicorn app.main:app --host 0.0.0.0 --port 8002)",
       "Bash(findstr \":8001 :8002 :8003 :8004\")",
       "Bash(PYTHONPATH=\"E:\\\\Project\\\\ecommerce-microservices;E:\\\\Project\\\\ecommerce-microservices\\\\services\\\\user\" DATABASE_URL=\"mysql+pymysql://root:wylj99@localhost:3306/ecommerce_user\" REDIS_URL=\"redis://localhost:6379/0\" JWT_SECRET=\"bench-test-secret\" python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --no-access-log)",
-      "Bash(PYTHONPATH=\"E:\\\\Project\\\\ecommerce-microservices;E:\\\\Project\\\\ecommerce-microservices\\\\services\\\\product\" DATABASE_URL=\"mysql+pymysql://root:wylj99@localhost:3306/ecommerce_product\" REDIS_URL=\"redis://localhost:6379/1\" python -m uvicorn app.main:app --host 0.0.0.0 --port 8003 --no-access-log)"
+      "Bash(PYTHONPATH=\"E:\\\\Project\\\\ecommerce-microservices;E:\\\\Project\\\\ecommerce-microservices\\\\services\\\\product\" DATABASE_URL=\"mysql+pymysql://root:wylj99@localhost:3306/ecommerce_product\" REDIS_URL=\"redis://localhost:6379/1\" python -m uvicorn app.main:app --host 0.0.0.0 --port 8003 --no-access-log)",
+      "Bash(PYTHONPATH=\"E:\\\\Project\\\\ecommerce-microservices;E:\\\\Project\\\\ecommerce-microservices\\\\services\\\\recommend\" DATABASE_URL=\"mysql+pymysql://root:wylj99@localhost:3306/ecommerce_recommend\" REDIS_URL=\"redis://localhost:6379/2\" python -m uvicorn app.main:app --host 0.0.0.0 --port 8004 --no-access-log)",
+      "Bash(PYTHONPATH=\"E:\\\\Project\\\\ecommerce-microservices;E:\\\\Project\\\\ecommerce-microservices\\\\services\\\\gateway\" DATABASE_URL=\"mysql+pymysql://root:wylj99@localhost:3306/ecommerce_user\" REDIS_URL=\"redis://localhost:6379/0\" JWT_SECRET=\"bench-test-secret\" USER_SERVICE_URL=\"http://localhost:8002\" PRODUCT_SERVICE_URL=\"http://localhost:8003\" RECOMMEND_SERVICE_URL=\"http://localhost:8004\" CRAWLER_SERVICE_URL=\"http://localhost:8005\" ANALYTICS_SERVICE_URL=\"http://localhost:8006\" python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --no-access-log)",
+      "Bash(findstr \":800[1-4]\")"
     ]
   }
 }
