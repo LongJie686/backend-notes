@@ -121,7 +121,8 @@
       "Bash(PYTHONPATH=\"E:\\\\Project\\\\ecommerce-microservices;E:\\\\Project\\\\ecommerce-microservices\\\\services\\\\recommend\" DATABASE_URL=\"mysql+pymysql://root:wylj99@localhost:3306/ecommerce_recommend\" REDIS_URL=\"redis://localhost:6379/2\" python -m uvicorn app.main:app --host 0.0.0.0 --port 8004 --no-access-log)",
       "Bash(PYTHONPATH=\"E:\\\\Project\\\\ecommerce-microservices;E:\\\\Project\\\\ecommerce-microservices\\\\services\\\\gateway\" DATABASE_URL=\"mysql+pymysql://root:wylj99@localhost:3306/ecommerce_user\" REDIS_URL=\"redis://localhost:6379/0\" JWT_SECRET=\"bench-test-secret\" USER_SERVICE_URL=\"http://localhost:8002\" PRODUCT_SERVICE_URL=\"http://localhost:8003\" RECOMMEND_SERVICE_URL=\"http://localhost:8004\" CRAWLER_SERVICE_URL=\"http://localhost:8005\" ANALYTICS_SERVICE_URL=\"http://localhost:8006\" python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --no-access-log)",
       "Bash(findstr \":800[1-4]\")",
-      "Bash(findstr python *)"
+      "Bash(findstr python *)",
+      "mcp__github__create_or_update_file"
     ]
   }
 }
