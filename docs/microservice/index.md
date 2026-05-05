@@ -515,3 +515,7 @@ A -> B -> C -> D -> E
 - 什么是 Service Mesh？
 - Sidecar 模式是什么？
 - Service Mesh 和传统 SDK 治理的区别？
+
+---
+
+> **实战项目**: 本路线核心知识点已在 [Ecommerce Microservices](https://github.com/LongJie686/ecommerce-microservices) 项目中落地 -- 6 服务独立部署、API 网关路由 + 认证 + 限流 + 熔断、Kafka 异步通信、TraceID 全链路追踪、Docker Compose 一键启动。

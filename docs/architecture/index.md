@@ -373,3 +373,7 @@
 2. **每学完一个模块就输出一篇总结** -- 输出极大提升掌握度
 3. **建自己的架构案例库** -- 每个案例记录背景、复杂度、方案、决策、教训
 4. **用电商/即时通讯系统贯穿** -- 覆盖所有架构问题
+
+---
+
+> **实战项目**: 本路线核心知识点已在 [Ecommerce Microservices](https://github.com/LongJie686/ecommerce-microservices) 项目中落地 -- 三层架构 (Controller/Service/Repository)、策略模式、统一响应格式、Pydantic Settings 配置管理、Docker Compose 全栈部署。

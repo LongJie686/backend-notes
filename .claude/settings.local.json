@@ -87,7 +87,22 @@
       "Bash(npx tsc *)",
       "Bash(pkill -f \"uvicorn synapse_server\")",
       "Bash(python3 *)",
-      "Bash(tasklist /FI \"IMAGENAME eq python.exe\" /FO CSV)"
+      "Bash(tasklist /FI \"IMAGENAME eq python.exe\" /FO CSV)",
+      "mcp__mcp-office__read_docx",
+      "Bash(set HF_ENDPOINT=https://hf-mirror.com)",
+      "Bash(set HTTPS_PROXY=http://127.0.0.1:7890)",
+      "Bash(set HTTP_PROXY=http://127.0.0.1:7890)",
+      "mcp__github__list_commits",
+      "Bash(gh api *)",
+      "Bash(mkdir -p services/__TRACKED_VAR__/app/__TRACKED_VAR__)",
+      "Bash(touch services/__TRACKED_VAR__/app/__TRACKED_VAR__/__init__.py)",
+      "Bash(mkdir -p services/__TRACKED_VAR__/migrations services/__TRACKED_VAR__/tests)",
+      "Bash(touch services/__TRACKED_VAR__/migrations/__init__.py)",
+      "Bash(touch \"docs/.gitkeep\" \"frontend/.gitkeep\")",
+      "mcp__github__search_users",
+      "Bash(cp -r \"E:/bishe/static/\"* \"E:/Project/ecommerce-microservices/frontend/\")",
+      "Bash(cp \"E:/bishe/templates/\"*.html \"E:/Project/ecommerce-microservices/frontend/\")",
+      "mcp__chart__generate_spreadsheet"
     ]
   }
 }

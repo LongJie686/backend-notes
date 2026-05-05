@@ -33,7 +33,14 @@ export default defineConfig({
       { text: '大模型应用开发', link: '/ai-app/llm-dev/lecture-1' },
       { text: '架构设计', link: '/architecture/lecture-1' },
       { text: '高并发', link: '/high-concurrency/lecture-1' },
-      { text: '微服务', link: '/microservice/lecture-1' }
+      { text: '微服务', link: '/microservice/lecture-1' },
+      {
+        text: '实战项目',
+        items: [
+          { text: 'Synapse (多智能体 AI 平台)', link: 'https://github.com/LongJie686/synapse' },
+          { text: 'Ecommerce Microservices (电商推荐微服务)', link: 'https://github.com/LongJie686/ecommerce-microservices' }
+        ]
+      }
     ],
 
     sidebar: [

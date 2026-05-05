@@ -54,3 +54,7 @@
 - Python 3.10+、异步编程基础
 - LLM API 调用经验（OpenAI / 国产模型均可）
 - 基本的 DevOps 知识（Docker、CI/CD）
+
+---
+
+> **实战项目**: 本路线全部知识点已在 [Synapse](https://github.com/LongJie686/synapse) 项目中落地实现 -- 多智能体编排、RAG、工具链、记忆系统、可观测性、安全护栏、Docker 部署。
