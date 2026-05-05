@@ -102,7 +102,8 @@
       "mcp__github__search_users",
       "Bash(cp -r \"E:/bishe/static/\"* \"E:/Project/ecommerce-microservices/frontend/\")",
       "Bash(cp \"E:/bishe/templates/\"*.html \"E:/Project/ecommerce-microservices/frontend/\")",
-      "mcp__chart__generate_spreadsheet"
+      "mcp__chart__generate_spreadsheet",
+      "mcp__filesystem__read_text_file"
     ]
   }
 }
