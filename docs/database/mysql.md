@@ -51,3 +51,7 @@
 - 每行数据包含隐藏列：`DB_TRX_ID`、`DB_ROLL_PTR`
 - Undo log 形成版本链
 - Read View 决定版本的可见性
+
+---
+
+> **实战项目**: MySQL 相关知识点（表设计、复合索引、覆盖索引、逻辑删除、事务、读写分离、EXPLAIN）已在 [Ecommerce Microservices](https://github.com/LongJie686/ecommerce-microservices) 项目中落地实现。

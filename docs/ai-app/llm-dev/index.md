@@ -37,3 +37,7 @@
 ## 学习建议
 
 每个知识点都要写代码验证，每学完一个模块就输出总结。推荐用"系统课程 + 项目实战"结合的方式推进，主线按知识体系学习，每学完一个专题立刻放到项目里实战。
+
+---
+
+> **实战项目**: 本路线全部知识点已在 [Synapse](https://github.com/LongJie686/synapse) 项目中落地实现 -- LLM Router、Prompt 模板、RAG Pipeline、Function Calling、多轮对话状态管理、模型降级、Docker 部署。
