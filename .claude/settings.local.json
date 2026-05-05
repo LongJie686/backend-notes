@@ -105,7 +105,14 @@
       "mcp__chart__generate_spreadsheet",
       "mcp__filesystem__read_text_file",
       "Bash(docker compose *)",
-      "Bash(start \"\" \"C:\\\\Program Files\\\\Docker\\\\Docker\\\\Docker Desktop.exe\")"
+      "Bash(start \"\" \"C:\\\\Program Files\\\\Docker\\\\Docker\\\\Docker Desktop.exe\")",
+      "Bash(docker info *)",
+      "Bash(break)",
+      "Bash(redis-cli ping *)",
+      "Bash(mysql -u root -proot123 -e \"SELECT 1\")",
+      "Bash(powershell *)",
+      "Bash(findstr \"3306 6379\")",
+      "Bash(mysql -u root -proot -e \"SELECT 1 AS test\")"
     ]
   }
 }
