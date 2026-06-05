@@ -15,21 +15,30 @@ npm run docs:dev
 # 构建（会自动生成 graph-data.json）
 npm run docs:build
 
+# 预览构建产物
+npm run docs:preview
+
+# 单独重新生成知识图谱数据
+npx tsx docs/.vitepress/scripts/generate-graph-data.mts
+
 # 推送到 GitHub（需要代理）
 git -c http.proxy=http://127.0.0.1:7890 -c http.postBuffer=524288000 push origin main
 ```
 
 ## 架构
 
+首页（`docs/index.md`）仅渲染 `<KnowledgeGraph />`，是整个站点的入口可视化页面。
+
 ```
 docs/
+  index.md                  -- 首页，仅含 <KnowledgeGraph />
   .vitepress/
-    config.mts              -- VitePress 配置（导航栏 + 侧边栏）
+    config.mts              -- VitePress 配置（导航栏 + 侧边栏）+ graphDataPlugin
     theme/
       index.ts              -- 注册 KnowledgeGraph 组件
-      KnowledgeGraph.vue    -- D3 知识图谱可视化（d3 依赖）
+      KnowledgeGraph.vue    -- D3 力导向知识图谱（固定几何布局 + 拖拽/悬停/点击导航）
     scripts/
-      generate-graph-data.mts -- 构建时解析 sidebar 生成 graph-data.json
+      generate-graph-data.mts -- 生成 graph-data.json（含硬编码 sidebar 副本）
   public/
     graph-data.json         -- 自动生成的知识图谱数据（勿手动编辑）
   backend/                  -- 后端笔记
@@ -49,6 +58,9 @@ docs/
 - Obsidian 自动同步到 git，通常不需要手动 commit/push
 - 推送需要代理 `http://127.0.0.1:7890`
 - graph-data.json 由 `generate-graph-data.mts` 从 sidebar 定义生成，不要手动编辑
+- `generate-graph-data.mts` 内嵌了一份 sidebar 硬编码副本（不是动态读取 config.mts），修改 sidebar 时**两处都要改**
+- `docs:dev` 仅在 `graph-data.json` 不存在时才生成；`docs:build` 每次都重新生成
+- 知识图谱会扫描 markdown 文件中的 `[text](/path)` 和 `[[path]]` 链接，跨分类的链接自动渲染为虚线边
 
 ## 新增笔记流程
 
