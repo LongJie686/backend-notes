@@ -192,6 +192,8 @@
   },
   "active": "6cf2868e7b37dec0",
   "lastOpenFiles": [
+    "ai-app/hermes-memory-tree-upgrade.md",
+    "ai-app/openhuman-analysis.md",
     "ai-app/hermes-ops.md",
     "ai-app/claude-code-practice.md",
     "ai-app/llm-dev/lecture-6.md.tmp.25540.1777812041191",
@@ -226,8 +228,6 @@
     "microservice/lecture-9.md",
     "microservice/lecture-8.md",
     "microservice/lecture-7.md",
-    "microservice/lecture-6.md",
-    "microservice/lecture-5.md",
-    "microservice/lecture-4.md"
+    "microservice/lecture-6.md"
   ]
 }
