@@ -135,6 +135,8 @@ function parseSidebarForGraph() {
             { text: 'Hermes Agent', link: '/ai-app/agent-analysis/hermes-agent' },
           ]
         },
+        { text: 'Claude Code 实战笔记', link: '/ai-app/claude-code-practice' },
+        { text: 'Hermes 运维笔记', link: '/ai-app/hermes-ops' },
         { text: 'Text-to-SQL', link: '/ai-app/text-to-sql/' },
         { text: 'MCP 协议', link: '/ai-app/mcp/' },
         { text: '语音交互', link: '/ai-app/voice-interaction/' },
