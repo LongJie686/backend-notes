@@ -104,6 +104,8 @@ export default defineConfig({
           },
           { text: 'Claude Code 实战笔记', link: '/ai-app/claude-code-practice' },
           { text: 'Hermes 运维笔记', link: '/ai-app/hermes-ops' },
+          { text: 'OpenHuman 项目分析', link: '/ai-app/openhuman-analysis' },
+          { text: 'Hermes 改造：Memory Tree', link: '/ai-app/hermes-memory-tree-upgrade' },
           {
             text: 'Text-to-SQL',
             collapsed: true,

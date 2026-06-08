@@ -137,6 +137,8 @@ function parseSidebarForGraph() {
         },
         { text: 'Claude Code 实战笔记', link: '/ai-app/claude-code-practice' },
         { text: 'Hermes 运维笔记', link: '/ai-app/hermes-ops' },
+        { text: 'OpenHuman 项目分析', link: '/ai-app/openhuman-analysis' },
+        { text: 'Hermes 改造: Memory Tree', link: '/ai-app/hermes-memory-tree-upgrade' },
         { text: 'Text-to-SQL', link: '/ai-app/text-to-sql/' },
         { text: 'MCP 协议', link: '/ai-app/mcp/' },
         { text: '语音交互', link: '/ai-app/voice-interaction/' },
