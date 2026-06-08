@@ -102,6 +102,8 @@ export default defineConfig({
               { text: 'Hermes Agent 框架分析', link: '/ai-app/agent-analysis/hermes-agent' }
             ]
           },
+          { text: 'Claude Code 实战笔记', link: '/ai-app/claude-code-practice' },
+          { text: 'Hermes 运维笔记', link: '/ai-app/hermes-ops' },
           {
             text: 'Text-to-SQL',
             collapsed: true,
