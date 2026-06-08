@@ -186,9 +186,70 @@ app03 (notify-service): ERROR x 0（健康）
 
 ---
 
-## 六、要不要现在就用？
+## 六、安装与上手
 
-### 如果你的场景是...
+### 6.1 安装
+
+**Linux / macOS / WSL2：**
+
+```bash
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+source ~/.bashrc
+```
+
+**Windows（原生 PowerShell，无需 WSL）：**
+
+```powershell
+iex (irm https://hermes-agent.nousresearch.com/install.ps1)
+```
+
+安装脚本会自动处理：Python 3.11、Node.js、ripgrep、ffmpeg，以及一个独立的 MinGit（不影响系统 Git）。
+
+### 6.2 首次配置
+
+```bash
+hermes setup          # 全向导：模型、平台、技能一起配
+# 或分步来：
+hermes model          # 选模型（DeepSeek / Kimi / Claude / GLM 等）
+hermes gateway setup  # 配消息平台（微信 / QQ / Telegram / 飞书）
+```
+
+**推荐：用 Nous Portal 一个账号覆盖所有 API**
+
+```bash
+hermes setup --portal   # OAuth 登录，自动配模型 + 工具 Gateway
+```
+
+### 6.3 后台常驻（systemd，Linux/WSL）
+
+```bash
+# 安装为系统服务，开机自动启动
+sudo systemctl enable hermes
+sudo systemctl start hermes
+
+# 查看状态
+systemctl status hermes
+```
+
+### 6.4 从 OpenClaw 迁移
+
+```bash
+hermes claw migrate   # 自动导入配置、记忆、Skills、API Key
+```
+
+### 6.5 常用命令速查
+
+```bash
+hermes                # 打开交互式 CLI
+hermes model          # 切换模型
+hermes gateway        # 启动消息 Gateway（微信/QQ/Telegram）
+hermes cron add "..."  # 添加定时任务（自然语言描述）
+hermes skills         # 查看/管理技能库
+hermes update         # 更新到最新版
+hermes doctor         # 诊断配置问题
+```
+
+### 6.6 要不要现在就用？
 
 **继续用 Claude Code** 如果：主要工作是写代码、审 PR、调试，在 IDE 里完成闭环。
 
@@ -199,11 +260,7 @@ app03 (notify-service): ERROR x 0（健康）
 - 团队做多模型选型对比
 - 想把某个 AI 工作流"固化"成技能，让它自动执行
 
-### 上手成本
-
-Windows 安装 + 基础配置：约 30 分钟  
-配第一个 cron 任务：约 10 分钟  
-从 OpenClaw 迁移：`hermes claw migrate` 一条命令
+上手成本：安装 + 基础配置约 30 分钟，配第一个 cron 任务约 10 分钟。
 
 ### 参考链接
 
