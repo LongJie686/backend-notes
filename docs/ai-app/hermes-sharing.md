@@ -22,7 +22,6 @@
 | 执行环境 | 本地 | 本地 | 本地 / VPS / Docker / Modal / SSH |
 | 不在电脑旁能用吗 | 不能 | 不能 | 能（Telegram / Slack / 微信等） |
 | 定时任务 | 不支持 | 不支持 | 内置 cron 调度 |
-| 模型绑定 | 必须用 Claude | 必须用 GPT | 任意：OpenAI / Claude / Kimi / GLM / 本地模型 |
 | 技术栈 | TypeScript | TypeScript | Python |
 | 面向场景 | 写/审/重构代码 | 写/审/重构代码 | 跨会话任务 + 自动化 + 研究 |
 
