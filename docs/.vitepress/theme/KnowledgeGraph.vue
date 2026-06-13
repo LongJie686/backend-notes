@@ -1,11 +1,28 @@
 <template>
   <div class="kg-wrapper" ref="wrapperRef">
+    <div class="kg-bg-glow kg-bg-glow-1"></div>
+    <div class="kg-bg-glow kg-bg-glow-2"></div>
+
     <div class="kg-header">
       <div class="kg-title">
         <span class="kg-title-name">LongJie's Notes</span>
         <span class="kg-title-sub">Backend / Database / AI / Architecture</span>
       </div>
       <div class="kg-actions">
+        <div class="kg-search">
+          <svg class="kg-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            v-model="searchQuery"
+            class="kg-search-input"
+            type="text"
+            placeholder="搜索节点…"
+            spellcheck="false"
+          />
+          <button v-if="searchQuery" class="kg-search-clear" @click="searchQuery = ''" title="清除">×</button>
+        </div>
         <a class="kg-btn" href="https://github.com/LongJie686/backend-notes" target="_blank" rel="noopener" title="GitHub">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: -2px;">
             <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
@@ -18,22 +35,17 @@
               0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
           </svg>
         </a>
-        <a class="kg-btn kg-btn-project" href="https://github.com/LongJie686/synapse" target="_blank" rel="noopener">
-          Synapse
-        </a>
-        <a class="kg-btn kg-btn-project" href="https://github.com/LongJie686/ecommerce-microservices" target="_blank" rel="noopener">
-          Ecommerce
-        </a>
-        <button class="kg-btn" @click="toggleTheme">
-          {{ isDark ? 'Light' : 'Dark' }}
-        </button>
-        <a class="kg-btn kg-btn-primary" href="/backend-notes/notes">
-          进入文档
-        </a>
+        <a class="kg-btn kg-btn-home" :href="homeLink">← 返回首页</a>
       </div>
     </div>
 
     <svg ref="svgRef" class="kg-svg"></svg>
+
+    <div class="kg-zoom-controls">
+      <button class="kg-zoom-btn" @click="zoomBy(1.4)" title="放大">＋</button>
+      <button class="kg-zoom-btn" @click="zoomBy(0.72)" title="缩小">－</button>
+      <button class="kg-zoom-btn" @click="resetView" title="重置视图">⟳</button>
+    </div>
 
     <div class="kg-legend">
       <div class="kg-legend-item" v-for="(color, name) in categoryColors" :key="name">
@@ -48,13 +60,16 @@
       <div class="kg-tooltip-hint">click to open</div>
     </div>
 
-    <div class="kg-stats">{{ nodeCount }} nodes</div>
+    <div class="kg-stats">
+      <span v-if="searchQuery">{{ matchCount }} / {{ nodeCount }} 命中</span>
+      <span v-else>{{ nodeCount }} nodes</span>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { useData } from 'vitepress'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { useData, withBase } from 'vitepress'
 import * as d3 from 'd3'
 
 interface GraphNode extends d3.SimulationNodeDatum {
@@ -70,13 +85,16 @@ interface GraphEdge extends d3.SimulationLinkDatum<GraphNode> {
   type: string
 }
 
-const { isDark, site } = useData()
+const { site } = useData()
+const homeLink = withBase('/')
 
 const wrapperRef = ref<HTMLDivElement>()
 const svgRef = ref<SVGSVGElement>()
 const tooltip = ref<{ label: string; type: string } | null>(null)
 const tooltipPos = ref({ x: 0, y: 0 })
 const nodeCount = ref(0)
+const searchQuery = ref('')
+const matchCount = ref(0)
 
 const categoryColors: Record<string, string> = {
   '后端': '#4FC3F7',
@@ -95,11 +113,73 @@ const tooltipStyle = computed(() => ({
   top: tooltipPos.value.y + 'px',
 }))
 
-function toggleTheme() {
-  isDark.value = !isDark.value
+let simulation: d3.Simulation<GraphNode, GraphEdge> | null = null
+
+// Lifted refs for interaction controls (zoom / search)
+let svgSel: d3.Selection<SVGSVGElement, unknown, null, undefined> | null = null
+let zoomBehavior: d3.ZoomBehavior<SVGSVGElement, unknown> | null = null
+let nodeGroupSel: d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown> | null = null
+let linkPathSel: d3.Selection<SVGPathElement, GraphEdge, SVGGElement, unknown> | null = null
+let allEdges: GraphEdge[] = []
+let initialTransform: d3.ZoomTransform | null = null
+
+function edgeId(end: any): string {
+  return typeof end === 'string' ? end : end.id
 }
 
-let simulation: d3.Simulation<GraphNode, GraphEdge> | null = null
+function defaultEdgeOpacity(e: GraphEdge): number {
+  return e.type === 'cross-ref' ? 0.15 : 0.18
+}
+function defaultEdgeWidth(e: GraphEdge): number {
+  return e.type === 'cross-ref' ? 0.6 : 1
+}
+
+function zoomBy(k: number) {
+  if (!svgSel || !zoomBehavior) return
+  svgSel.transition().duration(300).call(zoomBehavior.scaleBy, k)
+}
+
+function resetView() {
+  if (!svgSel || !zoomBehavior || !initialTransform) return
+  svgSel.transition().duration(500).call(zoomBehavior.transform, initialTransform)
+}
+
+function applySearch() {
+  if (!nodeGroupSel || !linkPathSel) return
+  const q = searchQuery.value.trim().toLowerCase()
+
+  if (!q) {
+    matchCount.value = 0
+    nodeGroupSel.transition().duration(250).attr('opacity', 1)
+    linkPathSel.transition().duration(250)
+      .attr('stroke-opacity', d => defaultEdgeOpacity(d))
+      .attr('stroke-width', d => defaultEdgeWidth(d))
+    return
+  }
+
+  const matched = new Set<string>()
+  nodeGroupSel.each((d) => {
+    if (d.label.toLowerCase().includes(q)) matched.add(d.id)
+  })
+  matchCount.value = matched.size
+
+  nodeGroupSel.transition().duration(250)
+    .attr('opacity', d => (matched.has(d.id) ? 1 : 0.07))
+
+  linkPathSel.transition().duration(250)
+    .attr('stroke-opacity', (e) => {
+      const s = edgeId((e as any).source)
+      const t = edgeId((e as any).target)
+      return matched.has(s) && matched.has(t) ? 0.6 : 0.03
+    })
+    .attr('stroke-width', (e) => {
+      const s = edgeId((e as any).source)
+      const t = edgeId((e as any).target)
+      return matched.has(s) && matched.has(t) ? 1.6 : 0.5
+    })
+}
+
+watch(searchQuery, () => applySearch())
 
 onMounted(async () => {
   if (!svgRef.value || !wrapperRef.value) return
@@ -120,6 +200,7 @@ onMounted(async () => {
     target: e.target,
     type: e.type,
   }))
+  allEdges = edges
 
   nodeCount.value = nodes.length
 
@@ -129,6 +210,7 @@ onMounted(async () => {
   const svg = d3.select(svgRef.value)
     .attr('width', width)
     .attr('height', height)
+  svgSel = svg
 
   const g = svg.append('g')
   const zoom = d3.zoom<SVGSVGElement, unknown>()
@@ -136,8 +218,10 @@ onMounted(async () => {
     .on('zoom', (event) => {
       g.attr('transform', event.transform)
     })
+  zoomBehavior = zoom
   svg.call(zoom)
-  svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(0.65))
+  initialTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(0.65)
+  svg.call(zoom.transform, initialTransform)
 
   // SVG Defs
   const defs = svg.append('defs')
@@ -201,14 +285,12 @@ onMounted(async () => {
   })
 
   // 2. Direct children of each top category
-  // Sub-cats go to layer 2 distance, direct articles start from layer 1
   topCats.forEach(cat => {
     const catPos = nodeTargets.get(cat.id)!
     const dir = Math.atan2(catPos.y, catPos.x)
     const catSubs = subCats.filter(s => s.parent === cat.id)
     const catArts = allArticles.filter(a => a.parent === cat.id)
 
-    // Sub-cats on layer 3 distance (dist = BASE + 2*STEP = 200), wider fan
     const SUB_CAT_HALF = Math.PI / 9  // ±20° for sub-cats
     if (catSubs.length > 0) {
       const subDist = BASE + 2 * STEP
@@ -222,12 +304,10 @@ onMounted(async () => {
       })
     }
 
-    // Direct articles: start from layer 1, skip layer 3 (reserved for sub-cats)
     if (catArts.length > 0) {
       const layers = distributeLayers(catArts.length)
       let offset = 0
       layers.forEach((count, li) => {
-        // layer 0→li0, layer 1→li1, then skip li2, continue li3+
         const layerIdx = li < 2 ? li : li + 1
         const dist = BASE + layerIdx * STEP
         const layerNodes = catArts.slice(offset, offset + count)
@@ -252,7 +332,6 @@ onMounted(async () => {
     const dir = Math.atan2(subPos.y, subPos.x)
     const subArts = allArticles.filter(a => a.parent === sub.id)
 
-    // Sub-cat children use smaller layer caps: 3-3-5
     const caps: number[] = []
     let rem = subArts.length
     let ci = 0
@@ -264,8 +343,8 @@ onMounted(async () => {
       ci++
     }
 
-    const SUB_ART_HALF = Math.PI / 14  // fan half-angle for sub-cat children
-    const ART_PAD = 0.02  // angular padding between adjacent nodes
+    const SUB_ART_HALF = Math.PI / 14
+    const ART_PAD = 0.02
     let offset = 0
     caps.forEach((count, li) => {
       const dist = BASE + li * STEP
@@ -304,19 +383,20 @@ onMounted(async () => {
 
   // Curved edge paths
   const linkPath = g.append('g')
-    .selectAll('path')
+    .selectAll<SVGPathElement, GraphEdge>('path')
     .data(edges)
     .join('path')
     .attr('class', d => `kg-edge kg-edge-${d.type}`)
     .attr('fill', 'none')
     .attr('stroke', d => {
-      if (d.type === 'cross-ref') return 'rgba(255,200,100,0.12)'
+      if (d.type === 'cross-ref') return 'rgba(255,200,100,0.18)'
       const src = typeof d.source === 'string' ? d.source : (d.source as GraphNode)
       return (src as GraphNode).color || '#999'
     })
-    .attr('stroke-width', d => d.type === 'cross-ref' ? 0.6 : 1)
-    .attr('stroke-opacity', d => d.type === 'cross-ref' ? 0.15 : 0.18)
+    .attr('stroke-width', d => defaultEdgeWidth(d))
+    .attr('stroke-opacity', d => defaultEdgeOpacity(d))
     .attr('stroke-dasharray', d => d.type === 'cross-ref' ? '3,3' : 'none')
+  linkPathSel = linkPath
 
   // Sort nodes: articles first, categories last (SVG render order)
   nodes.sort((a, b) => (a.type === 'category' ? 1 : 0) - (b.type === 'category' ? 1 : 0))
@@ -328,6 +408,7 @@ onMounted(async () => {
     .join('g')
     .attr('class', d => `kg-node kg-node-${d.type}`)
     .style('cursor', 'pointer')
+  nodeGroupSel = nodeGroup
 
   // Category nodes: transparent drag hit area
   nodeGroup.filter(d => d.type === 'category')
@@ -343,7 +424,7 @@ onMounted(async () => {
     .attr('fill', 'none')
     .attr('stroke', d => d.color)
     .attr('stroke-width', 1)
-    .attr('stroke-opacity', 0.2)
+    .attr('stroke-opacity', 0.25)
     .style('pointer-events', 'none')
 
   // Main circles
@@ -352,38 +433,39 @@ onMounted(async () => {
     .attr('r', d => d.type === 'category' ? 22 : 8)
     .attr('fill', d => {
       if (d.type === 'category') return `url(#g-${d.label})`
-      return d3.color(d.color)!.darker(0.2).toString()
+      return d3.color(d.color)!.brighter(0.1).toString()
     })
-    .attr('fill-opacity', d => d.type === 'category' ? 0.95 : 0.75)
+    .attr('fill-opacity', d => d.type === 'category' ? 0.95 : 0.9)
     .attr('stroke', d => d.type === 'category' ? d3.color(d.color)!.brighter(0.3).toString() : d.color)
-    .attr('stroke-width', d => d.type === 'category' ? 1.5 : 0.5)
-    .attr('stroke-opacity', d => d.type === 'category' ? 0.8 : 0.3)
+    .attr('stroke-width', d => d.type === 'category' ? 1.5 : 0.6)
+    .attr('stroke-opacity', d => d.type === 'category' ? 0.8 : 0.5)
     .attr('filter', d => d.type === 'category' ? 'url(#glow)' : 'url(#shadow)')
 
-  // Category labels
+  // Category labels (explicit light color — page is always dark)
   nodeGroup.filter(d => d.type === 'category')
     .append('text')
     .text(d => d.label)
     .attr('dy', 38).attr('text-anchor', 'middle')
-    .attr('fill', 'var(--vp-c-text-1)')
-    .attr('font-size', '12px').attr('font-weight', '600')
+    .attr('fill', '#eef2ff')
+    .attr('font-size', '12.5px').attr('font-weight', '700')
     .attr('letter-spacing', '0.5px')
     .style('pointer-events', 'none')
-    .style('text-shadow', '0 1px 3px rgba(0,0,0,0.3)')
+    .style('text-shadow', '0 1px 4px rgba(0,0,0,0.6)')
 
   // Article labels
   nodeGroup.filter(d => d.type === 'article')
     .append('text')
     .text(d => d.label.length > 8 ? d.label.slice(0, 8) + '..' : d.label)
     .attr('dy', -13).attr('text-anchor', 'middle')
-    .attr('fill', 'var(--vp-c-text-3)')
-    .attr('font-size', '9px')
+    .attr('fill', '#b8c2e0')
+    .attr('font-size', '9.5px')
     .style('pointer-events', 'none')
+    .style('text-shadow', '0 1px 3px rgba(0,0,0,0.55)')
 
   // Drag
   let dragged = false
   const drag = d3.drag<SVGGElement, GraphNode>()
-    .on('start', (event, d) => {
+    .on('start', (event) => {
       dragged = false
       if (!event.active) simulation?.alphaTarget(0.3).restart()
     })
@@ -394,7 +476,6 @@ onMounted(async () => {
     })
     .on('end', (event, d) => {
       if (!event.active) simulation?.alphaTarget(0)
-      // Restore to original calculated position
       const t = nodeTargets.get(d.id)
       if (t) {
         d.fx = t.x; d.fy = t.y
@@ -406,6 +487,7 @@ onMounted(async () => {
   // Hover
   nodeGroup
     .on('mouseover', (event: MouseEvent, d: GraphNode) => {
+      if (searchQuery.value) return
       tooltip.value = { label: d.label, type: d.type }
       tooltipPos.value = { x: event.clientX + 15, y: event.clientY - 10 }
 
@@ -433,7 +515,6 @@ onMounted(async () => {
           return (s === d.id || t === d.id) ? 2 : 0.6
         })
 
-      // Highlight connected node circles
       d3.selectAll('.node-circle')
         .transition().duration(200)
         .attr('r', function(this: SVGCircleElement, n: any) {
@@ -446,10 +527,11 @@ onMounted(async () => {
     })
     .on('mouseout', () => {
       tooltip.value = null
+      if (searchQuery.value) return
       nodeGroup.transition().duration(300).attr('opacity', 1)
       linkPath.transition().duration(300)
-        .attr('stroke-opacity', d => (d as GraphEdge).type === 'cross-ref' ? 0.15 : 0.18)
-        .attr('stroke-width', d => (d as GraphEdge).type === 'cross-ref' ? 0.6 : 1)
+        .attr('stroke-opacity', d => defaultEdgeOpacity(d as GraphEdge))
+        .attr('stroke-width', d => defaultEdgeWidth(d as GraphEdge))
       d3.selectAll('.node-circle')
         .transition().duration(300)
         .attr('r', (n: any) => n.type === 'category' ? 22 : 8)
@@ -501,13 +583,37 @@ onUnmounted(() => { simulation?.stop() })
   width: 100vw;
   height: 100vh;
   z-index: 999;
-  background: var(--vp-c-bg);
+  background: radial-gradient(120% 120% at 50% 0%, #0d1326 0%, #070a16 55%, #04060f 100%);
   overflow: hidden;
   font-family: var(--vp-font-family-base);
-  transition: background 0.3s;
+}
+
+.kg-bg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(130px);
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+}
+.kg-bg-glow-1 {
+  width: 540px;
+  height: 540px;
+  background: #4f7bff;
+  top: -180px;
+  left: -120px;
+}
+.kg-bg-glow-2 {
+  width: 500px;
+  height: 500px;
+  background: #a64bff;
+  bottom: -180px;
+  right: -140px;
 }
 
 .kg-svg {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
 }
@@ -520,13 +626,16 @@ onUnmounted(() => { simulation?.stop() })
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   padding: 20px 28px;
   z-index: 10;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--vp-c-bg) 0%, transparent 100%);
+  background: linear-gradient(to bottom, rgba(7, 10, 22, 0.9) 0%, transparent 100%);
 }
 
-.kg-header > * {
+.kg-header > *,
+.kg-actions > * {
   pointer-events: auto;
 }
 
@@ -540,62 +649,128 @@ onUnmounted(() => { simulation?.stop() })
   font-size: 22px;
   font-weight: 800;
   letter-spacing: 1px;
-  color: var(--vp-c-text-1);
+  background: linear-gradient(110deg, #7ad0ff, #9d7bff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .kg-title-sub {
   font-size: 12px;
-  color: var(--vp-c-text-3);
+  color: #8c97b8;
   letter-spacing: 0.5px;
 }
 
 .kg-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Search */
+.kg-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid rgba(160, 180, 255, 0.2);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(8px);
+  transition: border-color 0.2s;
+}
+.kg-search:focus-within {
+  border-color: #7ad0ff;
+}
+.kg-search-icon {
+  color: #7a86ad;
+  flex-shrink: 0;
+}
+.kg-search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e6ecff;
+  font-size: 13px;
+  width: 130px;
+}
+.kg-search-input::placeholder {
+  color: #6b7699;
+}
+.kg-search-clear {
+  background: none;
+  border: none;
+  color: #8c97b8;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.kg-search-clear:hover {
+  color: #ff7ad9;
 }
 
 .kg-btn {
-  padding: 7px 18px;
-  border: 1px solid var(--vp-c-divider);
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 16px;
+  border: 1px solid rgba(160, 180, 255, 0.2);
   border-radius: 20px;
-  background: var(--vp-c-bg-soft);
-  color: var(--vp-c-text-2);
+  background: rgba(255, 255, 255, 0.04);
+  color: #c4cdec;
   font-size: 12px;
   cursor: pointer;
   text-decoration: none;
   transition: all 0.25s;
   letter-spacing: 0.3px;
+  backdrop-filter: blur(8px);
 }
 
 .kg-btn:hover {
-  border-color: var(--vp-c-brand);
-  color: var(--vp-c-brand);
-  box-shadow: 0 0 12px rgba(0, 0, 0, 0.08);
+  border-color: #7ad0ff;
+  color: #7ad0ff;
 }
 
-.kg-btn-primary {
-  background: var(--vp-c-brand);
+.kg-btn-home {
+  background: linear-gradient(110deg, #4f7bff, #9d4bff);
   color: #fff;
-  border-color: var(--vp-c-brand);
-  font-weight: 500;
+  border-color: transparent;
+  font-weight: 600;
 }
-
-.kg-btn-primary:hover {
-  opacity: 0.85;
+.kg-btn-home:hover {
   color: #fff;
-  box-shadow: 0 0 16px color-mix(in srgb, var(--vp-c-brand) 40%, transparent);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
 }
 
-.kg-btn-project {
-  font-weight: 500;
-  letter-spacing: 0.5px;
-  font-size: 11px;
+/* Zoom controls */
+.kg-zoom-controls {
+  position: absolute;
+  right: 24px;
+  bottom: 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 10;
 }
-
-.kg-btn-project:hover {
-  background: var(--vp-c-brand);
-  color: #fff;
-  border-color: var(--vp-c-brand);
+.kg-zoom-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid rgba(160, 180, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: #c4cdec;
+  font-size: 18px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.kg-zoom-btn:hover {
+  border-color: #7ad0ff;
+  color: #7ad0ff;
 }
 
 .kg-legend {
@@ -607,11 +782,11 @@ onUnmounted(() => { simulation?.stop() })
   gap: 10px 14px;
   z-index: 10;
   padding: 12px 16px;
-  background: var(--vp-c-bg-soft);
-  border: 1px solid var(--vp-c-divider);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(160, 180, 255, 0.15);
   border-radius: 12px;
   max-width: 520px;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(10px);
 }
 
 .kg-legend-item {
@@ -629,7 +804,7 @@ onUnmounted(() => { simulation?.stop() })
 
 .kg-legend-text {
   font-size: 11px;
-  color: var(--vp-c-text-2);
+  color: #c4cdec;
   white-space: nowrap;
 }
 
@@ -637,29 +812,29 @@ onUnmounted(() => { simulation?.stop() })
   position: fixed;
   z-index: 100;
   padding: 10px 14px;
-  background: var(--vp-c-bg-elv);
-  border: 1px solid var(--vp-c-divider);
+  background: rgba(13, 19, 38, 0.92);
+  border: 1px solid rgba(160, 180, 255, 0.22);
   border-radius: 10px;
   pointer-events: none;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(8px);
 }
 
 .kg-tooltip-label {
   font-size: 13px;
   font-weight: 600;
-  color: var(--vp-c-text-1);
+  color: #eef2ff;
 }
 
 .kg-tooltip-type {
   font-size: 10px;
-  color: var(--vp-c-text-3);
+  color: #8c97b8;
   margin-top: 3px;
 }
 
 .kg-tooltip-hint {
   font-size: 10px;
-  color: var(--vp-c-brand);
+  color: #7ad0ff;
   margin-top: 4px;
   letter-spacing: 0.3px;
 }
@@ -669,7 +844,7 @@ onUnmounted(() => { simulation?.stop() })
   bottom: 20px;
   right: 24px;
   font-size: 11px;
-  color: var(--vp-c-text-3);
+  color: #8c97b8;
   z-index: 10;
   letter-spacing: 0.5px;
 }
@@ -680,7 +855,7 @@ onUnmounted(() => { simulation?.stop() })
     left: 10px;
     padding: 8px 12px;
     gap: 8px 10px;
-    max-width: 280px;
+    max-width: 240px;
   }
   .kg-legend-text {
     font-size: 10px;
@@ -690,6 +865,13 @@ onUnmounted(() => { simulation?.stop() })
   }
   .kg-title-name {
     font-size: 18px;
+  }
+  .kg-search-input {
+    width: 90px;
+  }
+  .kg-zoom-controls {
+    bottom: 90px;
+    right: 14px;
   }
 }
 </style>
