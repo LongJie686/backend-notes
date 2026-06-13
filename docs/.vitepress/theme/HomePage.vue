@@ -186,8 +186,9 @@ const skills = [
   { name: '后端开发', color: '#29B6F6', items: ['FastAPI', 'Django', 'AsyncIO', 'RESTful API', 'WebSocket'] },
   { name: 'AI 应用', color: '#AB47BC', items: ['RAG / LangChain', 'AI Agent', '多智能体', 'Text-to-SQL', 'Prompt', 'LLM 集成'] },
   { name: '数据与存储', color: '#66BB6A', items: ['MySQL', 'PostgreSQL', 'Redis', 'pgvector'] },
-  { name: '数据处理', color: '#26A69A', items: ['ETL', 'NumPy', 'OpenCV', 'PyMuPDF', '向量化'] },
-  { name: '系统与架构', color: '#FF7043', items: ['微服务', '多级缓存', 'Kafka', 'Docker', 'AWS', '阿里云'] },
+  { name: '数据处理', color: '#26A69A', items: ['爬虫 / Selenium', 'ETL', 'NumPy', 'OpenCV', 'PyMuPDF', '向量化'] },
+  { name: '大数据', color: '#5C6BC0', items: ['Hadoop', 'Spark', 'Kafka', 'Hive', 'Flume', 'HDFS'] },
+  { name: '系统与架构', color: '#FF7043', items: ['微服务', '多级缓存', 'Docker', 'AWS', '阿里云'] },
   { name: '多模态', color: '#FFA726', items: ['Whisper / FunASR', 'GPT-SoVITS', '情感分析', 'Live2D'] },
 ]
 
@@ -211,6 +212,16 @@ const experience = [
       '链路监测 LinkMon：iperf3 带宽/丢包/抖动测量 + 分段健康指数 + SNMP v1/v2c/v3 + TRAP 告警',
       '气象局根因分析：5 维故障排查 + 天镜2.0 对接 + LangChain·DeepSeek 流式诊断助手',
       '疾控中心传染病防控：风险等级评估（非流行期/低/中/高）+ 防控建议智能生成',
+    ],
+  },
+  {
+    role: '自动化数据工程师',
+    org: '成都杰科力',
+    date: '2026.06 - 至今',
+    points: [
+      '经管期刊论文采集系统：抓取 10 本中外文期刊（财经研究 / 中国工业经济 / JM / AMR 等）的篇名、关键词、摘要',
+      '多源采集 + 反爬：requests 直采 + 万方 RSS + 维普 CQVIP + Chrome CDP（突破 Cloudflare、Cookie 持久化）',
+      '检索后端：BM25 + 多维向量语义检索（三字段独立 embedding）+ 混合排序，FastAPI 提供服务',
     ],
   },
 ]
