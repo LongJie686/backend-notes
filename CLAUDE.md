@@ -25,6 +25,8 @@ npx tsx docs/.vitepress/scripts/generate-graph-data.mts
 git -c http.proxy=http://127.0.0.1:7890 -c http.postBuffer=524288000 push origin main
 ```
 
+> 本项目未配置 lint 或 test 脚本，`package.json` 中仅有上述 `docs:*` 命令。
+
 ## 架构
 
 首页（`docs/index.md`）仅渲染 `<KnowledgeGraph />`，是整个站点的入口可视化页面。
@@ -61,6 +63,7 @@ docs/
 - `generate-graph-data.mts` 内嵌了一份 sidebar 硬编码副本（不是动态读取 config.mts），修改 sidebar 时**两处都要改**
 - `docs:dev` 仅在 `graph-data.json` 不存在时才生成；`docs:build` 每次都重新生成
 - 知识图谱会扫描 markdown 文件中的 `[text](/path)` 和 `[[path]]` 链接，跨分类的链接自动渲染为虚线边
+- 图谱节点 id 用 sidebar 的 `link` 字段；笔记内链要能连边，路径必须与 sidebar `link` 完全一致
 
 ## 新增笔记流程
 
