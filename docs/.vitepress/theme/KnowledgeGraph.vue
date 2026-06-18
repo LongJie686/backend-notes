@@ -1,5 +1,6 @@
 <template>
   <div class="kg-wrapper" ref="wrapperRef">
+    <canvas class="kg-stars" ref="starsCanvasRef"></canvas>
     <div class="kg-bg-glow kg-bg-glow-1"></div>
     <div class="kg-bg-glow kg-bg-glow-2"></div>
 
@@ -64,15 +65,40 @@
       <span v-if="searchQuery">{{ matchCount }} / {{ nodeCount }} 命中</span>
       <span v-else>{{ nodeCount }} nodes</span>
     </div>
+
+    <div class="kg-overlay" v-if="loadState !== 'ready'">
+      <div v-if="loadState === 'loading'" class="kg-overlay-box">
+        <div class="kg-spinner"></div>
+        <div class="kg-overlay-text">正在加载知识图谱…</div>
+      </div>
+      <div v-else class="kg-overlay-box">
+        <div class="kg-overlay-text">图谱数据加载失败</div>
+        <button class="kg-overlay-retry" @click="retryLoad">重新加载</button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { useData, withBase } from 'vitepress'
-import * as d3 from 'd3'
+import { useData, withBase, useRouter } from 'vitepress'
+import { select, selectAll, type Selection } from 'd3-selection'
+import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom'
+import { color } from 'd3-color'
+import {
+  forceSimulation,
+  forceLink,
+  forceManyBody,
+  forceCenter,
+  type Simulation,
+  type SimulationNodeDatum,
+  type SimulationLinkDatum,
+} from 'd3-force'
+import { drag } from 'd3-drag'
+// d3-transition augments the selection prototype with .transition(); import for side effect.
+import 'd3-transition'
 
-interface GraphNode extends d3.SimulationNodeDatum {
+interface GraphNode extends SimulationNodeDatum {
   id: string
   label: string
   type: 'category' | 'article'
@@ -81,11 +107,12 @@ interface GraphNode extends d3.SimulationNodeDatum {
   color: string
 }
 
-interface GraphEdge extends d3.SimulationLinkDatum<GraphNode> {
+interface GraphEdge extends SimulationLinkDatum<GraphNode> {
   type: string
 }
 
 const { site } = useData()
+const router = useRouter()
 const homeLink = withBase('/')
 
 const wrapperRef = ref<HTMLDivElement>()
@@ -95,6 +122,12 @@ const tooltipPos = ref({ x: 0, y: 0 })
 const nodeCount = ref(0)
 const searchQuery = ref('')
 const matchCount = ref(0)
+// 'loading' | 'error' | 'ready' — drives the overlay UI; avoids blank screen
+// while graph-data.json is fetching or if the request fails.
+const loadState = ref<'loading' | 'error' | 'ready'>('loading')
+
+// Starfield canvas (mirrors the HomePage effect: slow-falling stars with depth)
+const starsCanvasRef = ref<HTMLCanvasElement>()
 
 const categoryColors: Record<string, string> = {
   '后端': '#4FC3F7',
@@ -113,18 +146,84 @@ const tooltipStyle = computed(() => ({
   top: tooltipPos.value.y + 'px',
 }))
 
-let simulation: d3.Simulation<GraphNode, GraphEdge> | null = null
+let simulation: Simulation<GraphNode, GraphEdge> | null = null
 
 // Lifted refs for interaction controls (zoom / search)
-let svgSel: d3.Selection<SVGSVGElement, unknown, null, undefined> | null = null
-let zoomBehavior: d3.ZoomBehavior<SVGSVGElement, unknown> | null = null
-let nodeGroupSel: d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown> | null = null
-let linkPathSel: d3.Selection<SVGPathElement, GraphEdge, SVGGElement, unknown> | null = null
+let svgSel: Selection<SVGSVGElement, unknown, null, undefined> | null = null
+let zoomBehavior: ZoomBehavior<SVGSVGElement, unknown> | null = null
+let nodeGroupSel: Selection<SVGGElement, GraphNode, SVGGElement, unknown> | null = null
+let linkPathSel: Selection<SVGPathElement, GraphEdge, SVGGElement, unknown> | null = null
 let allEdges: GraphEdge[] = []
-let initialTransform: d3.ZoomTransform | null = null
+let initialTransform: ZoomTransform | null = null
+let resizeObserver: ResizeObserver | null = null
+let starfieldRaf = 0
+let cleanupStarfield: (() => void) | null = null
 
-function edgeId(end: any): string {
+// Cleanup at module scope — registered synchronously so it always runs,
+// even if the component unmounts before onMounted's await resolves.
+onUnmounted(() => {
+  simulation?.stop()
+  simulation = null
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  if (starfieldRaf) cancelAnimationFrame(starfieldRaf)
+  cleanupStarfield?.()
+})
+
+function edgeId(end: string | GraphNode): string {
   return typeof end === 'string' ? end : end.id
+}
+
+// Slow-falling starfield with depth (same effect as the HomePage background).
+function startStarfield() {
+  const canvas = starsCanvasRef.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  let w = 0
+  let h = 0
+  let stars: { x: number; y: number; z: number; r: number }[] = []
+
+  const resize = () => {
+    w = canvas.width = window.innerWidth
+    h = canvas.height = window.innerHeight
+    const count = Math.min(180, Math.floor((w * h) / 11000))
+    stars = Array.from({ length: count }, () => ({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      z: Math.random() * 0.8 + 0.2,
+      r: Math.random() * 1.4 + 0.3,
+    }))
+  }
+  resize()
+  window.addEventListener('resize', resize)
+
+  const draw = () => {
+    ctx.clearRect(0, 0, w, h)
+    for (const s of stars) {
+      s.y += s.z * 0.25
+      if (s.y > h) {
+        s.y = 0
+        s.x = Math.random() * w
+      }
+      ctx.beginPath()
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(150, 200, 255, ${s.z * 0.7})`
+      ctx.fill()
+    }
+    starfieldRaf = requestAnimationFrame(draw)
+  }
+  draw()
+
+  return () => window.removeEventListener('resize', resize)
+}
+
+// Retry from the error overlay — reload is the simplest reliable way to
+// re-run the whole mount/render flow (fetch + layout + d3 setup) from scratch.
+function retryLoad() {
+  loadState.value = 'loading'
+  window.location.reload()
 }
 
 function defaultEdgeOpacity(e: GraphEdge): number {
@@ -184,15 +283,22 @@ watch(searchQuery, () => applySearch())
 onMounted(async () => {
   if (!svgRef.value || !wrapperRef.value) return
 
+  // Start the starfield immediately — independent of graph data loading.
+  cleanupStarfield = startStarfield()
+
   const base = site.value.base
 
   let graphData: { nodes: GraphNode[]; edges: GraphEdge[] }
   try {
     const res = await fetch(`${base}graph-data.json`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
     graphData = await res.json()
   } catch {
+    loadState.value = 'error'
     return
   }
+
+  loadState.value = 'ready'
 
   const nodes: GraphNode[] = graphData.nodes
   const edges: GraphEdge[] = graphData.edges.map((e: any) => ({
@@ -207,21 +313,21 @@ onMounted(async () => {
   const width = wrapperRef.value.clientWidth
   const height = wrapperRef.value.clientHeight
 
-  const svg = d3.select(svgRef.value)
+  const svg = select(svgRef.value)
     .attr('width', width)
     .attr('height', height)
   svgSel = svg
 
   const g = svg.append('g')
-  const zoom = d3.zoom<SVGSVGElement, unknown>()
+  const zoomBhv = zoom<SVGSVGElement, unknown>()
     .scaleExtent([0.1, 5])
     .on('zoom', (event) => {
       g.attr('transform', event.transform)
     })
-  zoomBehavior = zoom
-  svg.call(zoom)
-  initialTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(0.65)
-  svg.call(zoom.transform, initialTransform)
+  zoomBehavior = zoomBhv
+  svg.call(zoomBhv)
+  initialTransform = zoomIdentity.translate(width / 2, height / 2).scale(0.65)
+  svg.call(zoomBhv.transform, initialTransform)
 
   // SVG Defs
   const defs = svg.append('defs')
@@ -241,8 +347,8 @@ onMounted(async () => {
     .attr('flood-color', 'rgba(0,0,0,0.25)')
 
   // Per-category radial gradients
-  Object.entries(categoryColors).forEach(([name, color]) => {
-    const c = d3.color(color)!
+  Object.entries(categoryColors).forEach(([name, hex]) => {
+    const c = color(hex)!
     const grad = defs.append('radialGradient').attr('id', `g-${name}`)
       .attr('cx', '40%').attr('cy', '35%').attr('r', '60%')
     grad.append('stop').attr('offset', '0%').attr('stop-color', c.brighter(0.8).toString())
@@ -373,12 +479,12 @@ onMounted(async () => {
   })
 
   // Minimal simulation — only used for tick rendering and drag, no layout forces
-  simulation = d3.forceSimulation<GraphNode>(nodes)
-    .force('link', d3.forceLink<GraphNode, GraphEdge>(edges)
+  simulation = forceSimulation<GraphNode>(nodes)
+    .force('link', forceLink<GraphNode, GraphEdge>(edges)
       .id(d => d.id).distance(60).strength(0)
     )
-    .force('charge', d3.forceManyBody<GraphNode>().strength(0))
-    .force('center', d3.forceCenter(0, 0).strength(0))
+    .force('charge', forceManyBody<GraphNode>().strength(0))
+    .force('center', forceCenter(0, 0).strength(0))
     .alphaDecay(1)
 
   // Curved edge paths
@@ -390,8 +496,8 @@ onMounted(async () => {
     .attr('fill', 'none')
     .attr('stroke', d => {
       if (d.type === 'cross-ref') return 'rgba(255,200,100,0.18)'
-      const src = typeof d.source === 'string' ? d.source : (d.source as GraphNode)
-      return (src as GraphNode).color || '#999'
+      // After forceLink initialization, d.source is resolved to the node object.
+      return (d.source as GraphNode).color || '#999'
     })
     .attr('stroke-width', d => defaultEdgeWidth(d))
     .attr('stroke-opacity', d => defaultEdgeOpacity(d))
@@ -433,10 +539,10 @@ onMounted(async () => {
     .attr('r', d => d.type === 'category' ? 22 : 8)
     .attr('fill', d => {
       if (d.type === 'category') return `url(#g-${d.label})`
-      return d3.color(d.color)!.brighter(0.1).toString()
+      return color(d.color)!.brighter(0.1).toString()
     })
     .attr('fill-opacity', d => d.type === 'category' ? 0.95 : 0.9)
-    .attr('stroke', d => d.type === 'category' ? d3.color(d.color)!.brighter(0.3).toString() : d.color)
+    .attr('stroke', d => d.type === 'category' ? color(d.color)!.brighter(0.3).toString() : d.color)
     .attr('stroke-width', d => d.type === 'category' ? 1.5 : 0.6)
     .attr('stroke-opacity', d => d.type === 'category' ? 0.8 : 0.5)
     .attr('filter', d => d.type === 'category' ? 'url(#glow)' : 'url(#shadow)')
@@ -464,7 +570,7 @@ onMounted(async () => {
 
   // Drag
   let dragged = false
-  const drag = d3.drag<SVGGElement, GraphNode>()
+  const dragBehavior = drag<SVGGElement, GraphNode>()
     .on('start', (event) => {
       dragged = false
       if (!event.active) simulation?.alphaTarget(0.3).restart()
@@ -482,7 +588,7 @@ onMounted(async () => {
         d.x = t.x; d.y = t.y
       }
     })
-  nodeGroup.call(drag)
+  nodeGroup.call(dragBehavior)
 
   // Hover
   nodeGroup
@@ -494,8 +600,8 @@ onMounted(async () => {
       const connectedIds = new Set<string>()
       connectedIds.add(d.id)
       edges.forEach((e: any) => {
-        const s = typeof e.source === 'string' ? e.source : e.source.id
-        const t = typeof e.target === 'string' ? e.target : e.target.id
+        const s = edgeId(e.source)
+        const t = edgeId(e.target)
         if (s === d.id) connectedIds.add(t)
         if (t === d.id) connectedIds.add(s)
       })
@@ -505,17 +611,17 @@ onMounted(async () => {
 
       linkPath.transition().duration(200)
         .attr('stroke-opacity', (e: any) => {
-          const s = typeof e.source === 'string' ? e.source : e.source.id
-          const t = typeof e.target === 'string' ? e.target : e.target.id
+          const s = edgeId(e.source)
+          const t = edgeId(e.target)
           return (s === d.id || t === d.id) ? 0.7 : 0.02
         })
         .attr('stroke-width', (e: any) => {
-          const s = typeof e.source === 'string' ? e.source : e.source.id
-          const t = typeof e.target === 'string' ? e.target : e.target.id
+          const s = edgeId(e.source)
+          const t = edgeId(e.target)
           return (s === d.id || t === d.id) ? 2 : 0.6
         })
 
-      d3.selectAll('.node-circle')
+      selectAll('.node-circle')
         .transition().duration(200)
         .attr('r', function(this: SVGCircleElement, n: any) {
           if (!connectedIds.has(n.id)) return n.type === 'category' ? 22 : 8
@@ -532,15 +638,15 @@ onMounted(async () => {
       linkPath.transition().duration(300)
         .attr('stroke-opacity', d => defaultEdgeOpacity(d as GraphEdge))
         .attr('stroke-width', d => defaultEdgeWidth(d as GraphEdge))
-      d3.selectAll('.node-circle')
+      selectAll('.node-circle')
         .transition().duration(300)
         .attr('r', (n: any) => n.type === 'category' ? 22 : 8)
     })
 
-  // Click to navigate (only if not a drag)
+  // Click to navigate (only if not a drag) — SPA routing, no full reload
   nodeGroup.on('click', (event: MouseEvent, d: GraphNode) => {
     if (dragged) return
-    if (d.link) window.location.href = base + d.link.replace(/^\//, '')
+    if (d.link) router.go(withBase(d.link))
   })
 
   // Tick - curved edges + node positions
@@ -560,19 +666,12 @@ onMounted(async () => {
   })
 
   // Resize
-  const resizeObserver = new ResizeObserver(() => {
+  resizeObserver = new ResizeObserver(() => {
     if (!wrapperRef.value) return
     svg.attr('width', wrapperRef.value.clientWidth).attr('height', wrapperRef.value.clientHeight)
   })
   resizeObserver.observe(wrapperRef.value)
-
-  onUnmounted(() => {
-    simulation?.stop()
-    resizeObserver.disconnect()
-  })
 })
-
-onUnmounted(() => { simulation?.stop() })
 </script>
 
 <style scoped>
@@ -609,6 +708,16 @@ onUnmounted(() => { simulation?.stop() })
   background: #a64bff;
   bottom: -180px;
   right: -140px;
+}
+
+/* Slow-falling starfield canvas (fixed, behind the graph) */
+.kg-stars {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .kg-svg {
@@ -691,7 +800,7 @@ onUnmounted(() => { simulation?.stop() })
   background: transparent;
   border: none;
   outline: none;
-  color: #e6ecff;
+  color: #eef2ff;
   font-size: 13px;
   width: 130px;
 }
@@ -847,6 +956,58 @@ onUnmounted(() => { simulation?.stop() })
   color: #8c97b8;
   z-index: 10;
   letter-spacing: 0.5px;
+}
+
+.kg-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(120% 120% at 50% 0%, rgba(13, 19, 38, 0.6) 0%, rgba(7, 10, 22, 0.85) 100%);
+}
+
+.kg-overlay-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.kg-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(160, 180, 255, 0.18);
+  border-top-color: #7ad0ff;
+  animation: kg-spin 0.8s linear infinite;
+}
+
+@keyframes kg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.kg-overlay-text {
+  font-size: 14px;
+  color: #c4cdec;
+  letter-spacing: 0.5px;
+}
+
+.kg-overlay-retry {
+  padding: 8px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(160, 180, 255, 0.25);
+  background: linear-gradient(110deg, #4f7bff, #9d4bff);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.25s;
+}
+.kg-overlay-retry:hover {
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
 }
 
 @media (max-width: 768px) {
