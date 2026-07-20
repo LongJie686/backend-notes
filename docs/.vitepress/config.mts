@@ -107,6 +107,7 @@ export default defineConfig({
           { text: 'OpenHuman 项目分析', link: '/ai-app/openhuman-analysis' },
           { text: 'Hermes 改造：Memory Tree', link: '/ai-app/hermes-memory-tree-upgrade' },
           { text: 'AI 工作流工程化经验', link: '/ai-app/ai-workflow-engineering' },
+          { text: '开源项目产品化改造', link: '/ai-app/opensource-productization' },
           {
             text: 'Text-to-SQL',
             collapsed: true,
@@ -229,6 +230,7 @@ export default defineConfig({
           { text: 'Git', link: '/engineering/git' },
           { text: '监控告警', link: '/engineering/monitoring' },
           { text: '云服务器部署与运维', link: '/engineering/cloud-server-ops' },
+          { text: '链路根因分析系统设计', link: '/engineering/root-cause-analysis' },
           { text: 'SNMP 与 iperf3', link: '/engineering/snmp-iperf' },
           { text: 'OSGB 到 3D Tiles', link: '/engineering/osgb-3dtiles' }
         ]

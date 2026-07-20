@@ -1,6 +1,6 @@
 # 云服务器部署与运维经验
 
-> 提炼自 CrossSail 看板（腾讯云香港轻量 2核4G，Node + SQLite + Nginx）与 AI 工作流 worker 的生产部署实践。
+> 提炼自一个数据看板系统（腾讯云香港轻量 2核4G，Node + SQLite + Nginx）与 AI 工作流 worker 的生产部署实践。
 > 最新更新: 2026-07-20
 
 ---
