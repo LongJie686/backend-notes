@@ -139,6 +139,7 @@ function parseSidebarForGraph() {
         { text: 'Hermes 运维笔记', link: '/ai-app/hermes-ops' },
         { text: 'OpenHuman 项目分析', link: '/ai-app/openhuman-analysis' },
         { text: 'Hermes 改造: Memory Tree', link: '/ai-app/hermes-memory-tree-upgrade' },
+        { text: 'AI 工作流工程化', link: '/ai-app/ai-workflow-engineering' },
         { text: 'Text-to-SQL', link: '/ai-app/text-to-sql/' },
         { text: 'MCP 协议', link: '/ai-app/mcp/' },
         { text: '语音交互', link: '/ai-app/voice-interaction/' },
@@ -230,6 +231,7 @@ function parseSidebarForGraph() {
         { text: 'Docker', link: '/engineering/docker' },
         { text: 'Git', link: '/engineering/git' },
         { text: '监控告警', link: '/engineering/monitoring' },
+        { text: '云服务器运维', link: '/engineering/cloud-server-ops' },
         { text: 'SNMP', link: '/engineering/snmp-iperf' },
         { text: 'OSGB', link: '/engineering/osgb-3dtiles' },
       ]

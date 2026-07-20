@@ -192,6 +192,10 @@
   },
   "active": "6cf2868e7b37dec0",
   "lastOpenFiles": [
+    "engineering/cloud-server-ops.md",
+    "engineering/cloud-server-ops.md.tmp.34248.4e4ec3045c8a",
+    "ai-app/ai-workflow-engineering.md",
+    "ai-app/ai-workflow-engineering.md.tmp.34248.1522e4e5f3a2",
     "ai-app/hermes-sharing.md.tmp.41876.37aa6e628444",
     "ai-app/hermes-memory-tree-upgrade.md",
     "ai-app/openhuman-analysis.md",
@@ -204,9 +208,6 @@
     "ai-app/multi-agent/lecture-5.md.tmp.25540.1777811866673",
     "ai-app/multi-agent/lecture-5.md.tmp.25540.1777811808331",
     "ai-app/multi-agent/lecture-5.md.tmp.25540.1777811761463",
-    "ai-app/multi-agent/lecture-5.md.tmp.25540.1777811686751",
-    "ai-app/multi-agent/lecture-5.md.tmp.25540.1777811639781",
-    "ai-app/multi-agent/lecture-5.md.tmp.25540.1777811614395",
     "high-concurrency/lecture-9.md",
     "high-concurrency/lecture-7.md",
     "high-concurrency/lecture-8.md",
@@ -227,7 +228,6 @@
     "architecture/lecture-3.md",
     "microservice/lecture-10.md",
     "microservice/lecture-9.md",
-    "microservice/lecture-8.md",
-    "microservice/lecture-7.md"
+    "microservice/lecture-8.md"
   ]
 }
