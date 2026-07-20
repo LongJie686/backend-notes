@@ -192,6 +192,8 @@
   },
   "active": "6cf2868e7b37dec0",
   "lastOpenFiles": [
+    "engineering/root-cause-analysis.md",
+    "engineering/root-cause-analysis.md.tmp.34248.917ef50b1aca",
     "engineering/cloud-server-ops.md",
     "engineering/cloud-server-ops.md.tmp.34248.4e4ec3045c8a",
     "ai-app/ai-workflow-engineering.md",
@@ -207,7 +209,6 @@
     "ai-app/multi-agent/lecture-5.md.tmp.25540.1777811922514",
     "ai-app/multi-agent/lecture-5.md.tmp.25540.1777811866673",
     "ai-app/multi-agent/lecture-5.md.tmp.25540.1777811808331",
-    "ai-app/multi-agent/lecture-5.md.tmp.25540.1777811761463",
     "high-concurrency/lecture-9.md",
     "high-concurrency/lecture-7.md",
     "high-concurrency/lecture-8.md",
@@ -227,7 +228,6 @@
     "architecture/lecture-4.md",
     "architecture/lecture-3.md",
     "microservice/lecture-10.md",
-    "microservice/lecture-9.md",
-    "microservice/lecture-8.md"
+    "microservice/lecture-9.md"
   ]
 }
