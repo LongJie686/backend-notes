@@ -141,6 +141,7 @@ function parseSidebarForGraph() {
         { text: 'OpenHuman 项目分析', link: '/ai-app/openhuman-analysis' },
         { text: 'Hermes 改造: Memory Tree', link: '/ai-app/hermes-memory-tree-upgrade' },
         { text: 'AI 工作流工程化', link: '/ai-app/ai-workflow-engineering' },
+        { text: '员工守则问答技术选型', link: '/ai-app/rag-hr-handbook-selection' },
         { text: '开源项目产品化改造', link: '/ai-app/opensource-productization' },
         { text: 'Text-to-SQL', link: '/ai-app/text-to-sql/' },
         { text: 'MCP 协议', link: '/ai-app/mcp/' },
