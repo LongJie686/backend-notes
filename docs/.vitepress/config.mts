@@ -256,6 +256,58 @@ export default defineConfig({
           { text: '数据可视化', link: '/data-analysis/visualization' },
           { text: '图像处理', link: '/data-analysis/image-processing' }
         ]
+      },
+      {
+        text: '项目实战',
+        collapsed: true,
+        items: [
+          {
+            text: '生产工作流',
+            link: '/projects/production/',
+            collapsed: true,
+            items: [
+              { text: '元素提取 v2/v3', link: '/projects/production/element-extract' },
+              { text: '创意生图', link: '/projects/production/creative-imagegen' },
+              { text: '素材制作工作流', link: '/projects/production/material' },
+              { text: '视频生成工作流', link: '/projects/production/video' },
+              { text: '上身图工作流', link: '/projects/production/tryon' },
+              { text: '商品图平面化', link: '/projects/production/flatlay' },
+              { text: 'CrossSail 看板', link: '/projects/production/crosssail' }
+            ]
+          },
+          {
+            text: '浏览器插件',
+            link: '/projects/extensions/',
+            collapsed: true,
+            items: [
+              { text: '平台识别插件', link: '/projects/extensions/platform-detect' },
+              { text: '斗篷解锁插件', link: '/projects/extensions/shunt-unlock' },
+              { text: 'Meta 一键全选', link: '/projects/extensions/meta-select-all' }
+            ]
+          },
+          {
+            text: '桌面工具',
+            link: '/projects/desktop/',
+            collapsed: true,
+            items: [
+              { text: 'Pocket 口袋浏览器', link: '/projects/desktop/pocket' },
+              { text: '内网快传', link: '/projects/desktop/lan-share' },
+              { text: '字幕高亮', link: '/projects/desktop/subtitle-karaoke' }
+            ]
+          },
+          {
+            text: '实验与归档',
+            link: '/projects/archive/',
+            collapsed: true,
+            items: [
+              { text: '星吉珑官网首页', link: '/projects/archive/xingjilong-home' },
+              { text: 'Soul Knight Like', link: '/projects/archive/soul-knight-like' },
+              { text: 'dsh 启动闸门', link: '/projects/archive/dsh-guard' },
+              { text: 'Codex 明文代理', link: '/projects/archive/codex-plaintext-proxy' },
+              { text: '广告斗篷取证', link: '/projects/archive/cloaking-report' }
+            ]
+          }
+        ]
       }
     ],
 
