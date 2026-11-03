@@ -9,7 +9,7 @@
       <div class="hp-hero-inner">
         <p class="hp-eyebrow reveal">求职意向 · AI 应用工程师 / Python 后端工程师</p>
         <h1 class="hp-name reveal">LongJie</h1>
-        <p class="hp-name-cn reveal"><姓名> · 数据科学与大数据技术 · 2026 届</p>
+        <p class="hp-name-cn reveal">龍傑 · 数据科学与大数据技术 · 2026 届</p>
         <div class="hp-roles reveal">
           <span class="hp-roles-static">专注于</span>
           <span class="hp-roles-rotate" :key="roleIndex">{{ roles[roleIndex] }}</span>
