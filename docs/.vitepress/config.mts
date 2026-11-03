@@ -297,12 +297,12 @@ export default defineConfig({
             ]
           },
           {
-            text: '本机与内网服务',
+            text: '办公与辅助机',
             link: '/projects/infra/',
             collapsed: true,
             items: [
-              { text: '本机服务', link: '/projects/infra/local-pc' },
-              { text: '内网服务器', link: '/projects/infra/lan-server' }
+              { text: '办公电脑', link: '/projects/infra/office-pc' },
+              { text: '辅助电脑', link: '/projects/infra/aux-pc' }
             ]
           },
           {
