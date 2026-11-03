@@ -1,14 +1,15 @@
 # 浏览器插件
 
-三个 Chrome MV3 扩展，都是为了解决「网页上拿不到的东西」——
+四个 Chrome MV3 扩展，都是为了解决「网页上拿不到的东西」——
 要么是页面不肯给（竞对斗篷），要么是通用工具看不见（动态注入的投放像素），
-要么是操作太繁琐（Meta 商品列表逐个勾选）。
+要么是操作太繁琐（Meta 商品列表逐个勾选、广告逐条建草稿）。
 
 | 插件 | 版本 | 解决什么 |
 |------|------|---------|
 | [平台识别插件](/projects/extensions/platform-detect) | 0.1.0 | 识别目标站的建站平台与投放平台，提取像素 ID |
 | [斗篷解锁插件](/projects/extensions/shunt-unlock) | 1.1.0 | 绕过竞对站点的斗篷分流，看到真实落地页 |
 | [Meta 一键全选](/projects/extensions/meta-select-all) | 1.1.0 | Meta 商务管理平台商品列表自动滚动加载并全选 |
+| [广告投放助手](/projects/extensions/ad-publish) | 0.1.14 | ERP 选品批量生成 Meta 草稿广告，只建草稿不发布 |
 
 ## MV3 的两个常识
 

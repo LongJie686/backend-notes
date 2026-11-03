@@ -8,14 +8,15 @@
 | 项目 | pm2 进程 | 端口 | 对外路径 | 形态 |
 |------|---------|------|---------|------|
 | [元素提取 v3](/projects/production/element-extract) | `element_extract_v3` | 7862 | `/v3/`（`/v2/` 已下线，301 到 v3） | Gradio |
-| [创意生图](/projects/production/creative-imagegen) | `creative_imagegen` + `creative_chat` | 7863 / 7864 | `/gen/`、`/gen/chat/` | Gradio |
+| [创意生图](/projects/production/creative-imagegen) | `creative_imagegen` | 7863 | `/gen/` | Gradio |
+| [创意对话](/projects/production/creative-chat) | `creative_chat` | 7864 | `/gen/chat/` | FastAPI |
 | [素材制作工作流](/projects/production/material) | `material_workflow` + `material_web` | 7870 | `material.xingjilong.top` | FastAPI + 飞书 |
 | [上身图工作流](/projects/production/tryon) | `tryon_workflow` + `tryon_web` | 7871 | `/tryon/` | FastAPI + 飞书 |
 | [视频生成工作流](/projects/production/video) | `video_workflow` + `video_web` | 7872 | `/video/`、`video.xingjilong.top` | FastAPI + 飞书 |
 | [商品图平面化](/projects/production/flatlay) | 已下线 | — | — | FastAPI |
 | [CrossSail 看板](/projects/production/crosssail) | `crosssail-api` | 3000 | 门户根域、`dash.xingjilong.top`，兼做全站鉴权 | Express + SQLite |
 
-除上表外，门户还挂了：
+所有服务共用一套登录和权限，见[门户与统一鉴权](/projects/production/portal)。除上表外，门户还挂了：
 
 | 项 | 说明 |
 |----|------|

@@ -268,7 +268,9 @@ function parseSidebarForGraph() {
           link: '/projects/production/',
           items: [
             { text: '元素提取 v2/v3', link: '/projects/production/element-extract' },
+            { text: '门户与统一鉴权', link: '/projects/production/portal' },
             { text: '创意生图', link: '/projects/production/creative-imagegen' },
+            { text: '创意对话', link: '/projects/production/creative-chat' },
             { text: '素材制作工作流', link: '/projects/production/material' },
             { text: '视频生成工作流', link: '/projects/production/video' },
             { text: '上身图工作流', link: '/projects/production/tryon' },
@@ -283,6 +285,7 @@ function parseSidebarForGraph() {
             { text: '平台识别插件', link: '/projects/extensions/platform-detect' },
             { text: '斗篷解锁插件', link: '/projects/extensions/shunt-unlock' },
             { text: 'Meta 一键全选', link: '/projects/extensions/meta-select-all' },
+            { text: '广告投放助手', link: '/projects/extensions/ad-publish' },
           ]
         },
         {
@@ -300,6 +303,8 @@ function parseSidebarForGraph() {
           items: [
             { text: '办公电脑', link: '/projects/infra/office-pc' },
             { text: '辅助电脑', link: '/projects/infra/aux-pc' },
+            { text: '自建模型网关', link: '/projects/infra/model-gateway' },
+            { text: '钉钉 AI 助手', link: '/projects/infra/dingtalk-assistant' },
           ]
         },
         {
