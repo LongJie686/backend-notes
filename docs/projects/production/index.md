@@ -7,13 +7,34 @@
 
 | 项目 | pm2 进程 | 端口 | 对外路径 | 形态 |
 |------|---------|------|---------|------|
-| [元素提取 v2/v3](/projects/production/element-extract) | `element_extract` / `element_extract_v3` | 7861 / 7862 | `/v2/` `/v3/` | Gradio |
-| [创意生图](/projects/production/creative-imagegen) | `creative_imagegen` | 7863 | `/gen/` | Gradio |
+| [元素提取 v3](/projects/production/element-extract) | `element_extract_v3` | 7862 | `/v3/`（`/v2/` 已下线，301 到 v3） | Gradio |
+| [创意生图](/projects/production/creative-imagegen) | `creative_imagegen` + `creative_chat` | 7863 / 7864 | `/gen/`、`/gen/chat/` | Gradio |
 | [素材制作工作流](/projects/production/material) | `material_workflow` + `material_web` | 7870 | `material.xingjilong.top` | FastAPI + 飞书 |
 | [上身图工作流](/projects/production/tryon) | `tryon_workflow` + `tryon_web` | 7871 | `/tryon/` | FastAPI + 飞书 |
 | [视频生成工作流](/projects/production/video) | `video_workflow` + `video_web` | 7872 | `/video/`、`video.xingjilong.top` | FastAPI + 飞书 |
-| [商品图平面化](/projects/production/flatlay) | `flatlay` | 7873 | `/flatlay/` | FastAPI |
-| [CrossSail 看板](/projects/production/crosssail) | `crosssail-api` | 3000 | 门户根域 | Express + SQLite |
+| [商品图平面化](/projects/production/flatlay) | 已下线 | — | — | FastAPI |
+| [CrossSail 看板](/projects/production/crosssail) | `crosssail-api` | 3000 | 门户根域、`dash.xingjilong.top`，兼做全站鉴权 | Express + SQLite |
+
+除上表外，服务器上还有（2026-11-03 现场核对）：
+
+| 项 | 说明 |
+|----|------|
+| `/assistant/` | 钉钉 AI 助手网页版，反代到[内网服务器](/projects/infra/lan-server)经反向隧道映射的 18540（主）/ 18544（备） |
+| `/allmon/` | 全局监控页，汇总各服务 `metrics.json` 和 Codex 号池用量（cron 每 5 分钟采样） |
+| `h5test` | H5 测试页（18990），pm2 托管 |
+| `pm2-logrotate` | pm2 日志轮转模块 |
+| 18317-18319、18540-18544 回环端口 | 内网服务器打过来的反向 SSH 隧道（号池、WebChat、共享文件），只监听 127.0.0.1 |
+
+### 定时任务（crontab）
+
+| 周期 | 任务 |
+|------|------|
+| 每小时第 5 分 / 每天 03:10 | CrossSail 数据采集（当天 / 补昨天） |
+| 每天 03:30、03:45 | CrossSail 库备份、元素提取数据备份 |
+| 每天 04:15-04:35 | 清理 Gradio 临时目录、元素提取孤儿文件、视频工作流产物 |
+| 每分钟 | 元素提取兜底渠道探测 + 回切检查（`flock -n` 防重入） |
+| 每天 09:15 | 创意生图趋势爬虫 |
+| 每 5 分钟 | Codex 号池用量采集 → `/allmon/` |
 
 ## 共性设计
 

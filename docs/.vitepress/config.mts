@@ -297,6 +297,15 @@ export default defineConfig({
             ]
           },
           {
+            text: '本机与内网服务',
+            link: '/projects/infra/',
+            collapsed: true,
+            items: [
+              { text: '本机服务', link: '/projects/infra/local-pc' },
+              { text: '内网服务器', link: '/projects/infra/lan-server' }
+            ]
+          },
+          {
             text: '实验与归档',
             link: '/projects/archive/',
             collapsed: true,
