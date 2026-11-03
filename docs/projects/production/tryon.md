@@ -62,7 +62,7 @@
 
 ## 前台与鉴权
 
-- 登录只走门户钉钉互认。`/tryon/admin` 与 `/tryon/api/metrics` 套网关级
+- 登录只走门户钉X互认。`/tryon/admin` 与 `/tryon/api/metrics` 套网关级
   `_cs_auth_admin` + 应用内 `is_admin` 双层隔离。
 - 本地联调用 `WEB_ALLOW_GUEST=true`；接门户时硬校验禁止开启。
 - 列表只显示有交付附件的任务（上身图/分镜表/视频三者之一）；

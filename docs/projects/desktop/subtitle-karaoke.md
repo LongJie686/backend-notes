@@ -60,7 +60,7 @@ LLM 只直连项目专用 key（放项目根 `.env`），不转委派。
 - 手动控制：`.\server\start.ps1 [-Status|-Restart]`。
   `-Restart` 会先查 `/api/metrics`，**有任务在跑会拒绝重启**。
 - **服务无鉴权监听 0.0.0.0 是负责人 2026-07-29 拍板的**（图手机同 WiFi 直接传片），
-  不要自作主张加鉴权。门户钉钉鉴权接不上的原因是 `cstoken` 按 origin 隔离。
+  不要自作主张加鉴权。门户钉X鉴权接不上的原因是 `cstoken` 按 origin 隔离。
 
 ffmpeg 不用装系统级：`pip install imageio-ffmpeg`，
 路径用 `imageio_ffmpeg.get_ffmpeg_exe()` 取。

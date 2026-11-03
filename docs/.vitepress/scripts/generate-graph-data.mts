@@ -140,6 +140,8 @@ function parseSidebarForGraph() {
         { text: 'Hermes 运维笔记', link: '/ai-app/hermes-ops' },
         { text: 'OpenHuman 项目分析', link: '/ai-app/openhuman-analysis' },
         { text: 'Hermes 改造: Memory Tree', link: '/ai-app/hermes-memory-tree-upgrade' },
+        { text: '聊天记录统一入库', link: '/ai-app/chat-ingest' },
+        { text: '个人记忆库', link: '/ai-app/memory-vault' },
         { text: 'AI 工作流工程化', link: '/ai-app/ai-workflow-engineering' },
         { text: '员工守则问答技术选型', link: '/ai-app/rag-hr-handbook-selection' },
         { text: '开源项目产品化改造', link: '/ai-app/opensource-productization' },
@@ -304,7 +306,7 @@ function parseSidebarForGraph() {
             { text: '办公电脑', link: '/projects/infra/office-pc' },
             { text: '辅助电脑', link: '/projects/infra/aux-pc' },
             { text: '自建模型网关', link: '/projects/infra/model-gateway' },
-            { text: '钉钉 AI 助手', link: '/projects/infra/dingtalk-assistant' },
+            { text: '钉X AI 助手', link: '/projects/infra/im-assistant' },
           ]
         },
         {

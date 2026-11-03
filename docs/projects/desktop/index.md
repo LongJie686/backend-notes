@@ -7,7 +7,7 @@
 | 工具 | 技术栈 | 解决什么 |
 |------|--------|---------|
 | [Pocket 口袋浏览器](/projects/desktop/pocket) | Electron | 悬浮球 dock，鼠标碰球即开的多会话浏览器 |
-| [内网快传](/projects/desktop/lan-share) | Python + PyInstaller | 同一 WiFi 下电脑手机互传文件，不走微信 |
+| [内网快传](/projects/desktop/lan-share) | Python + PyInstaller | 同一 WiFi 下电脑手机互传文件，不走微X |
 | [字幕高亮](/projects/desktop/subtitle-karaoke) | Python + faster-whisper + ffmpeg | 给短视频加卡拉OK式逐词高亮字幕 |
 
 相关笔记：[Python](/backend/python)

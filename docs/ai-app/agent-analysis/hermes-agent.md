@@ -9,7 +9,7 @@
 ## 核心结论
 
 1. **自我改进闭环** -- Agent 从复杂任务中自动创建技能、使用中改进技能、跨会话搜索历史、逐步建立用户模型
-2. **多平台网关** -- 单进程 Gateway 同时接入 Telegram/Discord/Slack/WhatsApp/Signal/Email/钉钉/飞书/企微等 15+ 平台
+2. **多平台网关** -- 单进程 Gateway 同时接入 Telegram/Discord/Slack/WhatsApp/Signal/Email/钉X/飞书/企微等 15+ 平台
 3. **Agent = 模型 + Harness** -- 与 learn-claude-code-analysis 的核心理念一致，复杂度在工具层而非框架层
 4. **多通道消息架构** -- 与 nanoclaw-analysis 的架构高度相似，插件式通道注册 + 消息路由 + 容器/终端隔离
 5. **技能生态** -- 内置 25+ 技能目录（软件开发/数据科学/DevOps/研究等），支持 agentskills.io 开放标准
@@ -54,10 +54,10 @@ hermes-agent/
       whatsapp.py
       signal.py
       email.py
-      dingtalk.py           -- 钉钉
+      dingtalk.py           -- 钉X
       feishu.py             -- 飞书
-      wecom.py              -- 企业微信
-      weixin.py             -- 微信
+      wecom.py              -- 企业微X
+      weixin.py             -- 微X
       ...
   skills/                   -- 技能目录 (25+ 类别)
     software-development/
@@ -138,7 +138,7 @@ while True:
 
 | 维度 | hermes-agent | nanoclaw-analysis | 关联程度 |
 |------|-------------|-------------------|---------|
-| 多平台消息 | 15+ 平台 (含钉钉/飞书/企微) | 5 平台 (TG/Slack/Discord/WA/Email) | 高度相似 |
+| 多平台消息 | 15+ 平台 (含钉X/飞书/企微) | 5 平台 (TG/Slack/Discord/WA/Email) | 高度相似 |
 | 通道注册 | 插件式自动注册 | 插件式自动注册 | 完全一致 |
 | 消息路由 | Gateway + 触发词 | Orchestrator + @触发词 | 高度相似 |
 | 执行隔离 | 6种终端后端 | Docker 容器 | 均为隔离执行 |
@@ -248,10 +248,10 @@ gateway/platforms/
   whatsapp.py      -- WhatsApp
   signal.py        -- Signal
   email.py         -- 邮件
-  dingtalk.py      -- 钉钉
+  dingtalk.py      -- 钉X
   feishu.py        -- 飞书
-  wecom.py         -- 企业微信
-  weixin.py        -- 微信
+  wecom.py         -- 企业微X
+  weixin.py        -- 微X
   matrix.py        -- Matrix
   mattermost.py    -- Mattermost
   sms.py           -- 短信

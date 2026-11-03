@@ -20,7 +20,7 @@
 | 核心定位 | 编码助手 CLI | 编码助手 CLI | 通用自主 Agent |
 | 记忆 | 单会话，关掉就清 | 单会话，关掉就清 | 跨会话持久记忆 + 学习闭环 |
 | 执行环境 | 本地 | 本地 | 本地 / VPS / Docker / Modal / SSH |
-| 不在电脑旁能用吗 | 不能 | 不能 | 能（Telegram / Slack / 微信等） |
+| 不在电脑旁能用吗 | 不能 | 不能 | 能（Telegram / Slack / 微X等） |
 | 定时任务 | 不支持 | 不支持 | 内置 cron 调度 |
 | 技术栈 | TypeScript | TypeScript | Python |
 | 面向场景 | 写/审/重构代码 | 写/审/重构代码 | 跨会话任务 + 自动化 + 研究 |
@@ -210,7 +210,7 @@ iex (irm https://hermes-agent.nousresearch.com/install.ps1)
 hermes setup          # 全向导：模型、平台、技能一起配
 # 或分步来：
 hermes model          # 选模型（DeepSeek / Kimi / Claude / GLM 等）
-hermes gateway setup  # 配消息平台（微信 / QQ / Telegram / 飞书）
+hermes gateway setup  # 配消息平台（微X / QX / Telegram / 飞书）
 ```
 
 **推荐：用 Nous Portal 一个账号覆盖所有 API**
@@ -241,7 +241,7 @@ hermes claw migrate   # 自动导入配置、记忆、Skills、API Key
 ```bash
 hermes                # 打开交互式 CLI
 hermes model          # 切换模型
-hermes gateway        # 启动消息 Gateway（微信/QQ/Telegram）
+hermes gateway        # 启动消息 Gateway（微X/QX/Telegram）
 hermes cron add "..."  # 添加定时任务（自然语言描述）
 hermes skills         # 查看/管理技能库
 hermes update         # 更新到最新版

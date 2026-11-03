@@ -24,7 +24,7 @@ npm run serve          # http://localhost:8765
 不得 `import ... from 'cc'`，不得引用 `document` / `window` / `canvas` / `Image` /
 `requestAnimationFrame`。
 
-理由是 core 要能整体搬到 Node 服务端跑状态同步，也要能原样移植到微信小游戏。
+理由是 core 要能整体搬到 Node 服务端跑状态同步，也要能原样移植到微X小游戏。
 渲染层（`web/src/`）**单向依赖** core，core 永远不反向依赖渲染层。
 
 落到日常开发上就一条规矩：新增玩法逻辑一律进 core 的 `systems/`，

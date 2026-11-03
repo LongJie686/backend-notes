@@ -9,11 +9,11 @@
 | 服务 | 形态 | 对外方式 |
 |------|------|---------|
 | [自建模型网关](/projects/infra/model-gateway) | 开源 CLIProxyAPI + 自写守护/监控 | 办公电脑走正向隧道；线上服务走反向隧道 |
-| [钉钉 AI 助手](/projects/infra/dingtalk-assistant) | LangBot + 自研 Runner 插件 + 本地 Embedding | 钉钉 Stream（主动外连）；网页版经门户 |
+| [钉X AI 助手](/projects/infra/im-assistant) | LangBot + 自研 Runner 插件 + 本地 Embedding | 钉X Stream（主动外连）；网页版经门户 |
 | [字幕高亮](/projects/desktop/subtitle-karaoke) | Python Web 服务 | 局域网直连，门户中转页跳转 |
 | 门户共享文件 | Python Web 服务 | 经门户 |
 
-模型网关和钉钉 AI 助手各有独立笔记，见上表链接。网页版助手在门户配了主备两个上游，
+模型网关和钉X AI 助手各有独立笔记，见上表链接。网页版助手在门户配了主备两个上游，
 nginx `proxy_next_upstream` 自动切换。
 
 ## 运维约定

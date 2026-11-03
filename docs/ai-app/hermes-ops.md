@@ -10,7 +10,7 @@
 1. systemd 自启是稳定运行的基石，否则 WSL 重启必漏 cron
 2. MCP 服务器是核心基础设施，出问题先查进程是否存活
 3. cron script 只能用 .py，这是硬约束
-4. 三平台中只有飞书支持群聊，QQ/微信只能私聊
+4. 三平台中只有飞书支持群聊，QX/微X只能私聊
 
 ---
 
@@ -101,13 +101,13 @@ MCP 工具报错
 
 | 平台 | 状态 | 群聊 | 说明 |
 |------|------|------|------|
-| QQ Bot | ✅ | ❌ | 生成式 markdown Bot 不能进群 |
+| QX Bot | ✅ | ❌ | 生成式 markdown Bot 不能进群 |
 | 飞书 | ✅ | ✅ | WebSocket 长连接，bot 名"自用" |
-| 微信 | ✅ | ❌ | iLink Bot 身份不能进微信群 |
+| 微X | ✅ | ❌ | iLink Bot 身份不能进微X群 |
 
-### QQ Bot 配置
+### QX Bot 配置
 
-- App ID: `<QQ_APP_ID>`
+- App ID: `<QX_APP_ID>`
 - 用户 OpenID: `<用户 OpenID>`
 - dm_policy: open, group_policy: open（虽配但无效）
 - markdown_support: true
@@ -117,10 +117,10 @@ MCP 工具报错
 - App ID: `<FEISHU_APP_ID>`
 - 模式: WebSocket 长连接
 
-### 微信配置
+### 微X配置
 
 - 账号: `<iLink bot 账号>`
-- Home channel: `<openid>@im.wechat`
+- Home channel: `<openid>@<平台域>`
 
 ---
 
@@ -324,7 +324,7 @@ docker ps --filter name=xiaohongshu
 |------|------|------|
 | WSL 重启后 cron 不漏 | systemd 服务未 enbale | `systemctl enable hermes` |
 | Cron bash 脚本报 SyntaxError | Hermes 用 Python 执行所有脚本 | 改用 .py |
-| QQ/微信不能收群消息 | 平台限制，非配置问题 | 改用飞书群 |
+| QX/微X不能收群消息 | 平台限制，非配置问题 | 改用飞书群 |
 | pip install 后 ImportError | 用 pip --target 导致 C 扩展缺失 | 用 venv pip install |
 | free-web-search 启动失败 | 依赖未装 | 已从配置删除 |
 | Gateway 平台连不上 | 账户 ID 冲突（PID 占用） | 先停旧进程 |

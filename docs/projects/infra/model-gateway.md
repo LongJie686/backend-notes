@@ -1,7 +1,7 @@
 # 自建模型网关
 
 给内部工具提供统一的 OpenAI 兼容端点：开发工具、[创意对话](/projects/production/creative-chat)、
-[钉钉 AI 助手](/projects/infra/dingtalk-assistant)都只认一个地址和各自的访问 Key，
+[钉X AI 助手](/projects/infra/im-assistant)都只认一个地址和各自的访问 Key，
 不用各自管理上游凭据。部署在[辅助电脑](/projects/infra/aux-pc)上。
 
 ## 组成
