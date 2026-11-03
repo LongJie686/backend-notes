@@ -107,21 +107,20 @@ MCP 工具报错
 
 ### QQ Bot 配置
 
-- App ID: <QQ_APP_ID>
-- 用户 OpenID: <用户 OpenID>
+- App ID: `<QQ_APP_ID>`
+- 用户 OpenID: `<用户 OpenID>`
 - dm_policy: open, group_policy: open（虽配但无效）
 - markdown_support: true
 
 ### 飞书配置
 
-- App ID: <FEISHU_APP_ID>
-- 用户: <姓名>
+- App ID: `<FEISHU_APP_ID>`
 - 模式: WebSocket 长连接
 
 ### 微信配置
 
-- 账号: <iLink bot 账号>（iLink bot）
-- Home channel: <openid>@im.wechat
+- 账号: `<iLink bot 账号>`
+- Home channel: `<openid>@im.wechat`
 
 ---
 
@@ -168,7 +167,7 @@ MCP 工具报错
 ### 网络拓扑
 
 ```
-Windows 主机 (WLAN: <内网 IP>)
+Windows 主机 (WLAN)
   ├── Clash 代理: 127.0.0.1:7890
   └── WSL (NAT 模式)
         ├── 网关: <WSL 网关 IP>（动态获取）
@@ -200,11 +199,11 @@ sshpass -p 'password' ssh -o StrictHostKeyChecking=no user@host 'command'
 
 ### 已接入服务器
 
-| 主机 | IP | 系统 | 用户 | 密码 |
-|------|------|------|------|------|
-| hadoop105 | <内网 IP> | CentOS 7 | long | <密码> |
+| 主机 | 系统 | 说明 |
+|------|------|------|
+| 内网 Hadoop 节点 | CentOS 7 | 账号密码放 `.env`，不写进笔记 |
 
-家目录: /home/long，含 .jenkins/、.sdkman/、xlab-website/
+家目录含 .jenkins/、.sdkman/ 等。
 
 ### 监控命令模板
 
@@ -252,11 +251,11 @@ cd /root/content-matrix && docker compose up -d
 
 | 项目 | 值 |
 |------|------|
-| client_id | <CLIENT_ID> |
-| open_id | <OPEN_ID> |
-| 凭证文件 | /tmp/qqdoc_creds.json（30天过期） |
+| client_id | `<CLIENT_ID>` |
+| open_id | `<OPEN_ID>` |
+| 凭证文件 | 本地 JSON（30天过期） |
 | 写入 API | POST /openapi/spreadsheet/v3/files/{id}/batchUpdate |
-| 测试表格 | <表格 ID>（加班考勤测试） |
+| 测试表格 | `<表格 ID>` |
 
 写入格式：
 ```json
